@@ -1,0 +1,3 @@
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+mvg==1.6.0
