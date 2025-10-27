@@ -16,6 +16,7 @@ BahnVision is a full-stack web application that visualizes Munich's S-Bahn and U
 ### Phase 1: Data Foundation & Visualization
 
 * Integrate with **Deutsche Bahn (DB)** or **MVG** APIs to fetch live transit data.
+* Use the Python [`mvg`](https://github.com/mondbaron/mvg) client inside FastAPI to broker MVG live data.
 * Visualize routes, stations, and real-time train status on a **Leaflet or Mapbox** map.
 * Implement station search and route lookup.
 * Cache API results to reduce rate limits and latency.
@@ -44,7 +45,7 @@ BahnVision is a full-stack web application that visualizes Munich's S-Bahn and U
 | Layer              | Tools/Tech                                      |
 | ------------------ | ----------------------------------------------- |
 | Frontend           | React (Next.js), TailwindCSS, Leaflet or Mapbox |
-| Backend            | Node.js (Express/Fastify) or Python (FastAPI)   |
+| Backend            | Python (FastAPI + `mvg` live data client)       |
 | Database           | PostgreSQL (main data), Redis (caching)         |
 | Machine Learning   | scikit-learn, pandas, NumPy                     |
 | AI/NLP Integration | OpenAI API, Aleph Alpha API (for German text)   |
