@@ -1,15 +1,17 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root `design-doc.md` captures the system overview; `docker-compose.yml` wires the backend and Valkey.
-- All runtime code lives in `backend/app`. `main.py` bootstraps FastAPI, `api/routes.py` exposes endpoints, and domain logic sits in `services/` with Pydantic models under `models/`.
-- Add new feature modules inside `backend/app/<domain>` and keep shared configuration in `core/config.py`.
+- `docs/tech-spec.md` is the canonical backend spec; additional context lives under `docs/`. `docker-compose.yml` wires the backend container and Valkey for local runs.
+- Runtime code is in `backend/app`. `main.py` bootstraps FastAPI, `api/routes.py` registers versioned routers in `api/v1/`, and `api/metrics.py` exposes the Prometheus scrape endpoint.
+- Domain service logic lives in `services/` with HTTP schemas under `models/`. Persistence code (SQLAlchemy models, repositories, and dependencies) resides in `persistence/` and uses the shared async engine from `core/database.py`.
+- Shared configuration stays in `core/config.py`, which now includes Valkey cache settings and database connectivity options.
 
 ## Build, Test, and Development Commands
 - `python -m venv .venv && source .venv/bin/activate` — create and activate a local virtual environment.
 - `pip install -r backend/requirements.txt` — install FastAPI, MVG client, and Valkey dependencies.
-- `uvicorn app.main:app --reload --app-dir backend/app` — start the API with hot reload at `http://127.0.0.1:8000`.
+- `uvicorn app.main:app --reload --app-dir backend` — start the API with hot reload at `http://127.0.0.1:8000`.
 - `docker compose up --build` — launch the backend plus Valkey using the compose file; persists local cache data in the container network.
+- The default `DATABASE_URL` points at a local Postgres instance (`postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`). Ensure it is reachable before running features that hit persistence.
 
 ## Coding Style & Naming Conventions
 - Follow PEP 8 with 4-space indentation; keep modules and files snake_case (`services/mvg_client.py`).
@@ -29,4 +31,4 @@
 
 ## Security & Configuration Tips
 - Store secrets (Valkey URLs, API tokens) in environment variables or `.env` files that stay out of version control.
-- Document non-default runtime options in the PR description so deployers can reproduce the environment quickly.
+- Document non-default runtime options (e.g. custom `DATABASE_URL` or cache TTL overrides) in the PR description so deployers can reproduce the environment quickly.

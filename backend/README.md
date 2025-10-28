@@ -19,9 +19,9 @@ the frontend can consume.
    ```
 
 3. **Run the API**
-   ```bash
-   uvicorn app.main:app --reload --app-dir backend/app
-   ```
+```bash
+uvicorn app.main:app --reload --app-dir backend
+```
 
    The service will listen on `http://127.0.0.1:8000` by default. Open
    `http://127.0.0.1:8000/docs` to explore the interactive Swagger UI.
