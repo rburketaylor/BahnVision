@@ -95,7 +95,7 @@ async def departures(
         await cache.set_json(
             cache_key,
             {"__status": "not_found", "detail": str(exc)},
-            ttl_seconds=settings.redis_cache_ttl_not_found_seconds,
+            ttl_seconds=settings.valkey_cache_ttl_not_found_seconds,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
@@ -110,7 +110,7 @@ async def departures(
     await cache.set_json(
         cache_key,
         response.model_dump(mode="json"),
-        ttl_seconds=settings.redis_cache_ttl_seconds,
+        ttl_seconds=settings.valkey_cache_ttl_seconds,
     )
 
     return response

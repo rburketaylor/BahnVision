@@ -6,18 +6,18 @@ services:
     ports:
       - "8000:8000"
     environment:
-      REDIS_URL: redis://redis:6379/0
-      REDIS_CACHE_TTL_SECONDS: 30
-      REDIS_CACHE_TTL_NOT_FOUND_SECONDS: 15
+      VALKEY_URL: valkey://valkey:6379/0
+      VALKEY_CACHE_TTL_SECONDS: 30
+      VALKEY_CACHE_TTL_NOT_FOUND_SECONDS: 15
     depends_on:
-      redis:
+      valkey:
         condition: service_healthy
 
-  redis:
-    image: redis:latest
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+  valkey:
+    image: valkey/valkey:latest
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

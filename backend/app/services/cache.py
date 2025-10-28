@@ -4,15 +4,15 @@ import json
 from functools import lru_cache
 from typing import Any
 
-from redis.asyncio import Redis
+import valkey.asyncio as valkey
 
 from app.core.config import get_settings
 
 
 class CacheService:
-    """Simple Redis-backed cache for JSON payloads."""
+    """Simple Valkey-backed cache for JSON payloads."""
 
-    def __init__(self, client: Redis) -> None:
+    def __init__(self, client: valkey.Valkey) -> None:
         self._client = client
 
     async def get_json(self, key: str) -> dict[str, Any] | None:
@@ -35,11 +35,11 @@ class CacheService:
 
 
 @lru_cache
-def get_redis_client() -> Redis:
-    """Return a shared Redis client instance."""
+def get_valkey_client() -> valkey.Valkey:
+    """Return a shared Valkey client instance."""
     settings = get_settings()
-    return Redis.from_url(
-        settings.redis_url,
+    return valkey.from_url(
+        settings.valkey_url,
         encoding="utf-8",
         decode_responses=True,
     )
@@ -47,4 +47,4 @@ def get_redis_client() -> Redis:
 
 def get_cache_service() -> CacheService:
     """FastAPI dependency hook for cache usage."""
-    return CacheService(get_redis_client())
+    return CacheService(get_valkey_client())
