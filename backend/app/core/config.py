@@ -45,6 +45,14 @@ class Settings(BaseSettings):
         600,
         alias="MVG_STATION_SEARCH_CACHE_STALE_TTL_SECONDS",
     )
+    mvg_route_cache_ttl_seconds: int = Field(
+        120,
+        alias="MVG_ROUTE_CACHE_TTL_SECONDS",
+    )
+    mvg_route_cache_stale_ttl_seconds: int = Field(
+        900,
+        alias="MVG_ROUTE_CACHE_STALE_TTL_SECONDS",
+    )
     cache_singleflight_lock_ttl_seconds: int = Field(
         5,
         alias="CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS",

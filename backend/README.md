@@ -40,6 +40,16 @@ the frontend can consume.
   search. Parameters:
   - `query` (required): station name fragment or MVG address string.
   - `limit` (optional): number of suggestions to return (default 8, max 20).
+- `GET /api/v1/mvg/routes/plan` – multi-leg journey planning between two
+  stations. Parameters:
+  - `origin` (required): origin station query (name or global id).
+  - `destination` (required): destination station query (name or global id).
+  - `departure_time` (optional): desired departure timestamp (UTC).
+  - `arrival_time` (optional): desired arrival deadline (UTC).
+  - `transport_type` (optional, repeatable): limit journey legs to specific MVG
+    transport products.
+- `GET /metrics` – Prometheus metrics describing MVG request latency, cache hit
+  ratios, and background refresh behaviour.
 
 Example request:
 ```bash
@@ -52,6 +62,8 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=de:09162:6&transport_t
   manageable.
 - The `mvg` client offers additional endpoints (`nearby`, `lines`, etc.) that
   can be wrapped in similar fashion when needed.
+- Prometheus metrics are exposed at `/metrics` (default registry) so Grafana or
+  other tooling can scrape cache/MVG counters without extra plumbing.
 
 ## Caching
 
@@ -77,12 +89,12 @@ Planned enhancements to showcase a production-ready caching layer:
 - **Stampede protection** via single-flight locking to ensure only one worker
   refreshes a cold key while others wait on the result. (Implemented.)
 - **Soft TTL with asynchronous refresh** to keep latency low while data stays
-  reasonably fresh.
+  reasonably fresh. (Implemented via stale reads with background refresh.)
 - **Circuit breaker behaviour**: if MVG goes flaky, serve stale data for a
-  grace window instead of failing requests outright. (Fallback to stale cache
-  now in place.)
+  grace window instead of failing requests outright. (Stale fallback now in
+  place; deeper circuit-breaker logic still pending.)
 - **Observability hooks** capturing cache hit/miss ratios, fetch latency, lock
-  contention, and Valkey error counts.
+  contention, and Valkey error counts. (Implemented via Prometheus metrics.)
 - **Graceful degradation** that automatically falls back to in-process or
   disk-backed cache if Valkey becomes unavailable.
 
