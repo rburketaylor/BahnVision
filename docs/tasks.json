@@ -1,0 +1,206 @@
+[
+  {
+    "id": "MS1-T1",
+    "title": "MS1: Confirm schema design with domain owners",
+    "description": "Milestone Schema & Migrations: review docs/tech-spec.md data model with domain stakeholders and record any adjustments before coding migrations.",
+    "dependsOn": [],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "Schema review notes captured in docs/tech-spec.md or linked decision log",
+      "Stakeholder sign-off recorded in PR or issue comment"
+    ]
+  },
+  {
+    "id": "MS1-T2",
+    "title": "MS1: Generate Alembic migrations for core tables",
+    "description": "Milestone Schema & Migrations: implement Alembic revisions for stations, departures, route_snapshots, weather_observations, and ingestion_runs per spec.",
+    "dependsOn": ["MS1-T1"],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "`alembic upgrade head` on a fresh database creates all tables with expected columns and indexes",
+      "README or design-doc updated with migration identifiers"
+    ]
+  },
+  {
+    "id": "MS1-T3",
+    "title": "MS1: Validate migration upgrade and rollback automation",
+    "description": "Milestone Schema & Migrations: script upgrade+rollback smoke tests and ensure CI runs migrations against ephemeral Postgres.",
+    "dependsOn": ["MS1-T2"],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "`alembic upgrade head && alembic downgrade -1` succeeds in CI pipeline",
+      "Test fixtures load sample data and survive rollback/upgrade cycle"
+    ]
+  },
+  {
+    "id": "MS2-T1",
+    "title": "MS2: Persist departures within departure service workflow",
+    "description": "Milestone Persistence Integration: extend departure_service to write MVG responses to Postgres, tagging cache metadata per DoD.",
+    "dependsOn": ["MS1-T2"],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Unit or integration test verifies departures are stored with transport_mode and delay fields",
+      "`X-Cache-Status` header remains accurate for hits, misses, and stale paths"
+    ]
+  },
+  {
+    "id": "MS2-T2",
+    "title": "MS2: Persist itineraries within route service",
+    "description": "Milestone Persistence Integration: capture route planning payloads and filters into route_snapshots with external status tracking.",
+    "dependsOn": ["MS1-T2"],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Route planning tests confirm itineraries and MVG status stored in Postgres",
+      "404 responses set cache not-found markers and correct HTTP semantics"
+    ]
+  },
+  {
+    "id": "MS2-T3",
+    "title": "MS2: Add persistence test fixtures and coverage",
+    "description": "Milestone Persistence Integration: add reusable DB fixtures and ensure pytest covers departures and route persistence paths.",
+    "dependsOn": ["MS2-T1", "MS2-T2"],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "`pytest backend/tests/services` passes with new persistence cases",
+      "Fixtures documented for reuse in future persistence tests"
+    ]
+  },
+  {
+    "id": "MS3-T1",
+    "title": "MS3: Implement single-flight locking in cache service",
+    "description": "Milestone Cache Enhancements: add Valkey lock keys and fallback logic to prevent duplicate MVG calls under load.",
+    "dependsOn": ["MS2-T3"],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Concurrent TestClient requests result in a single MVG fetch and shared response",
+      "Lock acquisition timeout emits 409 with retry guidance per spec"
+    ]
+  },
+  {
+    "id": "MS3-T2",
+    "title": "MS3: Add stale-refresh background workflow instrumentation",
+    "description": "Milestone Cache Enhancements: trigger asynchronous refresh tasks for stale reads and expose timing metrics.",
+    "dependsOn": ["MS3-T1"],
+    "estimateH": 4,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Integration test shows stale response followed by background refresh updating cache",
+      "Metrics include refresh duration histogram entries"
+    ]
+  },
+  {
+    "id": "MS3-T3",
+    "title": "MS3: Persist route not-found markers with 15s TTL",
+    "description": "Milestone Cache Enhancements: store not-found entries in Valkey to suppress repeated MVG requests for empty routes.",
+    "dependsOn": ["MS2-T2", "MS3-T1"],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "Route plan 404 followed by repeated call within 15s avoids MVG invocation",
+      "`bahnvision_mvg_requests_total` increments reflect cached not-found outcomes"
+    ]
+  },
+  {
+    "id": "MS4-T1",
+    "title": "MS4: Instrument Prometheus metrics for API, cache, MVG",
+    "description": "Milestone Observability: add counters and histograms covering API latency, cache events, MVG requests, and refresh durations.",
+    "dependsOn": ["MS3-T2"],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "`GET /metrics` includes bahnvision_cache_events_total, bahnvision_mvg_requests_total, and duration histograms",
+      "Load test sample confirms metric cardinality stays within agreed bounds"
+    ]
+  },
+  {
+    "id": "MS4-T2",
+    "title": "MS4: Implement structured logging with correlation IDs",
+    "description": "Milestone Observability: produce JSON logs containing request_id, cache_status, mv_g_status, and sanitized payload details.",
+    "dependsOn": ["MS2-T3"],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "Log sample in CI contains request_id, station_id, cache_status fields",
+      "PII lint or manual review confirms sensitive data stripped from logs"
+    ]
+  },
+  {
+    "id": "MS4-T3",
+    "title": "MS4: Commit alert rules and dashboard templates",
+    "description": "Milestone Observability: codify alert thresholds and Grafana dashboards for cache efficiency, MVG latency, and error rates.",
+    "dependsOn": ["MS4-T1", "MS4-T2"],
+    "estimateH": 4,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Alert configuration files checked into repo and validated by Promtool or equivalent",
+      "Dashboard JSON reviewed with ops and linked from docs/ops/"
+    ]
+  },
+  {
+    "id": "MS5-T1",
+    "title": "MS5: Implement weather ingestion stub and persistence hooks",
+    "description": "Milestone Persistence Extensions: scaffold weather_ingestor service with feature flag and ensure tables accept inserts.",
+    "dependsOn": ["MS2-T3"],
+    "estimateH": 4,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Unit test verifies stub writes a weather_observations row when enabled",
+      "Feature flag defaults to off and documented in core/config.py"
+    ]
+  },
+  {
+    "id": "MS5-T2",
+    "title": "[RISK] MS5: Build departure retention pruning job",
+    "description": "Milestone Persistence Extensions: create scheduled job to prune departures older than 18 months with safety checks and metrics.",
+    "dependsOn": ["MS5-T1", "MS1-T3"],
+    "estimateH": 6,
+    "risk": "high (RISK)",
+    "acceptanceTests": [
+      "Dry-run mode logs would-prune counts without deleting data",
+      "Production execution emits metrics on rows pruned and respects feature flag"
+    ]
+  },
+  {
+    "id": "MS6-T1",
+    "title": "MS6: Document rollout playbook and readiness checklist",
+    "description": "Milestone Rollout & QA: produce docs/ops/rollout.md covering canary plan, rollback triggers, dashboards, and alert verification.",
+    "dependsOn": ["MS4-T3", "MS5-T2"],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "Rollout playbook merged with checklist for canary, rollback, and validation steps",
+      "Ops peer signs off on document in PR review"
+    ]
+  },
+  {
+    "id": "MS6-T2",
+    "title": "? MS6: Agree on MVG latency SLA thresholds with ops/product",
+    "description": "Milestone Rollout & QA: facilitate decision workshop to finalize MVG latency SLA and alert thresholds, updating design-doc accordingly.",
+    "dependsOn": ["MS4-T1"],
+    "estimateH": 3,
+    "risk": "medium (?)",
+    "acceptanceTests": [
+      "Decision record added to design-doc.md with agreed P95 target and alert levels",
+      "Alert configuration reflects finalized thresholds"
+    ]
+  },
+  {
+    "id": "MS6-T3",
+    "title": "MS6: Develop 20rps QA load test suite for key endpoints",
+    "description": "Milestone Rollout & QA: script load tests hitting departures, station search, and route plan endpoints to establish baseline latency.",
+    "dependsOn": ["MS3-T3", "MS4-T1"],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Load test scripts committed under backend/tests/load and parameterized for endpoint URLs",
+      "Baseline latency report stored alongside test artifacts and shared with QA"
+    ]
+  }
+]
