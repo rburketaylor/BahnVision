@@ -29,6 +29,34 @@ class Settings(BaseSettings):
             "REDIS_CACHE_TTL_NOT_FOUND_SECONDS",
         ),
     )
+    mvg_departures_cache_ttl_seconds: int = Field(
+        30,
+        alias="MVG_DEPARTURES_CACHE_TTL_SECONDS",
+    )
+    mvg_departures_cache_stale_ttl_seconds: int = Field(
+        300,
+        alias="MVG_DEPARTURES_CACHE_STALE_TTL_SECONDS",
+    )
+    mvg_station_search_cache_ttl_seconds: int = Field(
+        60,
+        alias="MVG_STATION_SEARCH_CACHE_TTL_SECONDS",
+    )
+    mvg_station_search_cache_stale_ttl_seconds: int = Field(
+        600,
+        alias="MVG_STATION_SEARCH_CACHE_STALE_TTL_SECONDS",
+    )
+    cache_singleflight_lock_ttl_seconds: int = Field(
+        5,
+        alias="CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS",
+    )
+    cache_singleflight_lock_wait_seconds: float = Field(
+        5.0,
+        alias="CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS",
+    )
+    cache_singleflight_retry_delay_seconds: float = Field(
+        0.05,
+        alias="CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

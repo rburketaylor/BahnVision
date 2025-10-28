@@ -89,6 +89,31 @@ class MVGClient:
         departures = [self._map_departure(item) for item in raw_departures]
         return station, departures
 
+    async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
+        """Search MVG for stations matching the query string."""
+        try:
+            raw_stations = await asyncio.to_thread(MvgApi.stations, query)
+        except MvgApiError as exc:
+            raise MVGServiceError("Failed to search MVG stations.") from exc
+
+        if not raw_stations:
+            return []
+
+        stations: list[Station] = []
+        for item in raw_stations:
+            stations.append(
+                Station(
+                    id=item["id"],
+                    name=item["name"],
+                    place=item["place"],
+                    latitude=item["latitude"],
+                    longitude=item["longitude"],
+                )
+            )
+            if 0 < limit <= len(stations):
+                break
+        return stations
+
     @staticmethod
     def _fetch_departures(
         station_id: str,

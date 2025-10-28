@@ -36,6 +36,10 @@ the frontend can consume.
   - `offset` (optional): minutes to offset departures (e.g. walking time).
   - `transport_type` (optional, repeatable): filter by transport mode, accepts
     values like `UBAHN`, `SBAHN`, `tram`, `bus`.
+- `GET /api/v1/mvg/stations/search` – station autocomplete helper backed by MVG
+  search. Parameters:
+  - `query` (required): station name fragment or MVG address string.
+  - `limit` (optional): number of suggestions to return (default 8, max 20).
 
 Example request:
 ```bash
@@ -68,13 +72,15 @@ For local development, start a Valkey container or run the app through
 Planned enhancements to showcase a production-ready caching layer:
 
 - **Cache-aside pattern with per-endpoint TTLs** and deterministic keys so each
-  route can tune freshness independently.
+  route can tune freshness independently. (Departures and station search use
+  dedicated TTL/stale TTL knobs in `Settings`.)
 - **Stampede protection** via single-flight locking to ensure only one worker
-  refreshes a cold key while others wait on the result.
+  refreshes a cold key while others wait on the result. (Implemented.)
 - **Soft TTL with asynchronous refresh** to keep latency low while data stays
   reasonably fresh.
 - **Circuit breaker behaviour**: if MVG goes flaky, serve stale data for a
-  grace window instead of failing requests outright.
+  grace window instead of failing requests outright. (Fallback to stale cache
+  now in place.)
 - **Observability hooks** capturing cache hit/miss ratios, fetch latency, lock
   contention, and Valkey error counts.
 - **Graceful degradation** that automatically falls back to in-process or

@@ -55,3 +55,19 @@ class DeparturesResponse(BaseModel):
             station=Station.from_dto(station),
             departures=[Departure.from_dto(dep) for dep in departures],
         )
+
+
+class StationSearchResponse(BaseModel):
+    query: str = Field(..., description="Original station query string.")
+    results: list[Station] = Field(
+        default_factory=list, description="Stations returned by the MVG search API."
+    )
+
+    @classmethod
+    def from_dtos(
+        cls, query: str, stations: Iterable[StationDTO]
+    ) -> "StationSearchResponse":
+        return cls(
+            query=query,
+            results=[Station.from_dto(dto) for dto in stations],
+        )
