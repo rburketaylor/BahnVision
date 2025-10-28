@@ -4,7 +4,7 @@
 - [x] Implement station search and route lookup endpoints so the backend exposes MVG features beyond departures. Reference the `mvg` nearby/lines APIs. (design-doc.md:21-23, backend/README.md:49)
 - [x] Add deterministic cache-aside configuration with per-endpoint TTL controls to match the production-grade caching roadmap. (backend/README.md:66-72)
 - [x] Introduce stampede protection (single-flight locks) plus soft-TTL background refresh for cached departures. (backend/README.md:70-75)
-- [ ] Harden Valkey failure handling with circuit-breaker behaviour and graceful in-process/disk fallbacks, including stale-if-error responses. (backend/README.md:76-81)
+- [x] Harden Valkey failure handling with circuit-breaker behaviour and graceful in-process/disk fallbacks, including stale-if-error responses. (backend/README.md:76-81)
 - [x] Instrument cache and MVG client interactions with metrics/logging for hit/miss ratios, fetch latency, and error counts. (backend/README.md:78)
 - [ ] Design the initial PostgreSQL schema and persistence layer to store historical transit and weather data, preparing for ML work. (design-doc.md:27-28, design-doc.md:50, design-doc.md:56-60)
 
@@ -14,7 +14,7 @@
 - Create a route planning view that visualizes itineraries and integrates real-time status from the backend. (design-doc.md:22, design-doc.md:67)
 
 ## Phase 1 – Quality & Tooling
-- Stand up a `pytest` suite covering health/departures endpoints (FastAPI `TestClient`) and cache edge cases with mocked Valkey. (AGENTS.md:19-22)
+- [x] Stand up a `pytest` suite covering health/departures endpoints (FastAPI `TestClient`) and cache edge cases with mocked Valkey. (AGENTS.md:19-22)
 - Provide reusable Valkey test fixtures or fakes so service tests stay deterministic. (AGENTS.md:21)
 - Add a `.env.example` plus configuration docs describing required secrets and defaults. (AGENTS.md:29-31)
 

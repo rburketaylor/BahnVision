@@ -73,6 +73,13 @@ variables:
 - `VALKEY_URL` (default `valkey://localhost:6379/0`)
 - `VALKEY_CACHE_TTL_SECONDS` (default `30` seconds)
 - `VALKEY_CACHE_TTL_NOT_FOUND_SECONDS` (default `15` seconds)
+- `MVG_DEPARTURES_CACHE_TTL_SECONDS` / `_STALE_TTL_SECONDS` – tune freshness for departures cache.
+- `MVG_STATION_SEARCH_CACHE_TTL_SECONDS` / `_STALE_TTL_SECONDS` – tune station lookup caching.
+- `MVG_ROUTE_CACHE_TTL_SECONDS` / `_STALE_TTL_SECONDS` – tune route planning cache lifetime.
+- `CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`, `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS`,
+  and `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS` – govern single-flight locking behaviour.
+- `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS` – window (seconds) to rely on in-process
+  fallback storage after Valkey connectivity issues (default `10` seconds).
 
 Legacy `REDIS_*` variables are still accepted for backwards compatibility.
 
@@ -97,6 +104,14 @@ Planned enhancements to showcase a production-ready caching layer:
   contention, and Valkey error counts. (Implemented via Prometheus metrics.)
 - **Graceful degradation** that automatically falls back to in-process or
   disk-backed cache if Valkey becomes unavailable.
+
+## Testing
+
+Run the automated suite with:
+
+```bash
+pytest backend/tests
+```
 
 ## Run with Docker
 
