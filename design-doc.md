@@ -46,8 +46,8 @@ BahnVision is a full-stack web application that visualizes Munich's S-Bahn and U
 | Layer              | Tools/Tech                                      |
 | ------------------ | ----------------------------------------------- |
 | Frontend           | React (Next.js), TailwindCSS, Leaflet or Mapbox |
-| Backend            | Python (FastAPI + `mvg` live data client + Redis caching) |
-| Database           | PostgreSQL (main data), Redis (caching)         |
+| Backend            | Python (FastAPI + `mvg` live data client + Valkey caching) |
+| Database           | PostgreSQL (main data), Valkey (caching)         |
 | Machine Learning   | scikit-learn, pandas, NumPy                     |
 | AI/NLP Integration | OpenAI API, Aleph Alpha API (for German text)   |
 | Deployment         | Docker, Render/Fly.io/AWS, GitHub Actions CI/CD |

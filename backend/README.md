@@ -44,21 +44,23 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=de:09162:6&transport_t
 
 ## Notes
 
-- The MVG API enforces rate limits; responses are cached in Redis to keep load
+- The MVG API enforces rate limits; responses are cached in Valkey to keep load
   manageable.
 - The `mvg` client offers additional endpoints (`nearby`, `lines`, etc.) that
   can be wrapped in similar fashion when needed.
 
 ## Caching
 
-The backend caches MVG responses in Redis. Configure the cache with environment
+The backend caches MVG responses in Valkey (Redis-compatible). Configure the cache with environment
 variables:
 
-- `REDIS_URL` (default `redis://localhost:6379/0`)
-- `REDIS_CACHE_TTL_SECONDS` (default `30` seconds)
-- `REDIS_CACHE_TTL_NOT_FOUND_SECONDS` (default `15` seconds)
+- `VALKEY_URL` (default `valkey://localhost:6379/0`)
+- `VALKEY_CACHE_TTL_SECONDS` (default `30` seconds)
+- `VALKEY_CACHE_TTL_NOT_FOUND_SECONDS` (default `15` seconds)
 
-For local development, start a Redis container or run the app through
+Legacy `REDIS_*` variables are still accepted for backwards compatibility.
+
+For local development, start a Valkey container or run the app through
 `docker compose` (see below).
 
 ### Roadmap for production-grade caching
@@ -74,9 +76,9 @@ Planned enhancements to showcase a production-ready caching layer:
 - **Circuit breaker behaviour**: if MVG goes flaky, serve stale data for a
   grace window instead of failing requests outright.
 - **Observability hooks** capturing cache hit/miss ratios, fetch latency, lock
-  contention, and Redis error counts.
+  contention, and Valkey error counts.
 - **Graceful degradation** that automatically falls back to in-process or
-  disk-backed cache if Redis becomes unavailable.
+  disk-backed cache if Valkey becomes unavailable.
 
 ## Run with Docker
 
@@ -99,4 +101,4 @@ Orchestrate services together with Docker Compose:
 docker compose up --build
 ```
 
-This brings up the backend and a Redis instance wired with sensible defaults.
+This brings up the backend and a Valkey instance wired with sensible defaults.
