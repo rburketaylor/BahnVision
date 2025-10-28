@@ -1,0 +1,120 @@
+name: Test Migrations
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend/alembic/**'
+      - 'backend/app/persistence/models.py'
+      - '.github/workflows/test-migrations.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend/alembic/**'
+      - 'backend/app/persistence/models.py'
+
+jobs:
+  test-migrations:
+    name: Test Migration Upgrade/Downgrade
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: bahnvision
+          POSTGRES_PASSWORD: bahnvision
+          POSTGRES_DB: bahnvision
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run migration smoke tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+        working-directory: backend
+        run: ./scripts/test_migrations.sh
+
+      - name: Run migration tests with data
+        env:
+          DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+        working-directory: backend
+        run: ./scripts/test_migration_with_data.sh
+
+  test-application:
+    name: Test Application with Migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: bahnvision
+          POSTGRES_PASSWORD: bahnvision
+          POSTGRES_DB: bahnvision
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      valkey:
+        image: valkey/valkey:latest
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+        working-directory: backend
+        run: python -m alembic upgrade head
+
+      - name: Run pytest
+        env:
+          DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+          VALKEY_URL: valkey://localhost:6379/0
+        working-directory: backend
+        run: pytest tests -v
