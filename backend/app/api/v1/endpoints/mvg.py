@@ -81,7 +81,7 @@ async def departures(
         parsed_transport_types = parse_transport_types(transport_filters)
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
 
     settings = get_settings()
@@ -199,7 +199,7 @@ async def plan_route(
 
     if departure_time and arrival_time:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Specify either departure_time or arrival_time, not both.",
         )
 
@@ -207,7 +207,7 @@ async def plan_route(
         parsed_transport_types = parse_transport_types(transport_filters)
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
 
     settings = get_settings()
