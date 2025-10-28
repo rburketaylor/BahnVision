@@ -71,8 +71,8 @@ async def departures(
             description="Walking time or delay in minutes to offset the schedule.",
         ),
     ] = 0,
-    client: Annotated[MVGClient, Depends(get_client)] = Depends(get_client),
-    cache: Annotated[CacheService, Depends(get_cache_service)] = Depends(get_cache_service),
+    client: MVGClient = Depends(get_client),
+    cache: CacheService = Depends(get_cache_service),
 ) -> DeparturesResponse:
     """Retrieve next departures for the requested station."""
     assert client is not None  # For static type checkers.
@@ -191,8 +191,8 @@ async def plan_route(
         alias="transport_type",
         description="Optional list of transport type filters (e.g. 'UBAHN', 'bus').",
     ),
-    client: Annotated[MVGClient, Depends(get_client)] = Depends(get_client),
-    cache: Annotated[CacheService, Depends(get_cache_service)] = Depends(get_cache_service),
+    client: MVGClient = Depends(get_client),
+    cache: CacheService = Depends(get_cache_service),
 ) -> RouteResponse:
     """Plan a multi-leg MVG route between two stations."""
     assert client is not None
@@ -406,8 +406,8 @@ async def search_stations(
             description="Maximum number of stations to return (default: 8).",
         ),
     ] = 8,
-    client: Annotated[MVGClient, Depends(get_client)] = Depends(get_client),
-    cache: Annotated[CacheService, Depends(get_cache_service)] = Depends(get_cache_service),
+    client: MVGClient = Depends(get_client),
+    cache: CacheService = Depends(get_cache_service),
 ) -> StationSearchResponse:
     """Search MVG for station suggestions."""
     assert client is not None

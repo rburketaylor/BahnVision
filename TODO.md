@@ -6,7 +6,7 @@
 - [x] Introduce stampede protection (single-flight locks) plus soft-TTL background refresh for cached departures. (backend/README.md:70-75)
 - [x] Harden Valkey failure handling with circuit-breaker behaviour and graceful in-process/disk fallbacks, including stale-if-error responses. (backend/README.md:76-81)
 - [x] Instrument cache and MVG client interactions with metrics/logging for hit/miss ratios, fetch latency, and error counts. (backend/README.md:78)
-- [ ] Design the initial PostgreSQL schema and persistence layer to store historical transit and weather data, preparing for ML work. (design-doc.md:27-28, design-doc.md:50, design-doc.md:56-60)
+- [x] Design the initial PostgreSQL schema and persistence layer to store historical transit and weather data, preparing for ML work. (design-doc.md:27-28, design-doc.md:50, design-doc.md:56-60)
 
 ## Phase 1 – Frontend & Visualization
 - Bootstrap the Next.js frontend with Leaflet/Mapbox to render the Munich rail map fed by the `/api/v1/mvg/departures` endpoint. (design-doc.md:21, design-doc.md:48-49, design-doc.md:67)

@@ -65,6 +65,24 @@ class Settings(BaseSettings):
         0.05,
         alias="CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS",
     )
+    database_url: str = Field(
+        "postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision",
+        alias="DATABASE_URL",
+    )
+    database_pool_size: int = Field(
+        5,
+        alias="DATABASE_POOL_SIZE",
+        ge=1,
+    )
+    database_max_overflow: int = Field(
+        5,
+        alias="DATABASE_MAX_OVERFLOW",
+        ge=0,
+    )
+    database_echo: bool = Field(
+        False,
+        alias="DATABASE_ECHO",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

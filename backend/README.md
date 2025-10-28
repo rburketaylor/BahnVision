@@ -105,6 +105,13 @@ Planned enhancements to showcase a production-ready caching layer:
 - **Graceful degradation** that automatically falls back to in-process or
   disk-backed cache if Valkey becomes unavailable.
 
+## Database & Historical Storage
+
+- Configure PostgreSQL access with `DATABASE_URL` (defaults to `postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`). Pool sizing and logging can be tuned via `DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, and `DATABASE_ECHO`.
+- SQLAlchemy 2.x async engine powers the persistence layer located under `app/persistence`. The `TransitDataRepository` exposes helpers to upsert stations/lines, log ingestion runs, and bulk insert departures plus weather observations.
+- Historical tables capture raw JSON payloads alongside normalized columns, allowing reproducible ML datasets that combine MVG delay signals with weather context. Link rows in `departure_weather_links` cache expensive geo-temporal joins.
+- Shutdown hooks dispose the shared engine; ingestion jobs should depend on `get_transit_repository` (`app.persistence.dependencies`) to participate in FastAPI's session lifecycle.
+
 ## Testing
 
 Run the automated suite with:

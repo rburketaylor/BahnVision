@@ -59,6 +59,45 @@ BahnVision is a full-stack web application that visualizes Munich's S-Bahn and U
 * **MVG Live API (Munich):** unofficial APIs available via GitHub.
 * **Weather Data:** OpenWeatherMap or DWD (German Meteorological Service).
 
+## Phase 1 Data Foundation
+
+The backend now persists historical transit and weather context in PostgreSQL to enable downstream analytics and ML experimentation. Persistence is implemented with SQLAlchemy 2.x (async engine via `asyncpg`) and exposed through a `TransitDataRepository` to keep ingestion jobs decoupled from FastAPI routes.
+
+### Database Schema Overview
+
+```
+stations ──┐          transit_lines ─┐
+           │                         │
+           ├─< departure_observations >─┬─ departure_weather_links ─> weather_observations
+           │                         │
+ingestion_runs ───────────────────────┘
+```
+
+- **stations**  
+  Stores canonical MVG station metadata (`station_id`, `name`, `place`, geolocation, supported transport modes, canonical timezone). Updated via upserts to ensure naming/geo corrections are tracked; downstream tables reference the natural key directly.
+
+- **transit_lines**  
+  Catalog of MVG/U-Bahn/S-Bahn/Tram lines (`line_id`, `transport_mode`, `operator`, optional styling metadata). Supports future enrichment (e.g., service patterns) and prevents duplication across observations.
+
+- **ingestion_runs**  
+  Auditable log of ETL executions with timing and outcome fields (`job_name`, `source`, `status`, counts, `context` JSONB for ad-hoc metadata). Acts as parent for all batch inserts so we can trace problematic loads or replays.
+
+- **departure_observations**  
+  Core fact table with one row per observed departure. Captures scheduled vs. real-time timestamps, delay seconds, operational status, cancellation reasons, passenger-facing remarks, and the serialized raw payload for reproducibility. Indexed on `(station_id, planned_departure)` and `(line_id, planned_departure)` to support time-window scans. Links back to `ingestion_runs`, `stations`, and `transit_lines`.
+
+- **weather_observations**  
+  Hourly (or finer) weather snapshots near Munich stations. Includes temperature, humidity, wind metrics, precipitation detail, visibility, and provider-specific alerts. Stores raw JSONB payload, references an optional station (nearest stop) plus the associated ingestion run. Indexed by `(latitude, longitude, observed_at)` for geo-temporal lookups.
+
+- **departure_weather_links**  
+  Resolves the many-to-many relationship between departures and nearby weather readings. Stores the minute offset and link type (`closest`, `forecast`, etc.) so training pipelines can join without expensive spatial-temporal searches every time.
+
+### Persistence Layer Responsibilities
+
+- Repository API supports idempotent station/line upserts, ingestion-run bookkeeping, and bulk insert helpers for departures, weather records, and their associations.
+- FastAPI receives a ready-made dependency (`get_transit_repository`) to wire ingestion jobs or admin endpoints directly onto the repository using a shared async session.
+- Historical data retains raw payloads alongside normalized columns, allowing re-parsing as MVG/OpenWeather evolve without re-ingesting the raw feeds.
+- Default retention target is **18 months** (configurable at the job level). Partitioning/archival will be revisited during Phase 2 once initial data volumes are known.
+
 ## Architecture
 
 1. **Data Layer:** Fetch and cache real-time data from transit APIs.
