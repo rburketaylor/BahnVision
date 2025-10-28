@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -50,6 +51,28 @@ class WeatherCondition(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+class ExternalStatus(str, enum.Enum):
+    SUCCESS = "SUCCESS"
+    NOT_FOUND = "NOT_FOUND"
+    RATE_LIMITED = "RATE_LIMITED"
+    DOWNSTREAM_ERROR = "DOWNSTREAM_ERROR"
+    TIMEOUT = "TIMEOUT"
+
+
+class IngestionSource(str, enum.Enum):
+    MVG_DEPARTURES = "MVG_DEPARTURES"
+    MVG_STATIONS = "MVG_STATIONS"
+    WEATHER = "WEATHER"
+
+
+class IngestionStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    RETRYING = "RETRYING"
+
+
 transport_mode_enum = SqlEnum(
     TransportMode,
     name="transport_mode",
@@ -57,10 +80,24 @@ transport_mode_enum = SqlEnum(
 departure_status_enum = SqlEnum(
     DepartureStatus,
     name="departure_status",
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
 )
 weather_condition_enum = SqlEnum(
     WeatherCondition,
     name="weather_condition",
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
+)
+external_status_enum = SqlEnum(
+    ExternalStatus,
+    name="external_status",
+)
+ingestion_source_enum = SqlEnum(
+    IngestionSource,
+    name="ingestion_source",
+)
+ingestion_status_enum = SqlEnum(
+    IngestionStatus,
+    name="ingestion_status",
 )
 
 
@@ -135,18 +172,21 @@ class IngestionRun(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     job_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    source: Mapped[IngestionSource] = mapped_column(
+        ingestion_source_enum.copy(),
+        nullable=False,
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    status: Mapped[str] = mapped_column(
-        String(32),
+    status: Mapped[IngestionStatus] = mapped_column(
+        ingestion_status_enum.copy(),
         nullable=False,
-        default="running",
-        server_default="running",
+        default=IngestionStatus.RUNNING,
+        server_default=IngestionStatus.RUNNING.value,
     )
     records_inserted: Mapped[int] = mapped_column(
         Integer,
@@ -243,6 +283,45 @@ class DepartureObservation(Base):
             "ix_departures_line_planned",
             "line_id",
             "planned_departure",
+        ),
+    )
+
+
+class RouteSnapshot(Base):
+    __tablename__ = "route_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    origin_station_id: Mapped[str] = mapped_column(
+        ForeignKey("stations.station_id", ondelete="cascade"),
+        nullable=False,
+    )
+    destination_station_id: Mapped[str] = mapped_column(
+        ForeignKey("stations.station_id", ondelete="cascade"),
+        nullable=False,
+    )
+    requested_filters: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    itineraries: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    mvg_status: Mapped[ExternalStatus] = mapped_column(
+        external_status_enum.copy(),
+        nullable=False,
+        default=ExternalStatus.SUCCESS,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_route_snapshots_requested_at",
+            "requested_at",
+            postgresql_where=text("requested_at IS NOT NULL"),
         ),
     )
 
