@@ -44,10 +44,39 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=de:09162:6&transport_t
 
 ## Notes
 
-- The MVG API enforces rate limits; consider adding caching when wiring this
-  endpoint to the frontend.
+- The MVG API enforces rate limits; responses are cached in Redis to keep load
+  manageable.
 - The `mvg` client offers additional endpoints (`nearby`, `lines`, etc.) that
   can be wrapped in similar fashion when needed.
+
+## Caching
+
+The backend caches MVG responses in Redis. Configure the cache with environment
+variables:
+
+- `REDIS_URL` (default `redis://localhost:6379/0`)
+- `REDIS_CACHE_TTL_SECONDS` (default `30` seconds)
+- `REDIS_CACHE_TTL_NOT_FOUND_SECONDS` (default `15` seconds)
+
+For local development, start a Redis container or run the app through
+`docker compose` (see below).
+
+### Roadmap for production-grade caching
+
+Planned enhancements to showcase a production-ready caching layer:
+
+- **Cache-aside pattern with per-endpoint TTLs** and deterministic keys so each
+  route can tune freshness independently.
+- **Stampede protection** via single-flight locking to ensure only one worker
+  refreshes a cold key while others wait on the result.
+- **Soft TTL with asynchronous refresh** to keep latency low while data stays
+  reasonably fresh.
+- **Circuit breaker behaviour**: if MVG goes flaky, serve stale data for a
+  grace window instead of failing requests outright.
+- **Observability hooks** capturing cache hit/miss ratios, fetch latency, lock
+  contention, and Redis error counts.
+- **Graceful degradation** that automatically falls back to in-process or
+  disk-backed cache if Redis becomes unavailable.
 
 ## Run with Docker
 
@@ -64,5 +93,10 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=de:09162:6&transport_t
    The API will be available on `http://127.0.0.1:8000`. Pass environment
    variables with `-e KEY=value` or mount config files as needed.
 
-When composing multiple services, add this container to a `docker-compose.yml`
-and map the `backend` image alongside dependencies like Redis or PostgreSQL.
+Orchestrate services together with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+This brings up the backend and a Redis instance wired with sensible defaults.
