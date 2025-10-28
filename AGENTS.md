@@ -23,6 +23,7 @@
 
 ## Commit & Pull Request Guidelines
 - Follow the Conventional Commit style seen in history (`feat:`, `build:`, `docs:`) and keep subject lines under ~60 characters.
+- Maintain concise subjects, but include a commit body summarizing documentation reorganizations or other multi-file context so reviewers see the rationale without opening diffs.
 - Squash small fixups locally; each PR should describe the change set, reference related issues, and mention config or schema updates.
 - Add screenshots or sample responses when endpoints change, and highlight any manual operational steps required post-merge.
 
