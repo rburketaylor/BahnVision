@@ -139,12 +139,43 @@ Prefer typed function signatures. API request/response validation enforced via P
 
 ## Environment Configuration
 
-Default PostgreSQL connection:
+Default PostgreSQL 18 connection:
 ```
 DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
 ```
 
+PostgreSQL 18 is used for its performance improvements (up to 3× I/O performance), skip scan optimization on B-tree indexes, and page checksums enabled by default.
+
 For Docker Compose deployments, Valkey URL is automatically set to `valkey://valkey:6379/0`.
+
+## Dependency Management
+
+When adding new Python packages to `backend/requirements.txt`:
+
+1. **Always check for the latest version** before adding dependencies:
+   ```bash
+   # Check latest version on PyPI
+   pip index versions <package-name>
+
+   # Alternative: search PyPI
+   curl -s https://pypi.org/pypi/<package-name>/json | grep -oP '"version":\s*"\K[^"]+'
+   ```
+
+2. **Never guess package versions** based on knowledge cutoff — always verify the current latest version
+
+3. **Pin exact versions** (use `==` not `>=`) for reproducible builds
+
+4. **Example workflow**:
+   ```bash
+   # Check latest alembic version
+   pip index versions alembic
+
+   # Add to requirements.txt with exact version
+   echo "alembic==1.17.0" >> backend/requirements.txt
+
+   # Install the package
+   pip install -r backend/requirements.txt
+   ```
 
 ## Common Gotchas
 

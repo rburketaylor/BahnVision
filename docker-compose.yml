@@ -9,9 +9,28 @@ services:
       VALKEY_URL: valkey://valkey:6379/0
       VALKEY_CACHE_TTL_SECONDS: 30
       VALKEY_CACHE_TTL_NOT_FOUND_SECONDS: 15
+      DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@postgres:5432/bahnvision
     depends_on:
       valkey:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: bahnvision
+      POSTGRES_PASSWORD: bahnvision
+      POSTGRES_DB: bahnvision
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bahnvision"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
   valkey:
     image: valkey/valkey:latest
@@ -23,3 +42,6 @@ services:
       retries: 5
     ports:
       - "6379:6379"
+
+volumes:
+  postgres_data:
