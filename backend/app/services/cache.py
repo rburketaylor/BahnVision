@@ -86,15 +86,20 @@ class CacheService:
         if wrote_valkey:
             return
 
-    async def delete(self, key: str) -> None:
+    async def delete(self, key: str, *, remove_stale: bool = False) -> None:
+        """Remove a cache entry, optionally clearing the stale backup."""
+        stale_key = f"{key}{self._STALE_SUFFIX}"
         if not self._is_circuit_open():
             try:
-                await self._client.delete(key)
-                await self._client.delete(f"{key}{self._STALE_SUFFIX}")
+                if remove_stale:
+                    await self._client.delete(key, stale_key)
+                else:
+                    await self._client.delete(key)
             except Exception:
                 self._open_circuit_breaker()
         await self._delete_fallback(key)
-        await self._delete_fallback(f"{key}{self._STALE_SUFFIX}")
+        if remove_stale:
+            await self._delete_fallback(stale_key)
 
     @asynccontextmanager
     async def single_flight(

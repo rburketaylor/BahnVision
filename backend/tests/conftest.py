@@ -68,11 +68,12 @@ class FakeValkey:
         self._store[key] = (value, expires_at)
         return True
 
-    async def delete(self, key: str) -> None:
+    async def delete(self, *keys: str) -> None:
         self._prune()
         if self.should_fail:
             raise RuntimeError("valkey unavailable")
-        self._store.pop(key, None)
+        for key in keys:
+            self._store.pop(key, None)
 
 
 class FakeMVGClient:
@@ -93,9 +94,9 @@ class FakeMVGClient:
         offset: int = 0,
         transport_types=None,
     ) -> tuple[Station, list[Departure]]:
+        self.departure_calls += 1
         if self.fail_departures:
             raise MVGServiceError("departures unavailable")
-        self.departure_calls += 1
         station = Station(
             id=f"station:{station_query}",
             name=station_query.title(),
@@ -120,9 +121,9 @@ class FakeMVGClient:
         return station, [departure]
 
     async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
+        self.search_calls += 1
         if self.fail_search:
             raise MVGServiceError("search unavailable")
-        self.search_calls += 1
         station = Station(
             id=f"station:{query}",
             name=query.title(),
@@ -140,9 +141,9 @@ class FakeMVGClient:
         arrival_time: datetime | None = None,
         transport_types=None,
     ) -> tuple[Station, Station, list[RoutePlan]]:
+        self.route_calls += 1
         if self.fail_routes:
             raise MVGServiceError("route planning unavailable")
-        self.route_calls += 1
         origin = Station(
             id=f"station:{origin_query}",
             name=origin_query.title(),

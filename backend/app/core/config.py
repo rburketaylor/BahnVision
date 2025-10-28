@@ -65,6 +65,11 @@ class Settings(BaseSettings):
         0.05,
         alias="CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS",
     )
+    cache_circuit_breaker_timeout_seconds: float = Field(
+        2.0,
+        alias="CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS",
+        ge=0.0,
+    )
     database_url: str = Field(
         "postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision",
         alias="DATABASE_URL",
