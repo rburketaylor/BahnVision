@@ -11,9 +11,10 @@
 
 ## Assumptions & Dependencies
 - MVG API availability and rate limits remain the primary external dependency; circuit breaker and stale reads mitigate outages.
-- Valkey and PostgreSQL are provisioned via Docker Compose locally and by platform teams in higher environments.
+- Valkey and PostgreSQL 18 are provisioned via Docker Compose locally and by platform teams in higher environments.
 - Weather enrichment credentials arrive before Phase 2; until then, ingestion jobs remain disabled but table schemas exist.
 - Synthetic load testing and uptime monitors will be set up during QA; metrics naming follows existing `bahnvision_*` conventions.
+- PostgreSQL 18 provides up to 3× I/O performance improvements, skip scan optimization for indexes, and page checksums by default.
 
 ## Architecture
 ```
@@ -63,19 +64,34 @@
 
 ## Data Model
 ### PostgreSQL Tables
-- `stations`  
-  - `id` (PK, UUID), `mvg_station_id` (TEXT, unique), `name` (TEXT), `latitude` (NUMERIC), `longitude` (NUMERIC), `zone` (TEXT), `last_seen_at` (TIMESTAMP).  
-  - Indexed on `mvg_station_id`, `name` (GIN trigram) for search.
-- `departures`  
-  - `id` (PK, UUID), `station_id` (FK stations.id), `line` (TEXT), `destination` (TEXT), `planned_time` (TIMESTAMP), `real_time` (TIMESTAMP), `platform` (TEXT), `transport_mode` (ENUM transport_mode), `status` (ENUM departure_status), `delay_seconds` (INT), `captured_at` (TIMESTAMP), `is_stale` (BOOLEAN).  
-  - Index on `(station_id, captured_at DESC)` for history queries.
-- `route_snapshots`  
-  - `id` (PK, UUID), `origin_station_id` (FK), `destination_station_id` (FK), `requested_filters` (JSONB), `itineraries` (JSONB), `requested_at` (TIMESTAMP), `mv_g_status` (ENUM external_status).  
+- `stations`
+  - `station_id` (PK, String(64)), `name` (String(255)), `place` (String(255)), `latitude` (FLOAT), `longitude` (FLOAT), `transport_modes` (ARRAY(String(32))), `timezone` (String(64), default 'Europe/Berlin'), `created_at` (TIMESTAMP), `updated_at` (TIMESTAMP).
+  - Primary key uses MVG station ID directly for simpler joins.
+  - Indexed on `station_id` (PK), `name` (GIN trigram) for type-ahead search.
+- `transit_lines`
+  - `line_id` (PK, String(32)), `transport_mode` (ENUM transport_mode), `operator` (String(64), default 'MVG'), `description` (String(255)), `color_hex` (String(7)), `created_at` (TIMESTAMP).
+  - Normalized line metadata to avoid duplication across departures.
+- `departure_observations`
+  - `id` (PK, BigInteger autoincrement), `station_id` (FK stations.station_id), `line_id` (FK transit_lines.line_id), `ingestion_run_id` (FK ingestion_runs.id, nullable), `direction` (String(255)), `destination` (String(255)), `planned_departure` (TIMESTAMP), `observed_departure` (TIMESTAMP, nullable), `delay_seconds` (INT, nullable), `platform` (String(16)), `transport_mode` (ENUM transport_mode), `status` (ENUM departure_status, default UNKNOWN), `cancellation_reason` (TEXT, nullable), `remarks` (ARRAY(String(255))), `crowding_level` (INT, nullable), `source` (String(64), default 'mvg'), `valid_from` (TIMESTAMP, nullable), `valid_to` (TIMESTAMP, nullable), `raw_payload` (JSONB, nullable), `created_at` (TIMESTAMP).
+  - Indexes on `(station_id, planned_departure)` and `(line_id, planned_departure)` for efficient queries.
+  - `raw_payload` preserves original MVG response for debugging and reprocessing.
+  - Cache staleness tracked in Valkey, not as DB column.
+- `route_snapshots`
+  - `id` (PK, BigInteger autoincrement), `origin_station_id` (FK stations.station_id), `destination_station_id` (FK stations.station_id), `requested_filters` (JSONB), `itineraries` (JSONB), `requested_at` (TIMESTAMP), `mvg_status` (ENUM external_status), `created_at` (TIMESTAMP).
   - Partial index on `requested_at` for TTL clean-up tasks.
-- `weather_observations`  
-  - `id` (PK, UUID), `station_id` (FK optional), `source` (TEXT), `observed_at` (TIMESTAMP), `temperature_c` (NUMERIC), `precip_mm` (NUMERIC), `wind_speed_kmh` (NUMERIC), `conditions` (ENUM weather_condition), `ingestion_run_id` (FK).
-- `ingestion_runs`  
-  - `id` (PK, UUID), `source` (ENUM ingestion_source), `started_at` (TIMESTAMP), `completed_at` (TIMESTAMP), `status` (ENUM ingestion_status), `error_message` (TEXT nullable).
+  - NOTE: Table currently missing in implementation, to be added in MS1-T2 migration.
+- `weather_observations`
+  - `id` (PK, BigInteger autoincrement), `station_id` (FK stations.station_id, nullable), `ingestion_run_id` (FK ingestion_runs.id, nullable), `provider` (String(64)), `observed_at` (TIMESTAMP), `latitude` (FLOAT), `longitude` (FLOAT), `temperature_c` (Numeric(5,2)), `feels_like_c` (Numeric(5,2)), `humidity_percent` (Numeric(5,2)), `wind_speed_mps` (Numeric(5,2)), `wind_gust_mps` (Numeric(5,2)), `wind_direction_deg` (INT), `pressure_hpa` (Numeric(6,2)), `visibility_km` (Numeric(5,2)), `precipitation_mm` (Numeric(5,2)), `precipitation_type` (String(32)), `condition` (ENUM weather_condition, default UNKNOWN), `alerts` (ARRAY(String(255))), `source_payload` (JSONB, nullable), `created_at` (TIMESTAMP).
+  - Index on `(latitude, longitude, observed_at)` for geo-temporal matching.
+  - Lat/lon stored directly to enable weather matching independent of station association.
+- `ingestion_runs`
+  - `id` (PK, BigInteger autoincrement), `job_name` (String(128)), `source` (ENUM ingestion_source), `started_at` (TIMESTAMP), `completed_at` (TIMESTAMP, nullable), `status` (ENUM ingestion_status, default RUNNING), `records_inserted` (INT, default 0), `notes` (TEXT, nullable), `context` (JSONB, nullable).
+  - Index on `(job_name, started_at)` for monitoring queries.
+  - `context` stores job-specific metadata (filters, batch IDs, etc.).
+- `departure_weather_links`
+  - `id` (PK, BigInteger autoincrement), `departure_id` (FK departure_observations.id), `weather_id` (FK weather_observations.id), `offset_minutes` (INT), `relationship_type` (String(32), default 'closest').
+  - Unique constraint on `(departure_id, weather_id)`.
+  - Enables Phase 2 weather enrichment with many-to-many relationships and temporal offsets.
 
 ### Valkey Keys
 - `departures:{station_id}` → serialized `DepartureList` with metadata (`cache_status`, `ttl`, `last_refresh`).
@@ -107,16 +123,25 @@
 - `CacheRefresher.enqueue(station_id)` invoked on stale reads to refresh asynchronously.
 
 ## Enums
-- `transport_mode`: `U_BAHN`, `S_BAHN`, `BUS`, `TRAM`, `REGIONAL`, `UNKNOWN`.
-- `departure_status`: `ON_TIME`, `DELAYED`, `CANCELLED`, `BOARDING`, `ARRIVED`, `UNKNOWN`.
-- `cache_status`: `hit`, `miss`, `stale`, `stale-refresh`.
-- `external_status`: `SUCCESS`, `NOT_FOUND`, `RATE_LIMITED`, `DOWNSTREAM_ERROR`, `TIMEOUT`.
-- `weather_condition`: `CLEAR`, `CLOUDY`, `RAIN`, `SNOW`, `STORM`, `FOG`, `UNKNOWN`.
-- `ingestion_status`: `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `RETRYING`.
-- `ingestion_source`: `MVG_DEPARTURES`, `MVG_STATIONS`, `WEATHER`.
+- `transport_mode` (SQLAlchemy enum, implemented): `UBAHN`, `SBAHN`, `BUS`, `TRAM`, `REGIONAL`.
+  - Used in `transit_lines.transport_mode` and `departure_observations.transport_mode`.
+- `departure_status` (SQLAlchemy enum, implemented): `ON_TIME`, `DELAYED`, `CANCELLED`, `UNKNOWN`.
+  - Used in `departure_observations.status`.
+  - Note: BOARDING and ARRIVED states removed - MVG API doesn't consistently provide these.
+- `weather_condition` (SQLAlchemy enum, implemented): `CLEAR`, `CLOUDY`, `RAIN`, `SNOW`, `STORM`, `FOG`, `MIXED`, `UNKNOWN`.
+  - Used in `weather_observations.condition`.
+- `cache_status` (application-level string, not DB enum): `hit`, `miss`, `stale`, `stale-refresh`.
+  - Tracked in Valkey and returned in `X-Cache-Status` response header.
+- `external_status` (to be implemented in MS1-T2): `SUCCESS`, `NOT_FOUND`, `RATE_LIMITED`, `DOWNSTREAM_ERROR`, `TIMEOUT`.
+  - Will be used in `route_snapshots.mvg_status` to track MVG API response type.
+- `ingestion_status` (to be implemented in MS1-T2): `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `RETRYING`.
+  - Will replace String type in `ingestion_runs.status`.
+- `ingestion_source` (to be implemented in MS1-T2): `MVG_DEPARTURES`, `MVG_STATIONS`, `WEATHER`.
+  - Will replace String type in `ingestion_runs.source`.
 
 ## Error Cases
 - 400 Bad Request: invalid UUIDs, conflicting route query params, unsupported transport modes.
+- 422 Unprocessable Content: validation errors surfaced from FastAPI (RFC 9110 terminology, previously surfaced as Unprocessable Entity).
 - 401/403: reserved for future auth integration; currently unused but documented for forward compatibility.
 - 404 Not Found: unknown station in departures, no station matches in search, MVG route absence, missing cached resource markers.
 - 409 Conflict: cache lock acquisition timeout exceeding 5 s while stale refresh already pending.
@@ -178,4 +203,3 @@
 8. ? Define MVG latency SLA thresholds and alerting with product/ops. DoD: agreement recorded in design-doc; alert config updated; runbook linked.
 9. Create QA load test suite hitting departures, search, route endpoints at 20 rps. DoD: script checked into `backend/tests/load`; baseline latency captured; failure thresholds scripted.
 10. Craft rollout playbook covering canary, rollback, and dashboard checklist. DoD: playbook stored in `docs/ops/`; reviewed with ops; links to dashboards and alert definitions.
-
