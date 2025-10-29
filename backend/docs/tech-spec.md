@@ -202,4 +202,4 @@
 7. RISK Build retention job to prune departures older than 18 months. DoD: job dry-run logged; safe-guards for production; monitoring for row counts.
 8. ? Define MVG latency SLA thresholds and alerting with product/ops. DoD: agreement recorded in design-doc; alert config updated; runbook linked.
 9. Create QA load test suite hitting departures, search, route endpoints at 20 rps. DoD: script checked into `backend/tests/load`; baseline latency captured; failure thresholds scripted.
-10. Craft rollout playbook covering canary, rollback, and dashboard checklist. DoD: playbook stored in `docs/ops/`; reviewed with ops; links to dashboards and alert definitions.
+10. Craft rollout playbook covering canary, rollback, and dashboard checklist. DoD: playbook stored in `backend/docs/ops/`; reviewed with ops; links to dashboards and alert definitions.

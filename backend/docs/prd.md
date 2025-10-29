@@ -10,7 +10,7 @@
 - Primary persona – Munich commuter: relies on timely departures, seeks delay alerts, and needs quick station lookup while mobile; expects responses under one second to decide before leaving home.
 - Secondary persona – Visiting traveler: plans routes across unfamiliar stations and values AI guidance recommending alternates; expects itineraries with transfers, durations, and delay context.
 - Operations persona – Product and DevOps team: monitors cache hit ratios, MVG latency, and stale fallbacks to uphold SLAs and plan capacity.
-- Assumption: Personas consume data through a React/Leaflet frontend still under construction and tracked in docs/TODO.md.
+- Assumption: Personas consume data through a React/Leaflet frontend still under construction and tracked in backend/docs/old/TODO.md.
 
 ## 3. Use Cases & User Stories
 - Commuter requests `GET /api/v1/mvg/departures` with station and limit to view accurate delays and platforms before boarding.

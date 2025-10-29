@@ -132,9 +132,9 @@ Prefer typed function signatures. API request/response validation enforced via P
 
 ## Documentation References
 
-- `docs/tech-spec.md` — canonical backend specification with architecture diagram, data models, REST interfaces, observability requirements, and rollout plan
-- `docs/prd.md` — product requirements
-- `docs/tasks.json` — structured task backlog
+- `backend/docs/tech-spec.md` — canonical backend specification with architecture diagram, data models, REST interfaces, observability requirements, and rollout plan
+- `backend/docs/prd.md` — product requirements
+- `backend/docs/tasks.json` — structured task backlog
 - `AGENTS.md` — repository guidelines including commit message format (Conventional Commits: `feat:`, `docs:`, `build:`)
 
 ## Environment Configuration

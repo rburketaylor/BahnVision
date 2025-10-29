@@ -247,5 +247,5 @@ alembic current
 
 - [Alembic Documentation](https://alembic.sqlalchemy.org/)
 - [SQLAlchemy 2.0 Documentation](https://docs.sqlalchemy.org/en/20/)
-- [tech-spec.md](../../docs/tech-spec.md) - Full schema specification
-- [schema-review.md](../../docs/schema-review.md) - Schema design decisions
+- [tech-spec.md](../docs/tech-spec.md) - Full schema specification
+- [schema-review.md](../docs/schema-review.md) - Schema design decisions

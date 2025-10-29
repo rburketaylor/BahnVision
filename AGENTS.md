@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `docs/tech-spec.md` is the canonical backend spec; additional context lives under `docs/`. `docker-compose.yml` wires the backend container and Valkey for local runs.
+- `backend/docs/tech-spec.md` is the canonical backend spec; additional context lives under `backend/docs/`. `docker-compose.yml` wires the backend container and Valkey for local runs.
 - Runtime code is in `backend/app`. `main.py` bootstraps FastAPI, `api/routes.py` registers versioned routers in `api/v1/`, and `api/metrics.py` exposes the Prometheus scrape endpoint.
 - Domain service logic lives in `services/` with HTTP schemas under `models/`. Persistence code (SQLAlchemy models, repositories, and dependencies) resides in `persistence/` and uses the shared async engine from `core/database.py`.
 - Shared configuration stays in `core/config.py`, which now includes Valkey cache settings and database connectivity options.

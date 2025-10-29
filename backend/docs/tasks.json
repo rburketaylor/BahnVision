@@ -2,12 +2,12 @@
   {
     "id": "MS1-T1",
     "title": "MS1: Confirm schema design with domain owners",
-    "description": "Milestone Schema & Migrations: review docs/tech-spec.md data model with domain stakeholders and record any adjustments before coding migrations.",
+    "description": "Milestone Schema & Migrations: review backend/docs/tech-spec.md data model with domain stakeholders and record any adjustments before coding migrations.",
     "dependsOn": [],
     "estimateH": 4,
     "risk": "low",
     "acceptanceTests": [
-      "Schema review notes captured in docs/tech-spec.md or linked decision log",
+      "Schema review notes captured in backend/docs/tech-spec.md or linked decision log",
       "Stakeholder sign-off recorded in PR or issue comment"
     ]
   },
@@ -140,7 +140,7 @@
     "risk": "medium",
     "acceptanceTests": [
       "Alert configuration files checked into repo and validated by Promtool or equivalent",
-      "Dashboard JSON reviewed with ops and linked from docs/ops/"
+      "Dashboard JSON reviewed with ops and linked from backend/docs/ops/"
     ]
   },
   {
@@ -170,7 +170,7 @@
   {
     "id": "MS6-T1",
     "title": "MS6: Document rollout playbook and readiness checklist",
-    "description": "Milestone Rollout & QA: produce docs/ops/rollout.md covering canary plan, rollback triggers, dashboards, and alert verification.",
+    "description": "Milestone Rollout & QA: produce backend/docs/ops/rollout.md covering canary plan, rollback triggers, dashboards, and alert verification.",
     "dependsOn": ["MS4-T3", "MS5-T2"],
     "estimateH": 4,
     "risk": "low",
