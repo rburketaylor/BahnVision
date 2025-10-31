@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+.vite
+playwright-report
+test-results
+package-lock.json
+docs/**/*.md
+*.md

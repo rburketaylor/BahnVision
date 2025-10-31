@@ -22,20 +22,20 @@ All requests hit the FastAPI backend served at `VITE_API_BASE_URL` (default `htt
   - `q` (string, required, min 1)
   - `limit` (int, optional, default 8, max 20)
 - **Success (200)**:
-  ```json
-  {
-    "query": "marienplatz",
-    "results": [
-      {
-        "id": "de:09162:6",
-        "name": "Marienplatz",
-        "place": "München",
-        "latitude": 48.13743,
-        "longitude": 11.57549
-      }
-    ]
-  }
-  ```
+```json
+{
+  "query": "marienplatz",
+  "results": [
+    {
+      "id": "de:09162:6",
+      "name": "Marienplatz",
+      "place": "München",
+      "latitude": 48.13743,
+      "longitude": 11.57549
+    }
+  ]
+}
+```
 - **Errors**:
   - 404 when no stations found (`{"detail": "No stations found for query 'foo'."}`)
   - 503 on cache lock timeout; retry with exponential backoff.
@@ -93,12 +93,52 @@ All requests hit the FastAPI backend served at `VITE_API_BASE_URL` (default `htt
       {
         "duration_minutes": 27,
         "transfers": 1,
-        "departure": {"planned_time": "2025-10-29T07:40:00+00:00", "realtime_time": "2025-10-29T07:40:00+00:00", "platform": "Gleis 1", "line": "U6", "transport_type": "UBAHN"},
-        "arrival": {"planned_time": "2025-10-29T08:07:00+00:00", "realtime_time": "2025-10-29T08:09:00+00:00", "platform": "Gleis 2"},
+        "departure": {
+          "name": "Marienplatz",
+          "planned_time": "2025-10-29T07:40:00+00:00",
+          "realtime_time": "2025-10-29T07:40:00+00:00",
+          "platform": "Gleis 1",
+          "transport_type": "UBAHN",
+          "line": "U6",
+          "destination": "Garching Forschungszentrum",
+          "delay_minutes": 0,
+          "messages": []
+        },
+        "arrival": {
+          "name": "Garching Forschungszentrum",
+          "planned_time": "2025-10-29T08:07:00+00:00",
+          "realtime_time": "2025-10-29T08:09:00+00:00",
+          "platform": "Gleis 2",
+          "transport_type": "UBAHN",
+          "line": "U6",
+          "destination": null,
+          "delay_minutes": 2,
+          "messages": []
+        },
         "legs": [
           {
-            "origin": {"name": "Marienplatz", "planned_time": "2025-10-29T07:40:00+00:00"},
-            "destination": {"name": "Odeonsplatz", "planned_time": "2025-10-29T07:43:00+00:00"},
+            "origin": {
+              "name": "Marienplatz",
+              "planned_time": "2025-10-29T07:40:00+00:00",
+              "realtime_time": "2025-10-29T07:40:00+00:00",
+              "platform": "Gleis 1",
+              "transport_type": "UBAHN",
+              "line": "U6",
+              "destination": "Garching Forschungszentrum",
+              "delay_minutes": 0,
+              "messages": []
+            },
+            "destination": {
+              "name": "Odeonsplatz",
+              "planned_time": "2025-10-29T07:43:00+00:00",
+              "realtime_time": "2025-10-29T07:43:00+00:00",
+              "platform": "Gleis 2",
+              "transport_type": "UBAHN",
+              "line": "U6",
+              "destination": "Garching Forschungszentrum",
+              "delay_minutes": 0,
+              "messages": []
+            },
             "transport_type": "UBAHN",
             "line": "U6",
             "direction": "Garching Forschungszentrum",

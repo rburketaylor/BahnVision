@@ -9,7 +9,7 @@
 - Team wants rapid iteration, strong TypeScript support, and alignment with existing DevOps tooling (Docker Compose, GitHub Actions).
 
 ## Decision
-- Build the frontend as a single-page application using React 18 + TypeScript, bundled by Vite.
+- Build the frontend as a single-page application using React 19 + TypeScript, bundled by Vite.
 - Manage server communication with TanStack Query, wrapping backend endpoints (`/api/v1/mvg/...`, `/api/v1/health`).
 - Use Tailwind CSS + Headless UI for accessible component primitives, and React-Leaflet for geospatial features.
 - Rely on MSW for API mocking in development/testing to respect MVG rate limits.

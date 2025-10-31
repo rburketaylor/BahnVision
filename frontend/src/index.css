@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+body {
+  min-height: 100vh;
+  background-color: #f9fafb;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

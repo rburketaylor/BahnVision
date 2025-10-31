@@ -1,13 +1,207 @@
-# BahnVision Frontend Planning Index
+# BahnVision Frontend
 
-This directory captures high-level planning artifacts for the upcoming BahnVision frontend implementation. Each document focuses on a specific concern so the team can iterate on scope and sequencing before writing production code.
+React + TypeScript frontend for the BahnVision Munich transit live data dashboard.
 
-- `architecture.md` – proposed technical stack, application layering, data flows, and integration touchpoints.
-- `ux-flows.md` – prioritized user journeys, wireflow notes, and state considerations for core screens.
-- `api-integration.md` – REST contract summary across `/api/v1/health`, `/api/v1/mvg/departures`, `/api/v1/mvg/stations/search`, `/api/v1/mvg/routes/plan`, and `/metrics`, including request parameters and response payload outlines for frontend consumption.
-- `testing.md` – testing strategy spanning unit/UI/integration coverage, mock guidelines, and CI hooks.
-- `observability.md` – client-side telemetry, error reporting, and operational feedback loops that complement backend metrics.
-- `roadmap.md` – phase plan with milestones, dependencies, and delivery sequencing.
-- `adr.md` – initial architectural decision record capturing the rationale for the chosen stack and API usage patterns.
+## Quick Start
 
-Update these files as the frontend design evolves so implementation work stays aligned with backend capabilities described in `backend/docs/tech-spec.md`.
+### Prerequisites
+
+- Node.js 24+ and npm 11+
+- Backend API running at `http://localhost:8000` (see [../backend/README.md](../backend/README.md))
+
+### Development Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server with hot reload
+npm run dev
+
+# Application will be available at http://localhost:5173
+```
+
+### Environment Configuration
+
+Create a `.env` file (see `.env.example`):
+
+```bash
+VITE_API_BASE_URL=http://localhost:8000
+VITE_ENABLE_DEBUG_LOGS=false
+```
+
+## Available Scripts
+
+### Development
+
+- `npm run dev` — Start development server with hot reload (port 5173)
+- `npm run build` — Build for production (output to `dist/`)
+- `npm run preview` — Preview production build locally
+- `npm run type-check` — Run TypeScript type checking
+
+### Code Quality
+
+- `npm run lint` — Run ESLint and Prettier checks
+- `npm run lint:fix` — Auto-fix linting and formatting issues
+
+### Testing
+
+- `npm test` — Run unit tests with Vitest
+- `npm run test:ui` — Open Vitest UI for interactive testing
+- `npm run test:e2e` — Run Playwright end-to-end tests
+- `npm run test:e2e:ui` — Open Playwright UI for debugging E2E tests
+
+## Tech Stack
+
+- **Framework:** React 19 with TypeScript
+- **Build Tool:** Vite 7
+- **Routing:** React Router 7
+- **State Management:** TanStack Query 5 (server state) + Zustand 5 (UI state)
+- **Styling:** Tailwind CSS 4 + Headless UI 2
+- **Maps:** React-Leaflet 5 + Leaflet 1.9
+- **Testing:** Vitest 4 + React Testing Library + Playwright + MSW 2
+- **Error Tracking:** Sentry 10
+
+## Project Structure
+
+```
+src/
+├── components/     # Reusable UI components
+├── hooks/          # Custom React hooks (useDepartures, useStationSearch, etc.)
+├── lib/            # Configuration and query client setup
+├── pages/          # Page components (DeparturesPage, PlannerPage, InsightsPage)
+├── services/       # API client and external service integrations
+├── tests/          # Unit, integration, and E2E tests
+│   ├── mocks/      # MSW handlers for API mocking
+│   ├── unit/       # Unit tests
+│   └── e2e/        # Playwright E2E tests
+├── types/          # TypeScript type definitions
+└── utils/          # Helper functions (time, transport, etc.)
+```
+
+## Docker Deployment
+
+### Build and Run with Docker Compose
+
+```bash
+# From repository root
+docker compose up --build
+
+# Frontend available at http://localhost:3000
+# Backend API at http://localhost:8000
+```
+
+### Build Standalone
+
+```bash
+docker build -t bahnvision-frontend .
+docker run -p 3000:80 \
+  -e VITE_API_BASE_URL=http://localhost:8000 \
+  bahnvision-frontend
+```
+
+## API Integration
+
+The frontend consumes REST endpoints from the BahnVision backend:
+
+- `GET /api/v1/health` — System health status
+- `GET /api/v1/mvg/stations/search?q={query}` — Station autocomplete
+- `GET /api/v1/mvg/departures?station={id}` — Live departures board
+- `GET /api/v1/mvg/routes/plan?origin={id}&destination={id}` — Route planning
+- `GET /metrics` — Prometheus metrics (for analysts)
+
+See [docs/planning/api-integration.md](./docs/planning/api-integration.md) for complete API documentation.
+
+## Testing Strategy
+
+### Unit Tests
+
+Located in `src/tests/unit/`. Test individual functions, hooks, and components in isolation.
+
+```bash
+npm test -- api.test.ts
+```
+
+### E2E Tests
+
+Located in `src/tests/e2e/`. Test complete user flows with Playwright.
+
+```bash
+npm run test:e2e
+```
+
+### Coverage Goals
+
+- ≥80% statement coverage
+- 100% error branch coverage
+- ≥75% overall coverage
+
+See [docs/planning/testing.md](./docs/planning/testing.md) for the complete testing strategy.
+
+## Documentation
+
+- **[docs/IMPLEMENTATION_SUMMARY.md](./docs/IMPLEMENTATION_SUMMARY.md)** — Complete Phase 0 implementation details
+- **[docs/planning/](./docs/planning/)** — Planning documentation:
+  - [architecture.md](./docs/planning/architecture.md) — Tech stack and architectural patterns
+  - [ux-flows.md](./docs/planning/ux-flows.md) — User journeys and UI states
+  - [api-integration.md](./docs/planning/api-integration.md) — REST API contract details
+  - [testing.md](./docs/planning/testing.md) — Testing strategy and tools
+  - [observability.md](./docs/planning/observability.md) — Telemetry and error tracking
+  - [roadmap.md](./docs/planning/roadmap.md) — Phase plan and timeline
+  - [adr.md](./docs/planning/adr.md) — Architecture Decision Records
+
+## Contributing
+
+Follow Conventional Commits format for commit messages:
+
+```
+feat: add station search autocomplete
+fix: correct timezone conversion for departures
+docs: update API integration guide
+test: add E2E test for route planning
+```
+
+Run linting and tests before committing:
+
+```bash
+npm run lint:fix
+npm test -- --run
+```
+
+## Troubleshooting
+
+### Build Failures
+
+If you encounter TypeScript errors during build:
+
+```bash
+# Clear TypeScript cache
+rm -rf node_modules/.tmp
+
+# Rebuild
+npm run build
+```
+
+### Test Failures
+
+If tests fail to run:
+
+```bash
+# Ensure jsdom is installed
+npm install --save-dev jsdom
+
+# Clear test cache
+npx vitest --run --clearCache
+```
+
+### Port Already in Use
+
+If port 5173 is already in use:
+
+```bash
+# Kill the process using port 5173
+lsof -ti:5173 | xargs kill -9
+
+# Or specify a different port
+npm run dev -- --port 5174
+```

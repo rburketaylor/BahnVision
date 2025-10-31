@@ -6,7 +6,7 @@
 - Keep the stack lightweight so we can iterate quickly while leaving room for a native app later.
 
 ## Proposed Stack
-- Framework: React 18 + TypeScript orchestrated with Vite for fast local feedback.
+- Framework: React 19 + TypeScript orchestrated with Vite for fast local feedback.
 - Routing: React Router v7 (file-based via `@tanstack/router` alternative is an open question; start with Router v7 for maturity).
 - Data fetching: TanStack Query for cache-aware API consumption, retries, and background revalidation aligned with backend stale-refresh semantics.
 - UI toolkit: Tailwind CSS + Headless UI primitives for accessible components; custom theming for MVG branding.
