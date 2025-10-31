@@ -1,4 +1,20 @@
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   backend:
     build:
       context: .
