@@ -26,3 +26,6 @@ build/
 # Editor settings
 .vscode/
 .idea/
+
+# Code directory
+.code/
