@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 
 from app.core.config import get_settings
 from app.core.metrics import observe_cache_refresh, record_cache_event
-from app.models.mvg import DeparturesResponse, RouteResponse, StationSearchResponse
+from app.models.mvg import DeparturesResponse, RouteResponse, Station, StationSearchResponse
 from app.services.cache import CacheService, get_cache_service
 from app.services.mvg_client import (
     MVGClient,
@@ -26,6 +26,7 @@ router = APIRouter()
 
 _CACHE_DEPARTURES = "mvg_departures"
 _CACHE_STATION_SEARCH = "mvg_station_search"
+_CACHE_STATION_LIST = "mvg_station_list"
 _CACHE_ROUTE = "mvg_route"
 
 
@@ -478,6 +479,74 @@ async def search_stations(
     return response_payload
 
 
+@router.get(
+    "/stations/list",
+    response_model=list[Station],
+    summary="Get all MVG stations (cached)",
+)
+async def list_stations(
+    response: Response,
+    background_tasks: BackgroundTasks,
+    client: MVGClient = Depends(get_client),
+    cache: CacheService = Depends(get_cache_service),
+) -> list[Station]:
+    """Get the complete list of MVG stations."""
+    assert client is not None
+
+    settings = get_settings()
+    cache_key = "mvg:stations:all"
+
+    cached_payload = await cache.get_json(cache_key)
+    if cached_payload is not None:
+        record_cache_event(_CACHE_STATION_LIST, "hit")
+        response.headers["X-Cache-Status"] = "hit"
+        return [Station.model_validate(station) for station in cached_payload]
+
+    stale_payload = await cache.get_stale_json(cache_key)
+    if stale_payload is not None:
+        record_cache_event(_CACHE_STATION_LIST, "stale_return")
+        response.headers["X-Cache-Status"] = "stale-refresh"
+        background_tasks.add_task(
+            _background_refresh_station_list,
+            cache,
+            client,
+            cache_key,
+            settings,
+        )
+        return [Station.model_validate(station) for station in stale_payload]
+
+    record_cache_event(_CACHE_STATION_LIST, "miss")
+    try:
+        response_payload = await _refresh_station_list_cache(
+            cache=cache,
+            cache_key=cache_key,
+            client=client,
+            settings=settings,
+        )
+    except TimeoutError as exc:
+        record_cache_event(_CACHE_STATION_LIST, "lock_timeout")
+        stale_payload = await cache.get_stale_json(cache_key)
+        if stale_payload is not None:
+            record_cache_event(_CACHE_STATION_LIST, "stale_return")
+            response.headers["X-Cache-Status"] = "stale"
+            return [Station.model_validate(station) for station in stale_payload]
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except MVGServiceError as exc:
+        stale_payload = await cache.get_stale_json(cache_key)
+        if stale_payload is not None:
+            record_cache_event(_CACHE_STATION_LIST, "stale_return")
+            response.headers["X-Cache-Status"] = "stale"
+            return [Station.model_validate(station) for station in stale_payload]
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+
+    response.headers["X-Cache-Status"] = "miss"
+    return response_payload
+
+
 async def _refresh_station_search_cache(
     cache: CacheService,
     cache_key: str,
@@ -503,7 +572,28 @@ async def _refresh_station_search_cache(
             return StationSearchResponse.model_validate(cached_payload)
 
         start = time.perf_counter()
-        stations = await client.search_stations(query=query, limit=limit)
+
+        station_list_cache_key = "mvg:stations:all"
+        station_list_payload = await cache.get_json(station_list_cache_key)
+        if station_list_payload is None:
+            all_stations = await _refresh_station_list_cache(
+                cache=cache,
+                cache_key=station_list_cache_key,
+                client=client,
+                settings=settings,
+            )
+        else:
+            all_stations = [
+                Station.model_validate(station) for station in station_list_payload
+            ]
+
+        query_lower = query.lower()
+        stations: list[Station] = []
+        for station in all_stations:
+            if query_lower in station.name.lower() or query_lower in station.place.lower():
+                stations.append(station)
+                if len(stations) >= limit:
+                    break
         if not stations:
             detail = f"No stations found for query '{query}'."
             await cache.set_json(
@@ -525,6 +615,51 @@ async def _refresh_station_search_cache(
         )
         record_cache_event(_CACHE_STATION_SEARCH, "refresh_success")
         return response_payload
+
+
+async def _refresh_station_list_cache(
+    cache: CacheService,
+    cache_key: str,
+    client: MVGClient,
+    settings,
+) -> list[Station]:
+    """Refresh the complete station list cache."""
+    async with cache.single_flight(
+        cache_key,
+        ttl_seconds=settings.cache_singleflight_lock_ttl_seconds,
+        wait_timeout=settings.cache_singleflight_lock_wait_seconds,
+        retry_delay=settings.cache_singleflight_retry_delay_seconds,
+    ):
+        cached_payload = await cache.get_json(cache_key)
+        if cached_payload is not None:
+            record_cache_event(_CACHE_STATION_LIST, "refresh_skip_hit")
+            return [Station.model_validate(station) for station in cached_payload]
+
+        start = time.perf_counter()
+        stations = await client.get_all_stations()
+
+        if not stations:
+            stations = []
+
+        station_dicts = [
+            {
+                "id": station.id,
+                "name": station.name,
+                "place": station.place,
+                "latitude": station.latitude,
+                "longitude": station.longitude,
+            }
+            for station in stations
+        ]
+        await cache.set_json(
+            cache_key,
+            station_dicts,
+            ttl_seconds=settings.mvg_station_list_cache_ttl_seconds,
+            stale_ttl_seconds=settings.mvg_station_list_cache_stale_ttl_seconds,
+        )
+        observe_cache_refresh(_CACHE_STATION_LIST, time.perf_counter() - start)
+        record_cache_event(_CACHE_STATION_LIST, "refresh_success")
+        return stations
 
 
 async def _background_refresh_station_search(
@@ -553,6 +688,27 @@ async def _background_refresh_station_search(
     except Exception:  # pragma: no cover - defensive logging
         record_cache_event(_CACHE_STATION_SEARCH, "background_unexpected_error")
         logger.exception("Unexpected error while refreshing station search cache.")
+
+
+async def _background_refresh_station_list(
+    cache: CacheService,
+    client: MVGClient,
+    cache_key: str,
+    settings,
+) -> None:
+    """Background refresh task for the complete station list."""
+    try:
+        await _refresh_station_list_cache(
+            cache=cache,
+            cache_key=cache_key,
+            client=client,
+            settings=settings,
+        )
+    except TimeoutError:
+        record_cache_event(_CACHE_STATION_LIST, "background_lock_timeout")
+    except Exception:  # pragma: no cover - defensive logging
+        record_cache_event(_CACHE_STATION_LIST, "background_unexpected_error")
+        logger.exception("Unexpected error while refreshing station list cache.")
 
 
 async def _refresh_route_cache(

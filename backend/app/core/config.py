@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Any, Iterable
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +46,14 @@ class Settings(BaseSettings):
         600,
         alias="MVG_STATION_SEARCH_CACHE_STALE_TTL_SECONDS",
     )
+    mvg_station_list_cache_ttl_seconds: int = Field(
+        86400,
+        alias="MVG_STATION_LIST_CACHE_TTL_SECONDS",
+    )
+    mvg_station_list_cache_stale_ttl_seconds: int = Field(
+        172800,
+        alias="MVG_STATION_LIST_CACHE_STALE_TTL_SECONDS",
+    )
     mvg_route_cache_ttl_seconds: int = Field(
         120,
         alias="MVG_ROUTE_CACHE_TTL_SECONDS",
@@ -70,6 +79,19 @@ class Settings(BaseSettings):
         alias="CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS",
         ge=0.0,
     )
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+        ],
+        alias="CORS_ALLOW_ORIGINS",
+    )
+    cors_allow_origin_regex: str | None = Field(
+        default=None,
+        alias="CORS_ALLOW_ORIGIN_REGEX",
+    )
     database_url: str = Field(
         "postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision",
         alias="DATABASE_URL",
@@ -94,6 +116,28 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("cors_allow_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(
+        cls, value: Any
+    ) -> Iterable[str]:
+        """Allow comma-separated strings for CORS origins."""
+        if isinstance(value, str):
+            if not value:
+                return []
+            parsed = [item.strip() for item in value.split(",") if item.strip()]
+        else:
+            parsed = list(value) if value is not None else []
+
+        if any(origin == "*" for origin in parsed):
+            msg = (
+                "Unsafe CORS origin '*' detected. Specify explicit origins (e.g. "
+                "http://localhost:3000) or leave empty to disable CORS."
+            )
+            raise ValueError(msg)
+
+        return parsed
 
 
 @lru_cache

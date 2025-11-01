@@ -147,34 +147,45 @@ class MVGClient:
         departures = [self._map_departure(item) for item in raw_departures]
         return station, departures
 
-    async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
-        """Search MVG for stations matching the query string."""
+    async def get_all_stations(self) -> list[Station]:
+        """Fetch all MVG stations (cached)."""
         start = time.perf_counter()
         try:
-            raw_stations = await asyncio.to_thread(MvgApi.stations, query)
+            raw_stations = await asyncio.to_thread(MvgApi.stations)
         except MvgApiError as exc:
-            observe_mvg_request("station_search", "error", time.perf_counter() - start)
-            raise MVGServiceError("Failed to search MVG stations.") from exc
+            observe_mvg_request("station_list", "error", time.perf_counter() - start)
+            raise MVGServiceError("Failed to fetch MVG station list.") from exc
 
         if not raw_stations:
-            observe_mvg_request("station_search", "not_found", time.perf_counter() - start)
+            observe_mvg_request("station_list", "not_found", time.perf_counter() - start)
             return []
 
-        observe_mvg_request("station_search", "success", time.perf_counter() - start)
-        stations: list[Station] = []
-        for item in raw_stations:
-            stations.append(
-                Station(
-                    id=item["id"],
-                    name=item["name"],
-                    place=item["place"],
-                    latitude=item["latitude"],
-                    longitude=item["longitude"],
-                )
+        observe_mvg_request("station_list", "success", time.perf_counter() - start)
+        return [
+            Station(
+                id=item["id"],
+                name=item["name"],
+                place=item["place"],
+                latitude=item["latitude"],
+                longitude=item["longitude"],
             )
-            if 0 < limit <= len(stations):
-                break
-        return stations
+            for item in raw_stations
+        ]
+
+    async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
+        """Search MVG for stations matching the query string."""
+        if limit <= 0:
+            return []
+
+        stations = await self.get_all_stations()
+        query_lower = query.lower()
+        matches: list[Station] = []
+        for station in stations:
+            if query_lower in station.name.lower() or query_lower in station.place.lower():
+                matches.append(station)
+                if len(matches) >= limit:
+                    break
+        return matches
 
     async def plan_route(
         self,
