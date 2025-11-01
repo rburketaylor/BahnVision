@@ -27,8 +27,7 @@ export const handlers = [
   // Station search endpoint
   http.get(`${BASE_URL}/api/v1/mvg/stations/search`, ({ request }) => {
     const url = new URL(request.url)
-    const query = url.searchParams.get('q') ?? ''
-
+    const query = url.searchParams.get('query') ?? ''
     const response: StationSearchResponse = {
       query,
       results: [

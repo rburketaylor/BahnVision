@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react'
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
@@ -26,14 +26,13 @@ describe('StationSearch', () => {
 
   afterEach(() => {
     server.resetHandlers()
-    vi.useRealTimers()
   })
 
   afterAll(() => server.close())
 
   it('shows station results and selects a station', async () => {
-    vi.useFakeTimers()
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const user = userEvent.setup()
     const handleSelect = vi.fn()
 
     renderWithProviders(<StationSearch onSelect={handleSelect} />)
@@ -42,14 +41,15 @@ describe('StationSearch', () => {
     await user.type(input, 'Marien')
     await waitFor(() => expect(input).toHaveValue('Marien'))
 
-    act(() => {
-      vi.advanceTimersByTime(300)
-    })
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
 
-    const option = await screen.findByRole('option', { name: /marienplatz/i })
-    expect(option).toBeInTheDocument()
+    const options = await screen.findAllByRole('option')
+    const firstOption = options[0]
 
-    await user.click(screen.getByRole('button', { name: /marienplatz/i }))
+    expect(firstOption).toHaveTextContent(/Marienplatz/i)
+
+    const optionButton = within(firstOption).getByRole('button', { name: /marien\s?platz/i })
+    await user.click(optionButton)
 
     expect(handleSelect).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Marienplatz', place: 'München' })
@@ -64,19 +64,16 @@ describe('StationSearch', () => {
       )
     )
 
-    vi.useFakeTimers()
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const user = userEvent.setup()
 
     renderWithProviders(<StationSearch />)
 
     const input = screen.getByRole('combobox', { name: /station search/i })
     await user.type(input, 'Unknown station')
 
-    act(() => {
-      vi.advanceTimersByTime(300)
-    })
-
-    expect(await screen.findByText(/No stations found/i)).toBeInTheDocument()
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+    expect(await screen.findByRole('option', { name: /no stations found/i })).toBeInTheDocument()
   })
 
   it('surfaces API errors and allows retry', async () => {
@@ -89,28 +86,25 @@ describe('StationSearch', () => {
       })
     )
 
-    vi.useFakeTimers()
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const user = userEvent.setup()
 
     renderWithProviders(<StationSearch />)
 
     const input = screen.getByRole('combobox', { name: /station search/i })
     await user.type(input, 'Marien')
 
-    act(() => {
-      vi.advanceTimersByTime(300)
-    })
-
-    expect(await screen.findByText(/Unable to load stations/i)).toBeInTheDocument()
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+    expect(await screen.findByRole('option', { name: /unable to load stations/i })).toBeInTheDocument()
     expect(errorHandler).toHaveBeenCalledTimes(1)
 
     server.use(
       http.get(`${BASE_URL}/api/v1/mvg/stations/search`, ({ request }) => {
         const url = new URL(request.url)
-        const q = url.searchParams.get('q') ?? ''
+        const queryParam = url.searchParams.get('query') ?? ''
         return HttpResponse.json(
           {
-            query: q,
+            query: queryParam,
             results: [
               {
                 id: 'de:09162:6',
@@ -126,9 +120,14 @@ describe('StationSearch', () => {
       })
     )
 
-    await user.click(screen.getByRole('button', { name: /try again/i }))
+    const retryButton = await screen.findByRole('button', { name: /try again/i })
+    await user.click(retryButton)
 
-    const option = await screen.findByRole('option', { name: /marienplatz/i })
-    expect(option).toBeInTheDocument()
+    const options = await screen.findAllByRole('option')
+    const firstOption = options[0]
+    expect(firstOption).toHaveTextContent(/Marienplatz/i)
+
+    const optionButton = within(firstOption).getByRole('button', { name: /marien\s?platz/i })
+    expect(optionButton).toBeInTheDocument()
   })
 })
