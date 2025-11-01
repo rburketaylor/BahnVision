@@ -48,7 +48,7 @@ export function StationSearch({
     isLoading,
     error,
     refetch,
-  } = useStationSearch({ q: debouncedQuery, limit }, isEnabled)
+  } = useStationSearch({ query: debouncedQuery, limit }, isEnabled)
 
   const results = useMemo(() => data?.data.results ?? [], [data])
   const apiError = error instanceof ApiError ? error : null

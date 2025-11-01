@@ -97,7 +97,7 @@ export interface ErrorResponse {
 
 // Query parameters types
 export interface StationSearchParams {
-  q: string
+  query: string
   limit?: number
 }
 
