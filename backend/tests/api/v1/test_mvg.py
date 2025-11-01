@@ -343,8 +343,12 @@ def test_route_not_found(api_client, fake_cache, fake_mvg_client):
 
     # Verify not-found was written to cache
     assert len(fake_cache.recorded_sets) > 0
-    written_key, written_value, _, _ = fake_cache.recorded_sets[0]
-    assert written_value.get("__status") == "not_found"
+    for written_key, written_value, _, _ in fake_cache.recorded_sets:
+        if written_key == "mvg:route:marienplatz:hauptbahnhof:now:all":
+            assert written_value.get("__status") == "not_found"
+            break
+    else:  # pragma: no cover - defensive guard for future regressions
+        raise AssertionError("route cache write not recorded")
 
 
 def test_route_service_error(api_client, fake_cache, fake_mvg_client):
@@ -460,7 +464,7 @@ def test_station_search_cache_miss(api_client, fake_cache, fake_mvg_client):
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
     assert response.status_code == 200
     assert response.headers["X-Cache-Status"] == "miss"
-    assert fake_mvg_client.call_count_station_search == 1
+    assert fake_mvg_client.call_count_station_list == 1
 
 
 def test_station_search_not_found(api_client, fake_cache, fake_mvg_client):
@@ -474,13 +478,17 @@ def test_station_search_not_found(api_client, fake_cache, fake_mvg_client):
 
     # Verify not-found marker was cached
     assert len(fake_cache.recorded_sets) > 0
-    written_key, written_value, _, _ = fake_cache.recorded_sets[0]
-    assert written_value.get("__status") == "not_found"
+    for written_key, written_value, _, _ in fake_cache.recorded_sets:
+        if written_key == "mvg:stations:search:unknown:8":
+            assert written_value.get("__status") == "not_found"
+            break
+    else:  # pragma: no cover - defensive guard for future regressions
+        raise AssertionError("station search cache write not recorded")
 
 
 def test_station_search_service_error(api_client, fake_cache, fake_mvg_client):
     """Test station search when MVG service fails."""
-    scenario = MVGClientScenario(fail_station_search=True)
+    scenario = MVGClientScenario(fail_station_list=True)
     fake_mvg_client.configure(scenario)
     fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
 

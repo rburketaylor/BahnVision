@@ -82,10 +82,10 @@ class FakeMVGClient:
     def __init__(self) -> None:
         self.departure_calls = 0
         self.route_calls = 0
-        self.search_calls = 0
+        self.station_list_calls = 0
         self.fail_departures = False
         self.fail_routes = False
-        self.fail_search = False
+        self.fail_station_list = False
 
     async def get_departures(
         self,
@@ -120,18 +120,37 @@ class FakeMVGClient:
         )
         return station, [departure]
 
+    async def get_all_stations(self) -> list[Station]:
+        self.station_list_calls += 1
+        if self.fail_station_list:
+            raise MVGServiceError("station list unavailable")
+        return [
+            Station(
+                id="station:marienplatz",
+                name="Marienplatz",
+                place="München",
+                latitude=48.13743,
+                longitude=11.57549,
+            ),
+            Station(
+                id="station:hauptbahnhof",
+                name="Hauptbahnhof",
+                place="München",
+                latitude=48.140,
+                longitude=11.558,
+            ),
+        ]
+
     async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
-        self.search_calls += 1
-        if self.fail_search:
-            raise MVGServiceError("search unavailable")
-        station = Station(
-            id=f"station:{query}",
-            name=query.title(),
-            place="München",
-            latitude=48.13743,
-            longitude=11.57549,
-        )
-        return [station][:limit]
+        stations = await self.get_all_stations()
+        query_lower = query.lower()
+        matches: list[Station] = []
+        for station in stations:
+            if query_lower in station.name.lower() or query_lower in station.place.lower():
+                matches.append(station)
+                if len(matches) >= limit:
+                    break
+        return matches
 
     async def plan_route(
         self,

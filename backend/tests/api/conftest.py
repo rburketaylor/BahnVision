@@ -96,7 +96,7 @@ class MVGClientScenario:
     """Configuration for fake MVG client behavior."""
 
     fail_departures: bool = False
-    fail_station_search: bool = False
+    fail_station_list: bool = False
     fail_route: bool = False
     not_found_station: bool = False
     not_found_route: bool = False
@@ -111,7 +111,7 @@ class FakeMVGClient:
     def __init__(self) -> None:
         self.scenario = MVGClientScenario()
         self.call_count_departures = 0
-        self.call_count_station_search = 0
+        self.call_count_station_list = 0
         self.call_count_route = 0
 
     def configure(self, scenario: MVGClientScenario) -> None:
@@ -171,11 +171,11 @@ class FakeMVGClient:
         ]
         return station, departures
 
-    async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
-        """Return configured station search results or raise error."""
-        self.call_count_station_search += 1
-        if self.scenario.fail_station_search:
-            raise MVGServiceError("Failed to search MVG stations.")
+    async def get_all_stations(self) -> list[Station]:
+        """Return configured station list or default."""
+        self.call_count_station_list += 1
+        if self.scenario.fail_station_list:
+            raise MVGServiceError("Failed to fetch MVG station list.")
         if self.scenario.station_search_result is not None:
             return self.scenario.station_search_result
 
@@ -187,8 +187,28 @@ class FakeMVGClient:
                 place="München",
                 latitude=48.137,
                 longitude=11.575,
-            )
+            ),
+            Station(
+                id="de:09162:70",
+                name="Hauptbahnhof",
+                place="München",
+                latitude=48.140,
+                longitude=11.558,
+            ),
         ]
+
+    async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
+        """Return configured station search results or raise error."""
+        stations = await self.get_all_stations()
+
+        query_lower = query.lower()
+        results: list[Station] = []
+        for station in stations:
+            if query_lower in station.name.lower() or query_lower in station.place.lower():
+                results.append(station)
+                if len(results) >= limit:
+                    break
+        return results
 
     async def plan_route(
         self,
