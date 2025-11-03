@@ -24,28 +24,34 @@ export function DeparturesPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {stationId && <h1 className="text-2xl font-bold mb-4">Departures for {station?.name}</h1>}
+    <div className="space-y-8">
+      <header>
+        {stationId && <h1 className="text-4xl font-bold text-foreground">Departures for {station?.name}</h1>}
+      </header>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {ALL_TRANSPORT_TYPES.map((type) => (
-          <button
-            key={type}
-            onClick={() => toggleTransportType(type)}
-            className={`px-3 py-1 text-sm font-medium rounded-full ${
-              selectedTransportTypes.includes(type)
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700'
-            }`}
-          >
-            {type}
-          </button>
-        ))}
+      <div className="rounded-lg border border-border bg-card p-4 shadow-md">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {ALL_TRANSPORT_TYPES.map((type) => (
+            <button
+              key={type}
+              onClick={() => toggleTransportType(type)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+                selectedTransportTypes.includes(type)
+                  ? 'bg-gray-900 text-white border border-gray-900 shadow-sm'
+                  : 'bg-white text-gray-900 border border-gray-300 hover:bg-gray-100'
+              }`}
+            >
+              {type === 'REGIONAL_BUS' ? 'REGIONAL BUS' : type}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {isLoading && <p>Loading departures...</p>}
-      {error && <p className="text-red-500">Error fetching departures: {error.message}</p>}
-      {departures && <DeparturesBoard departures={departures} />}
+      <section className="rounded-lg border border-border bg-card p-6 shadow-lg">
+        {isLoading && <p className="text-center text-gray-400">Loading departures...</p>}
+        {error && <p className="text-center text-red-500">Error fetching departures: {error.message}</p>}
+        {departures && <DeparturesBoard departures={departures} />}
+      </section>
     </div>
   )
 }
