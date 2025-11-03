@@ -33,7 +33,7 @@ class Departure(BaseModel):
     realtime_time: datetime | None = Field(
         None, description="Real-time departure time in UTC."
     )
-    delay_minutes: int = Field(..., ge=0)
+    delay_minutes: int = Field(..., ge=-1440)
     platform: str | None
     realtime: bool
     line: str
