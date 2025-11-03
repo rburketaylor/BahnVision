@@ -130,22 +130,34 @@ class MVGClient:
     ) -> tuple[Station, list[Departure]]:
         """Fetch departures for a station specified via query string."""
         station = await self.get_station(station_query)
-        start = time.perf_counter()
-        try:
+        if not transport_types:
             raw_departures = await asyncio.to_thread(
                 self._fetch_departures,
                 station.id,
                 limit,
                 offset,
-                list(transport_types) if transport_types else None,
+                None,
             )
-        except MvgApiError as exc:
-            observe_mvg_request("departures", "error", time.perf_counter() - start)
-            raise MVGServiceError("Failed to retrieve departures from MVG.") from exc
+            departures = [self._map_departure(item) for item in raw_departures]
+            return station, departures
 
-        observe_mvg_request("departures", "success", time.perf_counter() - start)
-        departures = [self._map_departure(item) for item in raw_departures]
-        return station, departures
+        tasks = []
+        for tt in transport_types:
+            tasks.append(
+                asyncio.to_thread(self._fetch_departures, station.id, limit, offset, [tt])
+            )
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        departures = []
+        for result in results:
+            if isinstance(result, list):
+                departures.extend([self._map_departure(item) for item in result])
+            else:
+                # Log the error, but don't fail the entire request
+                print(f"Error fetching departures: {result}")
+
+        departures.sort(key=lambda d: d.planned_time)
+        return station, departures[:limit]
 
     async def get_all_stations(self) -> list[Station]:
         """Fetch all MVG stations (cached)."""

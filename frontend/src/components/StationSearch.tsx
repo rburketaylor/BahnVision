@@ -148,7 +148,7 @@ export function StationSearch({
 
   return (
     <div ref={containerRef} className="relative">
-      <label htmlFor={inputId} className="block text-sm font-medium text-slate-700 mb-1">
+      <label htmlFor={inputId} className="mb-1 block text-sm font-medium text-gray-700">
         {label}
       </label>
       <div className="relative">
@@ -174,11 +174,11 @@ export function StationSearch({
               ? `${listboxId}-option-${results[activeIndex].id}`
               : undefined
           }
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
         />
         {isInitialLoading && (
           <div className="absolute inset-y-0 right-3 flex items-center">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500" />
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-primary" />
           </div>
         )}
       </div>
@@ -191,7 +191,7 @@ export function StationSearch({
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-10 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+          className="absolute z-40 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg"
         >
           {hasResults &&
             results.map((station, index) => (
@@ -206,17 +206,17 @@ export function StationSearch({
             ))}
 
           {showNoResults && (
-            <li className="px-3 py-2 text-sm text-slate-500" role="option" aria-disabled="true">
+            <li className="px-4 py-3 text-sm text-gray-400" role="option" aria-disabled="true">
               No stations found
             </li>
           )}
 
           {showError && (
-            <li className="px-3 py-2 text-sm text-red-600" role="option" aria-disabled="true">
+            <li className="px-4 py-3 text-sm text-red-500" role="option" aria-disabled="true">
               Unable to load stations.{' '}
               <button
                 type="button"
-                className="font-medium text-red-700 underline underline-offset-2 hover:text-red-800"
+                className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
                 onClick={() => refetch()}
               >
                 Try again

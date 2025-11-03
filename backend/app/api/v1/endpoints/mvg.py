@@ -86,75 +86,181 @@ async def departures(
         ) from exc
 
     settings = get_settings()
-    cache_key = _departures_cache_key(station, limit, offset, parsed_transport_types)
+    all_departures = []
+    station_details = None
 
-    cached_payload = await cache.get_json(cache_key)
-    if cached_payload is not None:
-        record_cache_event(_CACHE_DEPARTURES, "hit")
-        if cached_payload.get("__status") == "not_found":
+    if not parsed_transport_types:
+        cache_key = _departures_cache_key(station, limit, offset, [])
+        cached_payload = await cache.get_json(cache_key)
+        if cached_payload is not None:
+            record_cache_event(_CACHE_DEPARTURES, "hit")
+            if cached_payload.get("__status") == "not_found":
+                response.headers["X-Cache-Status"] = "hit"
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail=cached_payload["detail"]
+                )
             response.headers["X-Cache-Status"] = "hit"
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=cached_payload["detail"]
+            return DeparturesResponse.model_validate(cached_payload)
+
+        stale_payload = await cache.get_stale_json(cache_key)
+        if stale_payload is not None and stale_payload.get("__status") != "not_found":
+            record_cache_event(_CACHE_DEPARTURES, "stale_return")
+            response.headers["X-Cache-Status"] = "stale-refresh"
+            background_tasks.add_task(
+                _background_refresh_departures,
+                cache,
+                client,
+                cache_key,
+                station,
+                limit,
+                offset,
+                [],
+                settings,
             )
-        response.headers["X-Cache-Status"] = "hit"
-        return DeparturesResponse.model_validate(cached_payload)
+            return DeparturesResponse.model_validate(stale_payload)
 
-    stale_payload = await cache.get_stale_json(cache_key)
-    if stale_payload is not None and stale_payload.get("__status") != "not_found":
-        record_cache_event(_CACHE_DEPARTURES, "stale_return")
-        response.headers["X-Cache-Status"] = "stale-refresh"
-        background_tasks.add_task(
-            _background_refresh_departures,
-            cache,
-            client,
-            cache_key,
-            station,
-            limit,
-            offset,
-            parsed_transport_types,
-            settings,
-        )
-        return DeparturesResponse.model_validate(stale_payload)
+        record_cache_event(_CACHE_DEPARTURES, "miss")
+        try:
+            response_payload = await _refresh_departures_cache(
+                cache=cache,
+                cache_key=cache_key,
+                client=client,
+                station=station,
+                limit=limit,
+                offset=offset,
+                transport_types=[],
+                settings=settings,
+            )
+        except TimeoutError as exc:
+            record_cache_event(_CACHE_DEPARTURES, "lock_timeout")
+            stale_payload = await cache.get_stale_json(cache_key)
+            if stale_payload is not None and stale_payload.get("__status") != "not_found":
+                record_cache_event(_CACHE_DEPARTURES, "stale_return")
+                response.headers["X-Cache-Status"] = "stale"
+                return DeparturesResponse.model_validate(stale_payload)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        except StationNotFoundError as exc:
+            record_cache_event(_CACHE_DEPARTURES, "not_found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+        except MVGServiceError as exc:
+            stale_payload = await cache.get_stale_json(cache_key)
+            if stale_payload is not None and stale_payload.get("__status") != "not_found":
+                record_cache_event(_CACHE_DEPARTURES, "stale_return")
+                response.headers["X-Cache-Status"] = "stale"
+                return DeparturesResponse.model_validate(stale_payload)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            ) from exc
 
-    record_cache_event(_CACHE_DEPARTURES, "miss")
-    try:
-        response_payload = await _refresh_departures_cache(
-            cache=cache,
-            cache_key=cache_key,
-            client=client,
-            station=station,
-            limit=limit,
-            offset=offset,
-            transport_types=parsed_transport_types,
-            settings=settings,
-        )
-    except TimeoutError as exc:
-        record_cache_event(_CACHE_DEPARTURES, "lock_timeout")
+        response.headers["X-Cache-Status"] = "miss"
+        return response_payload
+
+    for transport_type in parsed_transport_types:
+        cache_key = _departures_cache_key(station, limit, offset, [transport_type])
+        cached_payload = await cache.get_json(cache_key)
+        if cached_payload is not None:
+            record_cache_event(_CACHE_DEPARTURES, "hit")
+            if cached_payload.get("__status") == "not_found":
+                continue
+            response.headers["X-Cache-Status"] = "hit"
+            departures_response = DeparturesResponse.model_validate(cached_payload)
+            if not station_details:
+                station_details = departures_response.station
+            all_departures.extend(departures_response.departures)
+            continue
+
         stale_payload = await cache.get_stale_json(cache_key)
         if stale_payload is not None and stale_payload.get("__status") != "not_found":
             record_cache_event(_CACHE_DEPARTURES, "stale_return")
-            response.headers["X-Cache-Status"] = "stale"
-            return DeparturesResponse.model_validate(stale_payload)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-    except StationNotFoundError as exc:
-        record_cache_event(_CACHE_DEPARTURES, "not_found")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
-    except MVGServiceError as exc:
-        stale_payload = await cache.get_stale_json(cache_key)
-        if stale_payload is not None and stale_payload.get("__status") != "not_found":
-            record_cache_event(_CACHE_DEPARTURES, "stale_return")
-            response.headers["X-Cache-Status"] = "stale"
-            return DeparturesResponse.model_validate(stale_payload)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+            response.headers["X-Cache-Status"] = "stale-refresh"
+            background_tasks.add_task(
+                _background_refresh_departures,
+                cache,
+                client,
+                cache_key,
+                station,
+                limit,
+                offset,
+                [transport_type],
+                settings,
+            )
+            departures_response = DeparturesResponse.model_validate(stale_payload)
+            if not station_details:
+                station_details = departures_response.station
+            all_departures.extend(departures_response.departures)
+            continue
 
-    response.headers["X-Cache-Status"] = "miss"
-    return response_payload
+        record_cache_event(_CACHE_DEPARTURES, "miss")
+        try:
+            response_payload = await _refresh_departures_cache(
+                cache=cache,
+                cache_key=cache_key,
+                client=client,
+                station=station,
+                limit=limit,
+                offset=offset,
+                transport_types=[transport_type],
+                settings=settings,
+            )
+            if not station_details:
+                station_details = response_payload.station
+            all_departures.extend(response_payload.departures)
+        except TimeoutError as exc:
+            record_cache_event(_CACHE_DEPARTURES, "lock_timeout")
+            stale_payload = await cache.get_stale_json(cache_key)
+            if stale_payload is not None and stale_payload.get("__status") != "not_found":
+                record_cache_event(_CACHE_DEPARTURES, "stale_return")
+                response.headers["X-Cache-Status"] = "stale"
+                departures_response = DeparturesResponse.model_validate(stale_payload)
+                if not station_details:
+                    station_details = departures_response.station
+                all_departures.extend(departures_response.departures)
+                continue
+            # If we have some departures, we can return them
+            if all_departures:
+                break
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        except StationNotFoundError as exc:
+            record_cache_event(_CACHE_DEPARTURES, "not_found")
+            # If we have some departures, we can return them
+            if all_departures:
+                break
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+        except MVGServiceError as exc:
+            stale_payload = await cache.get_stale_json(cache_key)
+            if stale_payload is not None and stale_payload.get("__status") != "not_found":
+                record_cache_event(_CACHE_DEPARTURES, "stale_return")
+                response.headers["X-Cache-Status"] = "stale"
+                departures_response = DeparturesResponse.model_validate(stale_payload)
+                if not station_details:
+                    station_details = departures_response.station
+                all_departures.extend(departures_response.departures)
+                continue
+            # If we have some departures, we can return them
+            if all_departures:
+                break
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            ) from exc
+
+    if not station_details:
+        # This should not happen if we have departures
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Station not found"
+        )
+
+    all_departures.sort(key=lambda d: d.planned_time)
+    return DeparturesResponse(
+        station=station_details, departures=all_departures[:limit]
+    )
 
 
 @router.get(

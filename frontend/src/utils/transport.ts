@@ -6,19 +6,25 @@
 import type { TransportType } from '../types/api'
 
 export const TRANSPORT_COLORS: Record<TransportType, string> = {
-  UBAHN: '#0065AE', // U-Bahn blue
-  SBAHN: '#00AB4E', // S-Bahn green
-  TRAM: '#D60F26', // Tram red
-  BUS: '#00558C', // Bus dark blue
-  REGIONAL: '#00558C', // Regional services dark blue
+  BAHN: '#00558C',
+  SBAHN: '#00AB4E',
+  UBAHN: '#0065AE',
+  TRAM: '#D60F26',
+  BUS: '#00558C',
+  REGIONAL_BUS: '#00558C',
+  SEV: '#00558C',
+  SCHIFF: '#00558C',
 }
 
 export const TRANSPORT_LABELS: Record<TransportType, string> = {
-  UBAHN: 'U-Bahn',
+  BAHN: 'Bahn',
   SBAHN: 'S-Bahn',
+  UBAHN: 'U-Bahn',
   TRAM: 'Tram',
   BUS: 'Bus',
-  REGIONAL: 'Regional',
+  REGIONAL_BUS: 'Regional Bus',
+  SEV: 'SEV',
+  SCHIFF: 'Schiff',
 }
 
 export function getTransportColor(type: TransportType): string {
