@@ -110,7 +110,7 @@ The frontend consumes REST endpoints from the BahnVision backend:
 - `GET /api/v1/mvg/routes/plan?origin={id}&destination={id}` — Route planning
 - `GET /metrics` — Prometheus metrics (for analysts)
 
-See [docs/planning/api-integration.md](./docs/planning/api-integration.md) for complete API documentation.
+See [docs/architecture/api-integration.md](./docs/architecture/api-integration.md) for complete API documentation.
 
 ## Testing Strategy
 
@@ -136,19 +136,21 @@ npm run test:e2e
 - 100% error branch coverage
 - ≥75% overall coverage
 
-See [docs/planning/testing.md](./docs/planning/testing.md) for the complete testing strategy.
+See [docs/operations/testing.md](./docs/operations/testing.md) for the complete testing strategy.
 
 ## Documentation
 
-- **[docs/IMPLEMENTATION_SUMMARY.md](./docs/IMPLEMENTATION_SUMMARY.md)** — Complete Phase 0 implementation details
-- **[docs/planning/](./docs/planning/)** — Planning documentation:
-  - [architecture.md](./docs/planning/architecture.md) — Tech stack and architectural patterns
-  - [ux-flows.md](./docs/planning/ux-flows.md) — User journeys and UI states
-  - [api-integration.md](./docs/planning/api-integration.md) — REST API contract details
-  - [testing.md](./docs/planning/testing.md) — Testing strategy and tools
-  - [observability.md](./docs/planning/observability.md) — Telemetry and error tracking
-  - [roadmap.md](./docs/planning/roadmap.md) — Phase plan and timeline
-  - [adr.md](./docs/planning/adr.md) — Architecture Decision Records
+- **[docs/architecture/implementation-summary.md](./docs/architecture/implementation-summary.md)** — Complete Phase 0 implementation details
+- **[docs/](./docs/)** — Organised documentation hub:
+  - [architecture/overview.md](./docs/architecture/overview.md) — Tech stack and architectural patterns
+  - [architecture/api-integration.md](./docs/architecture/api-integration.md) — REST API contract details
+  - [architecture/adr.md](./docs/architecture/adr.md) — Architecture Decision Records
+  - [product/ux-flows.md](./docs/product/ux-flows.md) — User journeys and UI states
+  - [operations/testing.md](./docs/operations/testing.md) — Testing strategy and tools
+  - [operations/observability.md](./docs/operations/observability.md) — Telemetry and error tracking
+  - [roadmap/roadmap.md](./docs/roadmap/roadmap.md) — Phase plan and timeline
+  - [roadmap/delivery-plan.md](./docs/roadmap/delivery-plan.md) — Detailed workstreams and checklists
+  - [roadmap/unified-implementation-plan.md](./docs/roadmap/unified-implementation-plan.md) — Sequential, automation-friendly delivery steps
 
 ## Contributing
 

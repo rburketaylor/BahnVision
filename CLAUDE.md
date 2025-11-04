@@ -44,10 +44,10 @@ pytest backend/tests -v
 - `backend/app/api/metrics.py` — Prometheus metrics endpoint at `/metrics`
 
 ### Service Layer Pattern
-Services in `backend/app/services/` encapsulate domain logic:
-- `mvg_client.py` — wraps MVG API interactions with rate limit handling and latency instrumentation
-- `cache.py` — Valkey-backed cache service implementing single-flight locks, stale fallbacks, and circuit breaker
-- Domain services aggregate MVG client, cache, and persistence operations
+Services in `backend/app/services/` encapsulate shared infrastructure:
+- `mvg_client.py` — wraps MVG API interactions with rate limit handling and latency instrumentation.
+- `cache.py` — Valkey-backed cache service implementing single-flight locks, stale fallbacks, and circuit breaker behaviour.
+Domain-specific orchestration currently happens inside route handlers and repository helpers; future service classes will live alongside these modules.
 
 ### Cache Architecture (Critical)
 The `CacheService` (backend/app/services/cache.py:15) implements sophisticated production patterns:
@@ -104,7 +104,7 @@ Prometheus metrics follow `bahnvision_*` naming convention:
 
 Structured JSON logging with `request_id`, `station_id`, `cache_status`, `mvg_status`, `duration_ms`.
 
-Target SLAs (per tech-spec.md):
+Target SLAs (per `backend/docs/architecture/tech-spec.md`):
 - Cache hit ratio >70% (warning <70%, critical <55%)
 - MVG P95 latency <750ms
 - API exception rate <5/min
@@ -132,10 +132,9 @@ Prefer typed function signatures. API request/response validation enforced via P
 
 ## Documentation References
 
-- `backend/docs/tech-spec.md` — canonical backend specification with architecture diagram, data models, REST interfaces, observability requirements, and rollout plan
-- `backend/docs/prd.md` — product requirements
-- `backend/docs/tasks.json` — structured task backlog
-- `AGENTS.md` — repository guidelines including commit message format (Conventional Commits: `feat:`, `docs:`, `build:`)
+- `backend/docs/architecture/tech-spec.md` — canonical backend specification with architecture diagram, data models, REST interfaces, observability requirements, and rollout plan.
+- `backend/docs/product/prd.md` — product requirements.
+- `backend/docs/roadmap/tasks.json` — structured task backlog.
 
 ## Environment Configuration
 

@@ -1,0 +1,85 @@
+[
+  {
+    "id": "MS1-T2",
+    "title": "MS1: Generate Alembic migrations for core tables",
+    "description": "Milestone Schema & Migrations: implement Alembic revisions for stations, departures, route_snapshots, weather_observations, and ingestion_runs per spec.",
+    "dependsOn": [],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "`alembic upgrade head` on a fresh database creates all tables with expected columns and indexes",
+      "README or design-doc updated with migration identifiers"
+    ]
+  },
+  {
+    "id": "MS1-T3",
+    "title": "MS1: Validate migration upgrade and rollback automation",
+    "description": "Milestone Schema & Migrations: script upgrade+rollback smoke tests and ensure CI runs migrations against ephemeral Postgres.",
+    "dependsOn": [
+      "MS1-T2"
+    ],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "`alembic upgrade head && alembic downgrade -1` succeeds in CI pipeline",
+      "Test fixtures load sample data and survive rollback/upgrade cycle"
+    ]
+  },
+  {
+    "id": "MS2-T1",
+    "title": "MS2: Persist departures within departure service workflow",
+    "description": "Milestone Persistence Integration: extend departure_service to write MVG responses to Postgres, tagging cache metadata per DoD.",
+    "dependsOn": [
+      "MS1-T2"
+    ],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Unit or integration test verifies departures are stored with transport_mode and delay fields",
+      "`X-Cache-Status` header remains accurate for hits, misses, and stale paths"
+    ]
+  },
+  {
+    "id": "MS2-T2",
+    "title": "MS2: Persist itineraries within route service",
+    "description": "Milestone Persistence Integration: capture route planning payloads and filters into route_snapshots with external status tracking.",
+    "dependsOn": [
+      "MS1-T2"
+    ],
+    "estimateH": 6,
+    "risk": "medium",
+    "acceptanceTests": [
+      "Route planning tests confirm itineraries and MVG status stored in Postgres",
+      "404 responses set cache not-found markers and correct HTTP semantics"
+    ]
+  },
+  {
+    "id": "MS2-T3",
+    "title": "MS2: Add persistence test fixtures and coverage",
+    "description": "Milestone Persistence Integration: add reusable DB fixtures and ensure pytest covers departures and route persistence paths.",
+    "dependsOn": [
+      "MS2-T1",
+      "MS2-T2"
+    ],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "`pytest backend/tests/services` passes with new persistence cases",
+      "Fixtures documented for reuse in future persistence tests"
+    ]
+  },
+  {
+    "id": "MS4-T2",
+    "title": "MS4: Implement structured logging with correlation IDs",
+    "description": "Milestone Observability: produce JSON logs containing request_id, cache_status, mv_g_status, and sanitized payload details.",
+    "dependsOn": [
+      "MS2-T3"
+    ],
+    "estimateH": 4,
+    "risk": "low",
+    "acceptanceTests": [
+      "Log sample in CI contains request_id, station_id, cache_status fields",
+      "PII lint or manual review confirms sensitive data stripped from logs"
+    ]
+  }
+]

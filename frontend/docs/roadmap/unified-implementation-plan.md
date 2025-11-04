@@ -4,7 +4,7 @@ This document synthesizes all planning artifacts and codebase analysis into a si
 
 ## 1. Project Overview & Technical Foundation
 
-The frontend is a React 19 + TypeScript single-page application built with Vite. It leverages Tailwind CSS for styling, TanStack Query for data fetching, and React Router for navigation. The backend API contract is documented in `frontend/docs/planning/api-integration.md`.
+The frontend is a React 19 + TypeScript single-page application built with Vite. It leverages Tailwind CSS for styling, TanStack Query for data fetching, and React Router for navigation. The backend API contract is documented in `frontend/docs/architecture/api-integration.md`.
 
 **Key Technical Decisions (from ADR & Architecture):**
 - **Stack:** React, Vite, TypeScript, Tailwind CSS, Headless UI.
@@ -99,6 +99,6 @@ This final phase focuses on visual refinements, performance, and documentation.
     *   Review Web Vitals scores and optimize rendering performance.
 
 3.  **Final QA & Documentation:**
-    *   Conduct a full manual QA pass based on the checklist in `frontend/docs/planning/testing.md`.
+    *   Conduct a full manual QA pass based on the checklist in `frontend/docs/operations/testing.md`.
     *   Update the `README.md` with final build/run instructions.
     *   Create screenshots and document key features for operator handoff.

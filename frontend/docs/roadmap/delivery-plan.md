@@ -1,14 +1,14 @@
 # BahnVision Frontend Delivery Plan
 
 ## Status At A Glance
-- Phase 0 foundation is complete: React 19 + TypeScript + Vite project, Tailwind styling, TanStack Query hooks, typed API client, tests, and build tooling are ready to go (see `docs/IMPLEMENTATION_SUMMARY.md`).
-- Backend endpoints for health, station search, departures, route planning, and metrics are live and typed (`docs/planning/api-integration.md`).
+- Phase 0 foundation is complete: React 19 + TypeScript + Vite project, Tailwind styling, TanStack Query hooks, typed API client, tests, and build tooling are ready to go (see `frontend/docs/architecture/implementation-summary.md`).
+- Backend endpoints for health, station search, departures, route planning, and metrics are live and typed (`frontend/docs/architecture/api-integration.md`).
 - Goal: ship the MVP (station search, departures, planner, health widget) by end of Q1 2026.
 
 Open setup item: confirm the `QueryClientProvider` wraps the app in `src/main.tsx`. Add it before implementing UI so hooks share caching behaviour.
 
 ## Phase 1 – MVP Workstreams
-Everything below is scoped so a single engineer or automation agent can pick up a card and deliver it independently. Flows reference deeper context in `docs/planning/`.
+Everything below is scoped so a single engineer or automation agent can pick up a card and deliver it independently. Flows reference deeper context across the `frontend/docs/` tree.
 
 ### 1. Station Search Experience
 - **Scope**: search input, debounced API calls, keyboard/touch selection, empty/error states.
@@ -104,16 +104,16 @@ Everything below is scoped so a single engineer or automation agent can pick up 
 - Weather overlay and latency monitoring are Phase 2 backlog items; leave toggles stubbed but non-blocking.
 
 ## After MVP
-- **Analytics & Observability**: integrate Sentry/browser metrics once MVP stabilises (`docs/planning/observability.md`).
+- **Analytics & Observability**: integrate Sentry/browser metrics once MVP stabilises (`frontend/docs/operations/observability.md`).
 - **Metrics Download Helper**: light UI around `/metrics` for analysts.
 - **Latency Warnings**: instrument API client to surface slow backend responses.
-- **Polish & Launch**: theming refinements, bundle optimisation, localisation, release checklist (see `docs/planning/roadmap.md` and `docs/planning/testing.md`).
+- **Polish & Launch**: theming refinements, bundle optimisation, localisation, release checklist (see `frontend/docs/roadmap/roadmap.md` and `frontend/docs/operations/testing.md`).
 
 ## Reference Index
-- Architecture decisions: `docs/planning/architecture.md`
-- UX reference flows: `docs/planning/ux-flows.md`
-- Testing strategy & coverage targets: `docs/planning/testing.md`
-- Observability plan: `docs/planning/observability.md`
-- Roadmap & timeline: `docs/planning/roadmap.md`
+- Architecture decisions: `frontend/docs/architecture/overview.md`
+- UX reference flows: `frontend/docs/product/ux-flows.md`
+- Testing strategy & coverage targets: `frontend/docs/operations/testing.md`
+- Observability plan: `frontend/docs/operations/observability.md`
+- Roadmap & timeline: `frontend/docs/roadmap/roadmap.md`
 
 Keep this document authoritative: when scope shifts or work completes, update the relevant section so new contributors and agents always have an accurate to-do list.

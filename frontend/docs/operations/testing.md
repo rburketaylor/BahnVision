@@ -21,7 +21,7 @@
    - Percy or Chromatic once UI stabilizes; ensures map overlays and theming remain intact.
 
 ## Test Data & Mocking
-- Maintain JSON fixtures mirroring responses defined in `backend/app/models/mvg.py` and `backend/docs/tech-spec.md`.
+- Maintain JSON fixtures mirroring responses defined in `backend/app/models/mvg.py` and `backend/docs/architecture/tech-spec.md`.
 - Use MSW to stub `/api/v1` endpoints; simulate error cases (404, 502, 503) and alternate cache headers.
 - For Playwright, start backend in mocked mode or inject static fixtures via query parameters (e.g., `?mock=marienplatz`).
 

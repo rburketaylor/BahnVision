@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-The current `backend/app/persistence/models.py` implements a **production-grade schema** that extends beyond the tech-spec baseline with additional normalization and metadata fields. One critical gap exists: the **`route_snapshots` table is missing** and must be added.
+The current `backend/app/persistence/models.py` implements a **production-grade schema** that extends beyond the tech-spec baseline with additional normalization and metadata fields. Core tables (including `route_snapshots`) and enums now match the tech spec; the only open item is the deferred trigram index on `stations.name`.
 
 ## Detailed Comparison
 
@@ -277,12 +277,9 @@ The following ENUMs from tech-spec need to be defined:
 1. ✅ `transport_mode` - Exists with values: UBAHN, SBAHN, TRAM, BUS, REGIONAL
 2. ✅ `departure_status` - Exists with values: ON_TIME, DELAYED, CANCELLED, UNKNOWN
 3. ✅ `weather_condition` - Exists with values: CLEAR, CLOUDY, RAIN, SNOW, STORM, FOG, MIXED, UNKNOWN
-4. ❌ `external_status` - Missing (needed for route_snapshots.mvg_status)
-   - Values: SUCCESS, NOT_FOUND, RATE_LIMITED, DOWNSTREAM_ERROR, TIMEOUT
-5. ❌ `ingestion_source` - Missing (needed for ingestion_runs.source)
-   - Values: MVG_DEPARTURES, MVG_STATIONS, WEATHER
-6. ❌ `ingestion_status` - Missing (needed for ingestion_runs.status)
-   - Values: PENDING, RUNNING, SUCCESS, FAILED, RETRYING
+4. ✅ `external_status` - Exists with values: SUCCESS, NOT_FOUND, RATE_LIMITED, DOWNSTREAM_ERROR, TIMEOUT
+5. ✅ `ingestion_source` - Exists with values: MVG_DEPARTURES, MVG_STATIONS, WEATHER
+6. ✅ `ingestion_status` - Exists with values: PENDING, RUNNING, SUCCESS, FAILED, RETRYING
 
 ## Required Actions for MS1-T2
 

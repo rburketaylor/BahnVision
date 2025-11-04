@@ -13,7 +13,7 @@ Phase 0 (Oct–Nov 2025) laid the groundwork for the BahnVision web client. 
 - **Testing stack**: Vitest + React Testing Library, Playwright for end-to-end flows, MSW for API mocks, jsdom setup file.
 - **Linting & formatting**: ESLint 9 with React/TypeScript rules and Prettier 3 integration, strict CI scripts in `package.json`.
 - **Build & deploy**: Multi-stage Dockerfile (Nginx runtime), `docker-compose.yml` wiring the backend, SPA-friendly `nginx.conf`, `.dockerignore`.
-- **Documentation**: Developer quick start in `frontend/README.md`, planning deep dives under `docs/planning/`, and this summary for handed-off work.
+- **Documentation**: Developer quick start in `frontend/README.md`, deep dives across `frontend/docs/`, and this summary for handed-off work.
 
 ## Project Layout
 ```
@@ -48,4 +48,4 @@ npm run test:e2e   # requires dev server
 npm run build
 ```
 
-See `frontend/docs/FRONTEND_IMPLEMENTATION_PLAN.md` for the up-to-date delivery roadmap and feature checklists.
+See `frontend/docs/roadmap/delivery-plan.md` for the up-to-date delivery roadmap and feature checklists.

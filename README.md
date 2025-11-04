@@ -13,7 +13,7 @@ Munich riders need dependable departures, route planning, and station search eve
 
 ## Architecture Overview
 - **FastAPI application factory** in `backend/app/main.py` wires versioned routers, metrics, and lifespan cleanup.
-- **Layered services** under `backend/app/services/` encapsulate MVG integration, caching, and domain orchestration.
+- **Layered services** under `backend/app/services/` encapsulate the cache service and MVG client integration used by the API.
 - **CacheService** combines Valkey with an in-process fallback store, single-flight locks, and a configurable circuit breaker.
 - **Persistence layer** (`backend/app/persistence/`) shares an async engine (`core/database.py`) and targets Alembic migrations for schema evolution.
 - **Observability** is built-in via `app/core/metrics.py`, Prometheus-compatible histograms/counters, and tests in `backend/tests/api/test_metrics.py`.
@@ -29,11 +29,13 @@ Munich riders need dependable departures, route planning, and station search eve
 
 ### Directory Tour
 - `backend/app/api/` – versioned routers, health, MVG endpoints, and metrics exporter.
-- `backend/app/services/` – cache orchestration, MVG client, domain services, weather ingestor stub.
+- `backend/app/services/` – cache orchestration (`cache.CacheService`) and MVG API client wrappers.
 - `backend/app/models/` – Pydantic schemas for HTTP contracts and persistence DTOs.
 - `backend/app/persistence/` – SQLAlchemy models, repositories, and database dependencies.
 - `backend/tests/` – pytest suites covering API flows, cache behaviour, and metrics.
-- `backend/docs/` – tech spec, PRD, schema review, and milestone task board (roadmap source).
+- `backend/docs/` – documentation hub (see `backend/docs/README.md` for the architecture, product, roadmap, and archive layout).
+- `frontend/docs/` – React app documentation hub (see `frontend/docs/README.md` for architecture, product, operations, and roadmap notes).
+- `docs/` – cross-project guidance (assistant handbooks, repo operations guidelines).
 
 ## Getting Started
 
@@ -77,7 +79,7 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=marienplatz&transport_
 ## Data & Persistence
 - PostgreSQL schema covers `stations`, `transit_lines`, `departure_observations`, `route_snapshots`, `weather_observations`, and `ingestion_runs`.
 - Enumerations and constraints capture transport modes, departure states, weather conditions, and ingestion statuses for analytics readiness.
-- Alembic integration (tracked in `backend/alembic/`) will evolve schemas as milestones from `backend/docs/tasks.json` land.
+- Alembic integration (tracked in `backend/alembic/`) will evolve schemas as milestones from `backend/docs/roadmap/tasks.json` land.
 - Phase 2 persistence will log MVG responses for ML training while keeping API latency low via cache-first reads.
 
 ## Observability
@@ -97,7 +99,7 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=marienplatz&transport_
 ## Hiring Manager Notes
 - Demonstrates experience designing resilient distributed systems: cache circuit breakers, stale data strategies, and background refresh tasks.
 - Highlights pragmatic DevOps alignment: Docker-first workflow, metrics-ready endpoints, and planned alerting artefacts.
-- Shows product thinking via personas, success metrics, and a maintained milestone roadmap under `backend/docs/tasks.json`.
+- Shows product thinking via personas, success metrics, and a maintained milestone roadmap under `backend/docs/roadmap/tasks.json`.
 - Offers strong testing discipline with deterministic cache simulations and fixtures that mimic upstream failures.
 
 I’m using BahnVision as a profile piece—feedback and collaboration are welcome! Feel free to open issues or reach out if you’d like a guided tour.

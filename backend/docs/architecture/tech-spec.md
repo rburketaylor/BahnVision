@@ -53,14 +53,14 @@
 ```
 
 ## Component Responsibilities
-- `FastAPI app`: exposes REST endpoints, orchestrates cache + service calls, enforces validation via Pydantic models.
-- `services/mvg_client.py`: wraps MVG API requests, handles rate limiting metadata, and captures timings for metrics.
-- `services/cache_service.py`: mediates Valkey access, implements single-flight locking, stale responses, and circuit breaker.
-- `services/departure_service.py`, `route_service.py`, `station_service.py`: aggregate MVG, cache, and persistence logic per domain.
-- `services/weather_ingestor.py` (Phase 2 stub): orchestrates weather fetch and persistence.
-- `models/`: request/response schemas shared with frontend; to be extended for persistence DTOs.
+- `FastAPI app`: exposes REST endpoints, orchestrates cache and MVG calls, enforces validation via Pydantic models, and wires dependencies.
+- `services/mvg_client.MVGClient`: wraps MVG API requests, handles rate limiting metadata, and captures timings for metrics.
+- `services/cache.CacheService`: mediates Valkey access, implements single-flight locking, stale responses, and circuit breaker behaviour.
+- `app.persistence.repositories.TransitDataRepository`: groups async SQLAlchemy access for stations, departures, routes, weather, and ingestion runs.
+- `models/`: request/response schemas shared with frontend and persistence DTOs.
 - PostgreSQL schema: stores canonical stations, historical departures, weather snapshots, and ingestion run state.
 - Prometheus exporter: served under `/metrics`, sourced from instrumented caches, MVG calls, and route planning.
+- Weather ingestion remains feature-flagged; Phase 2 hooks will live beside existing persistence layers when activated.
 
 ## Data Model
 ### PostgreSQL Tables
@@ -79,7 +79,6 @@
 - `route_snapshots`
   - `id` (PK, BigInteger autoincrement), `origin_station_id` (FK stations.station_id), `destination_station_id` (FK stations.station_id), `requested_filters` (JSONB), `itineraries` (JSONB), `requested_at` (TIMESTAMP), `mvg_status` (ENUM external_status), `created_at` (TIMESTAMP).
   - Partial index on `requested_at` for TTL clean-up tasks.
-  - NOTE: Table currently missing in implementation, to be added in MS1-T2 migration.
 - `weather_observations`
   - `id` (PK, BigInteger autoincrement), `station_id` (FK stations.station_id, nullable), `ingestion_run_id` (FK ingestion_runs.id, nullable), `provider` (String(64)), `observed_at` (TIMESTAMP), `latitude` (FLOAT), `longitude` (FLOAT), `temperature_c` (Numeric(5,2)), `feels_like_c` (Numeric(5,2)), `humidity_percent` (Numeric(5,2)), `wind_speed_mps` (Numeric(5,2)), `wind_gust_mps` (Numeric(5,2)), `wind_direction_deg` (INT), `pressure_hpa` (Numeric(6,2)), `visibility_km` (Numeric(5,2)), `precipitation_mm` (Numeric(5,2)), `precipitation_type` (String(32)), `condition` (ENUM weather_condition, default UNKNOWN), `alerts` (ARRAY(String(255))), `source_payload` (JSONB, nullable), `created_at` (TIMESTAMP).
   - Index on `(latitude, longitude, observed_at)` for geo-temporal matching.
