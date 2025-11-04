@@ -1,37 +1,56 @@
-/**
- * Departures Page
- * Hosts station search and (soon) the live departures board.
- */
-
 import { useState } from 'react'
-import StationSearch from '../components/StationSearch'
-import type { Station } from '../types/api'
+import { useParams } from 'react-router'
+import { useDepartures } from '../hooks/useDepartures'
+import { DeparturesBoard } from '../components/DeparturesBoard'
+import type { TransportType } from '../types/api'
 
-export default function DeparturesPage() {
-  const [selectedStation, setSelectedStation] = useState<Station | null>(null)
+const ALL_TRANSPORT_TYPES: TransportType[] = ['BAHN', 'SBAHN', 'UBAHN', 'TRAM', 'BUS', 'REGIONAL_BUS', 'SEV', 'SCHIFF']
+
+export function DeparturesPage() {
+  const { stationId } = useParams<{ stationId: string }>()
+  const [selectedTransportTypes, setSelectedTransportTypes] = useState<TransportType[]>([])
+
+  const { data: apiResponse, isLoading, error } = useDepartures(
+    { station: stationId!, transport_type: selectedTransportTypes },
+    !!stationId
+  )
+
+  const { station, departures } = apiResponse?.data || {}
+
+  const toggleTransportType = (transportType: TransportType) => {
+    setSelectedTransportTypes((prev) =>
+      prev.includes(transportType) ? prev.filter((t) => t !== transportType) : [...prev, transportType]
+    )
+  }
 
   return (
-    <div className="container mx-auto p-4">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900">Departures</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Look up a station to see live departures and cache freshness indicators.
-        </p>
+    <div className="space-y-8">
+      <header>
+        {stationId && <h1 className="text-4xl font-bold text-foreground">Departures for {station?.name}</h1>}
       </header>
 
-      <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <StationSearch onSelect={station => setSelectedStation(station)} />
-        {selectedStation && (
-          <div className="mt-4 rounded-md border border-slate-100 bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-700">Selected station</p>
-            <h2 className="text-xl font-semibold text-slate-900">{selectedStation.name}</h2>
-            <p className="text-sm text-slate-600">{selectedStation.place}</p>
-          </div>
-        )}
-      </section>
+      <div className="rounded-lg border border-border bg-card p-4 shadow-md">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {ALL_TRANSPORT_TYPES.map((type) => (
+            <button
+              key={type}
+              onClick={() => toggleTransportType(type)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+                selectedTransportTypes.includes(type)
+                  ? 'bg-gray-900 text-white border border-gray-900 shadow-sm'
+                  : 'bg-white text-gray-900 border border-gray-300 hover:bg-gray-100'
+              }`}
+            >
+              {type === 'REGIONAL_BUS' ? 'REGIONAL BUS' : type}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <section className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-slate-500">
-        Live departures board coming soon.
+      <section className="rounded-lg border border-border bg-card p-6 shadow-lg">
+        {isLoading && <p className="text-center text-gray-400">Loading departures...</p>}
+        {error && <p className="text-center text-red-500">Error fetching departures: {error.message}</p>}
+        {departures && <DeparturesBoard departures={departures} />}
       </section>
     </div>
   )

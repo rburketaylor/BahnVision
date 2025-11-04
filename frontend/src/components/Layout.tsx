@@ -14,8 +14,8 @@ export default function Layout() {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b border-gray-200">
+    <div className="min-h-screen bg-background text-foreground">
+      <nav className="bg-card shadow-sm border-b border-border">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -30,7 +30,7 @@ export default function Layout() {
                     className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       location.pathname === item.path
                         ? 'bg-primary/10 text-primary'
-                        : 'text-gray-600 hover:text-primary hover:bg-gray-50'
+                        : 'text-gray-400 hover:text-primary hover:bg-gray-700'
                     }`}
                   >
                     {item.label}
@@ -42,7 +42,7 @@ export default function Layout() {
         </div>
       </nav>
 
-      <main>
+      <main className="container mx-auto max-w-5xl px-4 py-8">
         <Outlet />
       </main>
     </div>
