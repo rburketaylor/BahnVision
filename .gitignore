@@ -21,6 +21,7 @@ build/
 # Environment / config
 .env
 .env.*
+!.env.example
 *.env
 
 # Editor settings
