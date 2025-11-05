@@ -21,8 +21,8 @@ build/
 # Environment / config
 .env
 .env.*
-!.env.example
 *.env
+!**/.env.example
 
 # Editor settings
 .vscode/
