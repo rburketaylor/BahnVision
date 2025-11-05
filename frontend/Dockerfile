@@ -14,6 +14,12 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Build-time configuration for Vite (passed from docker-compose build args)
+ARG VITE_API_BASE_URL
+ARG VITE_ENABLE_DEBUG_LOGS=false
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_ENABLE_DEBUG_LOGS=${VITE_ENABLE_DEBUG_LOGS}
+
 # Build the application
 RUN npm run build
 
