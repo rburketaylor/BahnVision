@@ -4,6 +4,11 @@ React + TypeScript frontend for the BahnVision Munich transit live data dashboar
 
 ## Quick Start
 
+### Docker Compose (full stack)
+- From repository root: `docker compose up --build`
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+
 ### Prerequisites
 
 - Node.js 24+ and npm 11+
@@ -28,6 +33,8 @@ Create a `.env` file (see `.env.example`):
 ```bash
 VITE_API_BASE_URL=http://localhost:8000
 VITE_ENABLE_DEBUG_LOGS=false
+
+See `docs/runtime-configuration.md` for cross-project configuration details.
 ```
 
 ## Available Scripts
@@ -151,6 +158,8 @@ See [docs/operations/testing.md](./docs/operations/testing.md) for the complete 
   - [roadmap/roadmap.md](./docs/roadmap/roadmap.md) — Phase plan and timeline
   - [roadmap/delivery-plan.md](./docs/roadmap/delivery-plan.md) — Detailed workstreams and checklists
   - [roadmap/unified-implementation-plan.md](./docs/roadmap/unified-implementation-plan.md) — Sequential, automation-friendly delivery steps
+  - Backend docs hub: `backend/docs/README.md`
+  - Backend technical spec: `backend/docs/architecture/tech-spec.md`
 
 ## Contributing
 
