@@ -34,7 +34,7 @@ Frontend quick start: see `frontend/README.md`.
 - Single-flight tuning: `CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`, `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS`, `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS`.
 - Circuit breaker window: `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`.
 
-Store secrets and overrides in environment variables or a local `.env` (not committed). See `docs/runtime-configuration.md` for a full list and examples. Copy `.env.example` to `.env` at the repo root to get started.
+Store secrets and overrides in environment variables or a local `.env` (not committed). See `docs/runtime-configuration.md` for a full list and examples. Copy `.env.example` to `.env` at the repo root to get started. Docker Compose reads `.env` for the backend and passes `VITE_*` envs to the frontend build.
 
 ## API
 - `GET /api/v1/health` — readiness probe
