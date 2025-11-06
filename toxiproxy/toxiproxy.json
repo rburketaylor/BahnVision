@@ -1,0 +1,14 @@
+[
+  {
+    "name": "postgres_proxy",
+    "upstream": "postgres:5432",
+    "downstream": "0.0.0.0:5432",
+    "enabled": true
+  },
+  {
+    "name": "valkey_proxy",
+    "upstream": "valkey:6379",
+    "downstream": "0.0.0.0:6379",
+    "enabled": true
+  }
+]

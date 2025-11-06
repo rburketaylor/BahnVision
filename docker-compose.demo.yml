@@ -1,0 +1,92 @@
+# Docker Compose overlay for demo environment with monitoring and chaos testing
+# Usage: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+
+services:
+  # Backend configuration overrides for demo environment
+  backend:
+    environment:
+      # OpenTelemetry configuration
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: "bahnvision-backend"
+      OTEL_SERVICE_VERSION: "0.1.0"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_PROPAGATORS: "tracecontext,baggage,b3"
+      # Route through Toxiproxy so chaos scenarios affect traffic
+      DATABASE_URL: "postgresql+asyncpg://bahnvision:bahnvision@toxiproxy:5432/bahnvision"
+      VALKEY_URL: "valkey://toxiproxy:6379/0"
+    depends_on:
+      valkey:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      toxiproxy:
+        condition: service_started
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: bahnvision-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --web.console.templates=/etc/prometheus/consoles
+      - --storage.tsdb.retention.time=200h
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.2.1
+    container_name: bahnvision-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
+  # Redis/Valkey admin interface (OSS alternative to RedisInsight)
+  redis-commander:
+    image: rediscommander/redis-commander:redis-commander-210
+    container_name: bahnvision-redis-commander
+    ports:
+      - "5540:8081"
+    environment:
+      REDIS_HOSTS: local:valkey:6379
+    depends_on:
+      - valkey
+
+  # Chaos testing proxy
+  toxiproxy:
+    image: shopify/toxiproxy:2.1.4
+    container_name: bahnvision-toxiproxy
+    ports:
+      - "8474:8474"  # Admin API
+      - "5433:5432"   # Postgres proxy
+      - "6380:6379"   # Valkey proxy
+    volumes:
+      - ./toxiproxy/toxiproxy.json:/etc/toxiproxy/toxiproxy.json:ro
+    command: ["--host", "0.0.0.0", "--config", "/etc/toxiproxy/toxiproxy.json"]
+
+  # Tracing (will be used in Phase 2)
+  jaeger:
+    image: jaegertracing/all-in-one:1.74.0
+    container_name: bahnvision-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+
+volumes:
+  prometheus_data:
+  grafana_data:
