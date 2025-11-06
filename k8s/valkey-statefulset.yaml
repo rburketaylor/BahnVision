@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bahnvision-valkey
+  namespace: default
+  labels:
+    app: bahnvision-valkey
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: valkey
+  selector:
+    app: bahnvision-valkey
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bahnvision-valkey
+  namespace: default
+  labels:
+    app: bahnvision-valkey
+spec:
+  serviceName: bahnvision-valkey
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bahnvision-valkey
+  template:
+    metadata:
+      labels:
+        app: bahnvision-valkey
+    spec:
+      containers:
+      - name: valkey
+        image: valkey/valkey:9.0.0
+        ports:
+        - containerPort: 6379
+          name: valkey
+        command:
+        - valkey-server
+        - --save
+        - ""
+        - --appendonly
+        - "no"
+        volumeMounts:
+        - name: valkey-storage
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          exec:
+            command:
+            - valkey-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - valkey-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: valkey-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 512Mi
