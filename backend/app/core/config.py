@@ -110,6 +110,31 @@ class Settings(BaseSettings):
         False,
         alias="DATABASE_ECHO",
     )
+    # OpenTelemetry configuration
+    otel_enabled: bool = Field(
+        False,
+        alias="OTEL_ENABLED",
+    )
+    otel_service_name: str = Field(
+        "bahnvision-backend",
+        alias="OTEL_SERVICE_NAME",
+    )
+    otel_service_version: str = Field(
+        "0.1.0",
+        alias="OTEL_SERVICE_VERSION",
+    )
+    otel_exporter_otlp_endpoint: str = Field(
+        "http://jaeger:4317",
+        alias="OTEL_EXPORTER_OTLP_ENDPOINT",
+    )
+    otel_exporter_otlp_headers: str | None = Field(
+        None,
+        alias="OTEL_EXPORTER_OTLP_HEADERS",
+    )
+    otel_propagators: str = Field(
+        "tracecontext,baggage,b3",
+        alias="OTEL_PROPAGATORS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
