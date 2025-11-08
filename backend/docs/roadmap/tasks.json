@@ -6,6 +6,7 @@
     "dependsOn": [],
     "estimateH": 6,
     "risk": "medium",
+    "status": "done",
     "acceptanceTests": [
       "`alembic upgrade head` on a fresh database creates all tables with expected columns and indexes",
       "README or design-doc updated with migration identifiers"
@@ -20,6 +21,7 @@
     ],
     "estimateH": 4,
     "risk": "low",
+    "status": "done",
     "acceptanceTests": [
       "`alembic upgrade head && alembic downgrade -1` succeeds in CI pipeline",
       "Test fixtures load sample data and survive rollback/upgrade cycle"
