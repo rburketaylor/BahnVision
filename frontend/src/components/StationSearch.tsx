@@ -59,6 +59,10 @@ export function StationSearch({
   const isDropdownVisible = isOpen && (hasResults || showNoResults || showError || isFetching)
   const isInitialLoading = isLoading || (isFetching && !hasResults)
 
+  // Enhanced timeout detection
+  const isTimeoutError = apiError?.statusCode === 408
+  const hasBeenLoadingTooLong = isFetching && !hasResults && !isLoading
+
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -146,6 +150,20 @@ export function StationSearch({
     }
   }
 
+  // Cancel ongoing search when user clears the input
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value
+    setQuery(nextValue)
+
+    // If clearing the input, close dropdown immediately and cancel any ongoing requests
+    if (nextValue.trim().length === 0) {
+      setIsOpen(false)
+      setActiveIndex(-1)
+    } else {
+      setIsOpen(true)
+    }
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <label htmlFor={inputId} className="mb-1 block text-sm font-medium text-gray-700">
@@ -157,11 +175,7 @@ export function StationSearch({
           id={inputId}
           type="text"
           value={query}
-          onChange={event => {
-            const nextValue = event.target.value
-            setQuery(nextValue)
-            setIsOpen(nextValue.trim().length > 0)
-          }}
+          onChange={handleInputChange}
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -177,8 +191,29 @@ export function StationSearch({
           className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
         />
         {isInitialLoading && (
-          <div className="absolute inset-y-0 right-3 flex items-center">
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-primary" />
+          <div className="absolute inset-y-0 right-3 flex items-center gap-2">
+            {hasBeenLoadingTooLong && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('')
+                  setIsOpen(false)
+                  setActiveIndex(-1)
+                }}
+                className="h-5 w-5 rounded-full border border-red-300 bg-red-50 text-red-600 hover:bg-red-100"
+                title="Cancel search"
+              >
+                ×
+              </button>
+            )}
+            <span
+              className={`h-5 w-5 animate-spin rounded-full border-2 ${
+                hasBeenLoadingTooLong
+                  ? 'border-red-300 border-t-red-600'
+                  : 'border-gray-300 border-t-primary'
+              }`}
+              title={hasBeenLoadingTooLong ? 'Taking longer than expected...' : 'Loading...'}
+            />
           </div>
         )}
       </div>
@@ -213,14 +248,29 @@ export function StationSearch({
 
           {showError && (
             <li className="px-4 py-3 text-sm text-red-500" role="option" aria-disabled="true">
-              Unable to load stations.{' '}
-              <button
-                type="button"
-                className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
-                onClick={() => refetch()}
-              >
-                Try again
-              </button>
+              {isTimeoutError ? (
+                <>
+                  Search timed out. The server may be slow or your connection unstable.{' '}
+                  <button
+                    type="button"
+                    className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
+                    onClick={() => refetch()}
+                  >
+                    Try again
+                  </button>
+                </>
+              ) : (
+                <>
+                  Unable to load stations.{' '}
+                  <button
+                    type="button"
+                    className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
+                    onClick={() => refetch()}
+                  >
+                    Try again
+                  </button>
+                </>
+              )}
             </li>
           )}
         </ul>

@@ -36,6 +36,7 @@ export interface ApiResponse<T> {
 
 class ApiClient {
   private baseUrl: string
+  private readonly defaultTimeout = 10000 // 10 seconds default timeout
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl
@@ -43,22 +44,30 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options?: RequestInit
+    options?: RequestInit & { timeout?: number }
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`
+    const timeout = options?.timeout ?? this.defaultTimeout
 
     if (config.enableDebugLogs) {
-      console.log(`[API] ${options?.method || 'GET'} ${url}`)
+      console.log(`[API] ${options?.method || 'GET'} ${url} (timeout: ${timeout}ms)`)
     }
+
+    // Create abort controller for timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
 
     try {
       const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           ...options?.headers,
         },
       })
+
+      clearTimeout(timeoutId)
 
       const cacheStatus = response.headers.get('X-Cache-Status') as CacheStatus | null
       const requestId = response.headers.get('X-Request-Id') || undefined
@@ -84,9 +93,21 @@ class ApiClient {
         requestId,
       }
     } catch (error) {
+      clearTimeout(timeoutId)
+
       if (error instanceof ApiError) {
         throw error
       }
+
+      // Handle abort errors (timeouts)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new ApiError(
+          'Request timed out. Please check your connection and try again.',
+          408,
+          'Request timeout'
+        )
+      }
+
       throw new ApiError(
         `Network request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         0
@@ -121,7 +142,10 @@ class ApiClient {
     params: StationSearchParams
   ): Promise<ApiResponse<StationSearchResponse>> {
     const queryString = this.buildQueryString(params as unknown as Record<string, unknown>)
-    return this.request<StationSearchResponse>(`/api/v1/mvg/stations/search${queryString}`)
+    // Use shorter timeout for search requests (5 seconds)
+    return this.request<StationSearchResponse>(`/api/v1/mvg/stations/search${queryString}`, {
+      timeout: 5000,
+    })
   }
 
   // Departures endpoint
