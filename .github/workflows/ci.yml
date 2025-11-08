@@ -15,10 +15,10 @@ jobs:
   security-scan-backend:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -38,7 +38,7 @@ jobs:
       continue-on-error: true
 
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-reports-backend
         path: |
@@ -48,10 +48,10 @@ jobs:
   security-scan-frontend:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '20'
         cache: 'npm'
@@ -69,7 +69,7 @@ jobs:
       continue-on-error: true
 
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-reports-frontend
         path: frontend/npm-audit.json
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [security-scan-backend, security-scan-frontend]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -103,7 +103,7 @@ jobs:
         tags: bahnvision-frontend:test
 
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@v0.0.10
       with:
         image-ref: |
           bahnvision-backend:test
@@ -112,7 +112,7 @@ jobs:
         output: 'trivy-results.sarif'
 
     - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v4
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
@@ -121,7 +121,7 @@ jobs:
   sast-scan:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Run Semgrep
       uses: returntocorp/semgrep-action@v1
@@ -134,7 +134,7 @@ jobs:
         generate_sarif: true
 
     - name: Upload Semgrep results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v4
       if: always()
       with:
         sarif_file: semgrep-report.sarif
@@ -143,10 +143,10 @@ jobs:
   test-backend:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -163,14 +163,14 @@ jobs:
         pytest --cov=app --cov-report=xml --cov-report=html
 
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
         file: backend/coverage.xml
         flags: backend
         name: backend-coverage
 
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: backend-test-results
         path: backend/htmlcov/
@@ -179,10 +179,10 @@ jobs:
   test-frontend:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '20'
         cache: 'npm'
@@ -199,7 +199,7 @@ jobs:
         npm test -- --coverage --watchAll=false
 
     - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
         file: frontend/coverage/lcov.info
         flags: frontend
@@ -210,7 +210,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test-backend, test-frontend]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -221,7 +221,7 @@ jobs:
         sleep 30  # Wait for services to be healthy
 
     - name: Set up Node.js for E2E tests
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '20'
 
@@ -236,7 +236,7 @@ jobs:
       continue-on-error: true
 
     - name: Upload E2E test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: e2e-test-results
@@ -259,7 +259,7 @@ jobs:
       frontend-image: ${{ steps.meta-frontend.outputs.tags }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -319,7 +319,7 @@ jobs:
     needs: [build-and-push]
     if: github.ref == 'refs/heads/main'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up kind cluster
       uses: helm/kind-action@v1.8.0
@@ -364,7 +364,7 @@ jobs:
         curl -f http://localhost:3000/health || exit 1
 
     - name: Upload cluster logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: k8s-logs
