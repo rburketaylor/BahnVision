@@ -103,7 +103,7 @@ jobs:
         tags: bahnvision-frontend:test
 
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@v0.0.10
+      uses: aquasecurity/trivy-action@master
       with:
         image-ref: |
           bahnvision-backend:test
@@ -113,7 +113,7 @@ jobs:
 
     - name: Upload Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v4
-      if: always()
+      if: always() && hashFiles('trivy-results.sarif') != ''
       with:
         sarif_file: 'trivy-results.sarif'
 
@@ -137,7 +137,7 @@ jobs:
       uses: github/codeql-action/upload-sarif@v4
       if: always()
       with:
-        sarif_file: semgrep-report.sarif
+        sarif_file: semgrep.sarif
 
   # Backend testing
   test-backend:
@@ -196,7 +196,7 @@ jobs:
     - name: Run unit tests
       run: |
         cd frontend
-        npm test -- --coverage --watchAll=false
+        npm test -- --coverage --run
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v5
