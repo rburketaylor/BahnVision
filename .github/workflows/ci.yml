@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -116,18 +121,19 @@ jobs:
         format: 'sarif'
         output: 'trivy-frontend-results.sarif'
 
-    - name: Combine Trivy SARIF reports
-      run: |
-        # Install jq if not present
-        sudo apt-get update && sudo apt-get install -y jq
-        # Combine SARIF files
-        jq -s '.[0].runs += .[1].runs | .[0]' trivy-backend-results.sarif trivy-frontend-results.sarif > trivy-results.sarif
-
-    - name: Upload Trivy scan results to GitHub Security tab
+    - name: Upload Trivy backend scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v4
-      if: always() && hashFiles('trivy-results.sarif') != ''
+      if: always() && hashFiles('trivy-backend-results.sarif') != '' && github.event_name != 'pull_request'
       with:
-        sarif_file: 'trivy-results.sarif'
+        sarif_file: 'trivy-backend-results.sarif'
+        category: container-backend
+
+    - name: Upload Trivy frontend scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v4
+      if: always() && hashFiles('trivy-frontend-results.sarif') != '' && github.event_name != 'pull_request'
+      with:
+        sarif_file: 'trivy-frontend-results.sarif'
+        category: container-frontend
 
   # Static Application Security Testing (SAST)
   sast-scan:
@@ -151,7 +157,7 @@ jobs:
 
     - name: Upload Semgrep results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v4
-      if: always() && hashFiles('semgrep-report.sarif') != ''
+      if: always() && hashFiles('semgrep-report.sarif') != '' && github.event_name != 'pull_request'
       with:
         sarif_file: 'semgrep-report.sarif'
 
@@ -230,6 +236,9 @@ jobs:
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+
+    - name: Create CI environment file
+      run: cp .env.example .env
 
     - name: Start services
       run: |
