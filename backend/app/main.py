@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,11 +8,28 @@ from app.api.metrics import router as metrics_router
 from app.api.routes import api_router
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.telemetry import configure_opentelemetry, instrument_fastapi, instrument_httpx
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
+    settings = get_settings()
+
+    # Configure OpenTelemetry at startup
+    configure_opentelemetry(
+        service_name=settings.otel_service_name,
+        service_version=settings.otel_service_version,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        otlp_headers=settings.otel_exporter_otlp_headers,
+        enabled=settings.otel_enabled,
+    )
+
+    # Instrument httpx for outbound request tracing
+    instrument_httpx(enabled=settings.otel_enabled)
+
     yield
     await engine.dispose()
 
@@ -25,6 +43,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # Instrument FastAPI for tracing if enabled
+    instrument_fastapi(app, enabled=settings.otel_enabled)
 
     allow_origins = settings.cors_allow_origins
     allow_origin_regex = settings.cors_allow_origin_regex
