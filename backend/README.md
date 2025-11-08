@@ -55,6 +55,7 @@ Async SQLAlchemy engine and repositories live under `backend/app/persistence/`. 
 
 - Docs hub: `backend/docs/README.md`
 - Technical spec: `backend/docs/architecture/tech-spec.md`
+ - Roadmap & branch plan: `backend/docs/roadmap/persistence-branch-plan.md`
 
 ## Contributing
 
