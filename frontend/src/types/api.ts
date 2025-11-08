@@ -105,6 +105,8 @@ export interface DeparturesParams {
   station: string
   limit?: number
   offset?: number
+  from?: string // UTC ISO timestamp
+  window_minutes?: number
   transport_type?: TransportType[]
 }
 
