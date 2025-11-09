@@ -123,6 +123,11 @@ async def departures(
         # Calculate offset minutes as ceiling of (from_time - now) / 60, clamped at 0
         delta_minutes = int((from_time - now).total_seconds() / 60)
         offset = max(0, delta_minutes)
+        if offset > 240:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Offset derived from 'from' parameter exceeds maximum allowed value of 240 minutes.",
+            )
 
     settings = get_settings()
     all_departures = []
