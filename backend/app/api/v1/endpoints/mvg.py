@@ -30,6 +30,13 @@ _CACHE_STATION_LIST = "mvg_station_list"
 _CACHE_ROUTE = "mvg_route"
 
 
+def _ensure_aware_utc(value: datetime) -> datetime:
+    """Treat naive datetimes as UTC and normalize all timestamps to UTC."""
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def get_client() -> MVGClient:
     """Instantiate a fresh MVG client per request."""
     return MVGClient()
@@ -77,6 +84,7 @@ async def departures(
         Query(
             description="UTC ISO timestamp to start results from. Cannot be used together with offset. "
             "If provided, results are the next N departures starting at this time anchor.",
+            alias="from",
         ),
     ] = None,
     window_minutes: Annotated[
@@ -110,6 +118,7 @@ async def departures(
 
     # Convert from_time to offset if provided
     if from_time is not None:
+        from_time = _ensure_aware_utc(from_time)
         now = datetime.now(timezone.utc)
         # Calculate offset minutes as ceiling of (from_time - now) / 60, clamped at 0
         delta_minutes = int((from_time - now).total_seconds() / 60)
