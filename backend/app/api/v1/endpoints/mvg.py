@@ -118,6 +118,7 @@ async def departures(
     settings = get_settings()
     all_departures = []
     station_details = None
+    partial_response = False
 
     if not parsed_transport_types:
         cache_key = _departures_cache_key(station, limit, offset, [])
@@ -252,6 +253,7 @@ async def departures(
                 continue
             # If we have some departures, we can return them
             if all_departures:
+                partial_response = True
                 break
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -260,6 +262,7 @@ async def departures(
             record_cache_event(_CACHE_DEPARTURES, "not_found")
             # If we have some departures, we can return them
             if all_departures:
+                partial_response = True
                 break
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
@@ -276,6 +279,7 @@ async def departures(
                 continue
             # If we have some departures, we can return them
             if all_departures:
+                partial_response = True
                 break
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
@@ -288,8 +292,13 @@ async def departures(
         )
 
     all_departures.sort(key=lambda d: d.planned_time)
+    if partial_response and "X-Cache-Status" not in response.headers:
+        response.headers["X-Cache-Status"] = "miss"
+
     return DeparturesResponse(
-        station=station_details, departures=all_departures[:limit]
+        station=station_details,
+        departures=all_departures[:limit],
+        partial=partial_response,
     )
 
 
