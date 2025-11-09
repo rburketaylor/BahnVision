@@ -86,6 +86,7 @@ class FakeMVGClient:
         self.fail_departures = False
         self.fail_routes = False
         self.fail_station_list = False
+        self.fail_departures_for: set[str] = set()
 
     async def get_departures(
         self,
@@ -97,6 +98,17 @@ class FakeMVGClient:
         self.departure_calls += 1
         if self.fail_departures:
             raise MVGServiceError("departures unavailable")
+        types_list = list(transport_types) if transport_types else []
+        if types_list:
+            primary = types_list[0]
+            if hasattr(primary, "name"):
+                transport_name = str(primary.name)
+            elif hasattr(primary, "value") and isinstance(primary.value, str):
+                transport_name = primary.value
+            else:
+                transport_name = str(primary)
+            if transport_name.upper() in self.fail_departures_for:
+                raise MVGServiceError(f"departures unavailable for {transport_name}")
         station = Station(
             id=f"station:{station_query}",
             name=station_query.title(),
