@@ -19,6 +19,10 @@ export function useDepartures(params: DeparturesParams, options: UseDeparturesOp
     queryKey: ['departures', params],
     queryFn: () => apiClient.getDepartures(params),
     enabled,
+    // Prevent duplicate requests with the same key
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     // Auto-refresh configuration based on live mode
     ...(
       live
