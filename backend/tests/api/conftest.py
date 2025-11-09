@@ -322,7 +322,8 @@ def api_client(fake_cache: FakeCacheService, fake_mvg_client: FakeMVGClient) -> 
     app.dependency_overrides[CacheService] = lambda: fake_cache
 
     # Import the actual dependencies to override them
-    from app.api.v1.endpoints.mvg import get_cache_service, get_client
+    from app.services.cache import get_cache_service
+    from app.api.v1.endpoints.mvg.shared.utils import get_client
 
     app.dependency_overrides[get_cache_service] = lambda: fake_cache
     app.dependency_overrides[get_client] = lambda: fake_mvg_client

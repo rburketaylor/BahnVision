@@ -14,7 +14,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.api.v1.endpoints import mvg as mvg_module
+from app.services.cache import get_cache_service
+from app.api.v1.endpoints.mvg.shared.utils import get_client
 from app.main import create_app
 from app.services.cache import CacheService
 from app.services.mvg_client import (
@@ -258,8 +259,8 @@ def fake_mvg_client() -> FakeMVGClient:
 @pytest.fixture()
 def api_client(cache_service: CacheService, fake_mvg_client: FakeMVGClient) -> Iterator[TestClient]:
     app = create_app()
-    app.dependency_overrides[mvg_module.get_cache_service] = lambda: cache_service
-    app.dependency_overrides[mvg_module.get_client] = lambda: fake_mvg_client
+    app.dependency_overrides[get_cache_service] = lambda: cache_service
+    app.dependency_overrides[get_client] = lambda: fake_mvg_client
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
