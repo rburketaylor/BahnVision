@@ -3,7 +3,8 @@
  * Reference: frontend/api-integration.md
  */
 
-export type TransportType = 'BAHN' | 'SBAHN' | 'UBAHN' | 'TRAM' | 'BUS' | 'REGIONAL_BUS' | 'SEV' | 'SCHIFF'
+export type TransportType = 'BAHN' | 'SBAHN' | 'UBAHN' | 'TRAM' | 'BUS' | 'REGIONAL_BUS' | 'SCHIFF' | 'SEV'
+// SEV included for type compatibility but not shown in UI due to API issues
 
 export type CacheStatus = 'hit' | 'miss' | 'stale' | 'stale-refresh'
 

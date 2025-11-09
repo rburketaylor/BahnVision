@@ -142,16 +142,33 @@ class ApiClient {
     params: StationSearchParams
   ): Promise<ApiResponse<StationSearchResponse>> {
     const queryString = this.buildQueryString(params as unknown as Record<string, unknown>)
-    // Use shorter timeout for search requests (5 seconds)
+    // Use longer timeout for station search (8 seconds) - first searches can be slower
     return this.request<StationSearchResponse>(`/api/v1/mvg/stations/search${queryString}`, {
-      timeout: 5000,
+      timeout: 8000,
     })
   }
 
   // Departures endpoint
   async getDepartures(params: DeparturesParams): Promise<ApiResponse<DeparturesResponse>> {
     const queryString = this.buildQueryString(params as unknown as Record<string, unknown>)
-    return this.request<DeparturesResponse>(`/api/v1/mvg/departures${queryString}`)
+
+    // Scale timeout based on request complexity to handle backend processing time
+    // and potential cache warmup scenarios for complex transport type combinations
+    const transportCount = params.transport_type?.length || 0
+    let timeout = this.defaultTimeout
+
+    if (transportCount > 4) {
+      // Very complex requests - use longer timeout (max 20s)
+      timeout = 20000
+    } else if (transportCount > 3) {
+      // Complex requests - extended timeout (15s)
+      timeout = 15000
+    } else if (transportCount > 1) {
+      // Multiple transport types - moderate timeout (12s)
+      timeout = 12000
+    }
+
+    return this.request<DeparturesResponse>(`/api/v1/mvg/departures${queryString}`, { timeout })
   }
 
   // Route planning endpoint
