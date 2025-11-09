@@ -52,13 +52,30 @@ export function DeparturesPage() {
   const debounceTimeoutRef = useRef<number | null>(null)
   const [isFilterUpdating, setIsFilterUpdating] = useState(false)
 
-  // Initialize transport types from URL params on mount
+  const lastTransportParamRef = useRef<string | null>(null)
+
+  // Initialize transport types from URL params on mount and when query changes
   useEffect(() => {
     const transportParam = searchParams.get('transport_type')
+    const normalizedParam = transportParam ?? ''
+    if (lastTransportParamRef.current === normalizedParam) {
+      return
+    }
+
+    lastTransportParamRef.current = normalizedParam
+
     if (transportParam) {
       const types = transportParam.split(',').filter(Boolean) as TransportType[]
       setSelectedTransportTypes(types)
       setDebouncedTransportTypes(types)
+    } else {
+      setSelectedTransportTypes([])
+      setDebouncedTransportTypes([])
+      setIsFilterUpdating(false)
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current)
+        debounceTimeoutRef.current = null
+      }
     }
   }, [searchParams])
 

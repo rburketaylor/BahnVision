@@ -5,10 +5,6 @@ interface DeparturesBoardProps {
   departures: Departure[]
 }
 
-interface GroupedDepartures {
-  [hour: string]: Departure[]
-}
-
 export function DeparturesBoard({ departures }: DeparturesBoardProps) {
   // Sort departures by effective departure time (realtime if available, otherwise planned)
   const sortedDepartures = [...departures].sort((a, b) => {
@@ -20,18 +16,13 @@ export function DeparturesBoard({ departures }: DeparturesBoardProps) {
   })
 
   // Group departures by hour
-  const groupedDepartures = sortedDepartures.reduce<GroupedDepartures>((groups, departure) => {
+  const groupedDepartures = sortedDepartures.reduce<Record<string, Departure[]>>((groups, departure) => {
     const effectiveTime = departure.realtime_time || departure.planned_time
     if (!effectiveTime) return groups
 
     const date = new Date(effectiveTime)
-    const hourKey = date.toLocaleString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      day: '2-digit',
-      month: 'short',
-    })
+    const pad = (value: number) => value.toString().padStart(2, '0')
+    const hourKey = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}`
 
     if (!groups[hourKey]) {
       groups[hourKey] = []
@@ -78,64 +69,78 @@ export function DeparturesBoard({ departures }: DeparturesBoardProps) {
           </tr>
         </thead>
         <tbody className="bg-card divide-y divide-border">
-          {Object.entries(groupedDepartures).map(([hourKey, hourDepartures]) => (
-            <React.Fragment key={hourKey}>
-              {/* Hour header row */}
-              <tr className="bg-gray-800/50">
-                <td colSpan={5} className="px-6 py-2 text-sm font-semibold text-gray-300">
-                  {hourKey}
-                </td>
-              </tr>
-              {/* Departures for this hour */}
-              {hourDepartures.map((departure, index) => (
-                <tr
-                  key={`${hourKey}-${index}`}
-                  className={departure.cancelled ? 'bg-red-900/50' : 'hover:bg-gray-800/30'}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-input text-gray-300`}
-                      >
-                        {departure.line}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-foreground">{departure.destination}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-foreground">{departure.platform}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-foreground">
-                      {departure.realtime_time ? (
-                        <>
-                          <span className="font-semibold">{new Date(departure.realtime_time).toLocaleTimeString()}</span>
-                          {departure.planned_time && (
-                            <span className="text-xs text-gray-500 ml-2 line-through">
-                              {new Date(departure.planned_time).toLocaleTimeString()}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span>{departure.planned_time ? new Date(departure.planned_time).toLocaleTimeString() : 'N/A'}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        departure.delay_minutes > 0 ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'
-                      }`}
-                    >
-                      {departure.delay_minutes > 0 ? `+${departure.delay_minutes}` : 'On time'}
-                    </span>
+          {Object.entries(groupedDepartures).map(([hourKey, hourDepartures]) => {
+            const headerDeparture = hourDepartures[0]
+            const headerTime = headerDeparture?.realtime_time || headerDeparture?.planned_time
+            const headerLabel = headerTime
+              ? new Date(headerTime).toLocaleString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                  day: '2-digit',
+                  month: 'short',
+                })
+              : hourKey
+
+            return (
+              <React.Fragment key={hourKey}>
+                {/* Hour header row */}
+                <tr className="bg-gray-800/50">
+                  <td colSpan={5} className="px-6 py-2 text-sm font-semibold text-gray-300">
+                    {headerLabel}
                   </td>
                 </tr>
-              ))}
-            </React.Fragment>
-          ))}
+                {/* Departures for this hour */}
+                {hourDepartures.map((departure, index) => (
+                  <tr
+                    key={`${hourKey}-${index}`}
+                    className={departure.cancelled ? 'bg-red-900/50' : 'hover:bg-gray-800/30'}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <span
+                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-input text-gray-300`}
+                        >
+                          {departure.line}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-foreground">{departure.destination}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-foreground">{departure.platform}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-foreground">
+                        {departure.realtime_time ? (
+                          <>
+                            <span className="font-semibold">{new Date(departure.realtime_time).toLocaleTimeString()}</span>
+                            {departure.planned_time && (
+                              <span className="text-xs text-gray-500 ml-2 line-through">
+                                {new Date(departure.planned_time).toLocaleTimeString()}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span>{departure.planned_time ? new Date(departure.planned_time).toLocaleTimeString() : 'N/A'}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          departure.delay_minutes > 0 ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'
+                        }`}
+                      >
+                        {departure.delay_minutes > 0 ? `+${departure.delay_minutes}` : 'On time'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            )
+          })}
         </tbody>
       </table>
       {sortedDepartures.length === 0 && (
