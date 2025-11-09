@@ -9,6 +9,31 @@ const ALL_TRANSPORT_TYPES: TransportType[] = ['BAHN', 'SBAHN', 'UBAHN', 'TRAM', 
 const DEFAULT_PAGE_SIZE = 20
 const DEFAULT_PAGE_STEP_MINUTES = 30
 
+const toDateTimeLocalValue = (isoString: string | null) => {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  const pad = (value: number) => value.toString().padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+const fromDateTimeLocalValue = (value: string): string | null => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+  return date.toISOString()
+}
+
 interface PaginationState {
   pageIndex: number
   pageSize: number
@@ -349,11 +374,15 @@ export function DeparturesPage() {
             <label className="block text-xs font-medium text-gray-700 mb-1">Start Time</label>
             <input
               type="datetime-local"
-              value={paginationState.fromTime ? new Date(paginationState.fromTime).toISOString().slice(0, 16) : ''}
+              value={toDateTimeLocalValue(paginationState.fromTime)}
               onChange={(e) => {
                 if (e.target.value) {
+                  const nextIso = fromDateTimeLocalValue(e.target.value)
+                  if (!nextIso) {
+                    return
+                  }
                   updatePaginationState({
-                    fromTime: new Date(e.target.value).toISOString(),
+                    fromTime: nextIso,
                     pageIndex: 0,
                     live: false,
                   })
