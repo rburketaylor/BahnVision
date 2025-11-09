@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -207,10 +207,12 @@ def test_departures_transport_filters(api_client, fake_cache, transport_filter, 
 def test_departures_from_parameter_conversion(api_client, fake_cache, fake_mvg_client):
     """Test departures endpoint converts from timestamp to offset correctly."""
     # Test with a future timestamp (should convert to positive offset)
-    future_time = datetime.now(timezone.utc).replace(microsecond=0)
-    future_time = future_time.replace(second=future_time.second + 1800)  # 30 minutes in future
+    future_time = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=30)
 
-    response = api_client.get(f"/api/v1/mvg/departures?station=Marienplatz&from={future_time.isoformat()}")
+    response = api_client.get(
+        "/api/v1/mvg/departures",
+        params={"station": "Marienplatz", "from": future_time.isoformat()},
+    )
     assert response.status_code == 200
 
     # Verify MVG client was called with offset close to 30 minutes
@@ -223,10 +225,12 @@ def test_departures_from_parameter_conversion(api_client, fake_cache, fake_mvg_c
 def test_departures_from_parameter_past_time(api_client, fake_cache, fake_mvg_client):
     """Test departures endpoint handles past timestamps by clamping to 0 offset."""
     # Test with a past timestamp (should be clamped to 0)
-    past_time = datetime.now(timezone.utc).replace(microsecond=0)
-    past_time = past_time.replace(second=past_time.second - 1800)  # 30 minutes in past
+    past_time = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=30)
 
-    response = api_client.get(f"/api/v1/mvg/departures?station=Marienplatz&from={past_time.isoformat()}")
+    response = api_client.get(
+        "/api/v1/mvg/departures",
+        params={"station": "Marienplatz", "from": past_time.isoformat()},
+    )
     assert response.status_code == 200
 
     # Verify MVG client was called with offset = 0 (clamped)
@@ -239,7 +243,8 @@ def test_departures_mutually_exclusive_from_and_offset(api_client):
     """Test departures endpoint rejects both from and offset parameters."""
     future_time = datetime.now(timezone.utc).isoformat()
     response = api_client.get(
-        f"/api/v1/mvg/departures?station=Marienplatz&from={future_time}&offset=30"
+        "/api/v1/mvg/departures",
+        params={"station": "Marienplatz", "from": future_time, "offset": 30},
     )
     assert response.status_code == 422
     assert "Cannot specify both 'from' and 'offset'" in response.json()["detail"]
@@ -263,7 +268,13 @@ def test_departures_from_parameter_with_transport_filters(api_client, fake_cache
     )
 
     response = api_client.get(
-        f"/api/v1/mvg/departures?station=Marienplatz&from={future_time}&limit=10&transport_type=UBAHN"
+        "/api/v1/mvg/departures",
+        params={
+            "station": "Marienplatz",
+            "from": future_time,
+            "limit": 10,
+            "transport_type": "UBAHN",
+        },
     )
     assert response.status_code == 200
 
