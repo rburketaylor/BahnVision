@@ -3,7 +3,7 @@
  * Accessible autocomplete component for MVG stations.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ChangeEvent } from 'react'
 import { useStationSearch } from '../hooks/useStationSearch'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Station } from '../types/api'
@@ -161,7 +161,7 @@ export function StationSearch({
   }
 
   // Cancel ongoing search when user clears the input
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value
     setQuery(nextValue)
 
