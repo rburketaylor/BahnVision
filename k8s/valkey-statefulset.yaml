@@ -45,9 +45,6 @@ spec:
         - ""
         - --appendonly
         - "no"
-        volumeMounts:
-        - name: valkey-storage
-          mountPath: /data
         resources:
           requests:
             memory: "128Mi"
@@ -69,12 +66,3 @@ spec:
             - ping
           initialDelaySeconds: 5
           periodSeconds: 5
-  volumeClaimTemplates:
-  - metadata:
-      name: valkey-storage
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: "standard"
-      resources:
-        requests:
-          storage: 512Mi
