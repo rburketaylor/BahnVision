@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router'
 import { useDepartures } from '../hooks/useDepartures'
 import { DeparturesBoard } from '../components/DeparturesBoard'
 import type { TransportType } from '../types/api'
 
-const ALL_TRANSPORT_TYPES: TransportType[] = ['BAHN', 'SBAHN', 'UBAHN', 'TRAM', 'BUS', 'REGIONAL_BUS', 'SEV', 'SCHIFF']
+// SEV temporarily removed due to MVG API 400 errors - may need station-specific handling
+const ALL_TRANSPORT_TYPES: TransportType[] = ['BAHN', 'SBAHN', 'UBAHN', 'TRAM', 'BUS', 'REGIONAL_BUS', 'SCHIFF']
 const DEFAULT_PAGE_SIZE = 20
 const DEFAULT_PAGE_STEP_MINUTES = 30
 
@@ -21,6 +22,21 @@ export function DeparturesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedTransportTypes, setSelectedTransportTypes] = useState<TransportType[]>([])
 
+  // Debouncing for transport type changes to prevent cascading API calls
+  const [debouncedTransportTypes, setDebouncedTransportTypes] = useState<TransportType[]>([])
+  const debounceTimeoutRef = useRef<number | null>(null)
+  const [isFilterUpdating, setIsFilterUpdating] = useState(false)
+
+  // Initialize transport types from URL params on mount
+  useEffect(() => {
+    const transportParam = searchParams.get('transport_type')
+    if (transportParam) {
+      const types = transportParam.split(',').filter(Boolean) as TransportType[]
+      setSelectedTransportTypes(types)
+      setDebouncedTransportTypes(types)
+    }
+  }, [searchParams])
+
   // Initialize pagination state from URL params
   const paginationState: PaginationState = useMemo(() => ({
     pageIndex: parseInt(searchParams.get('page') || '0', 10),
@@ -30,7 +46,12 @@ export function DeparturesPage() {
     live: searchParams.get('live') !== 'false' && searchParams.get('from') === null,
   }), [searchParams])
 
-  // Update URL when pagination state or transport types change
+  // Debounced transport types for API calls (prevents cascading requests)
+  const sortedDebouncedTransportTypes = useMemo(() => {
+    return [...debouncedTransportTypes].sort()
+  }, [debouncedTransportTypes])
+
+  // Update URL when state changes - use debounced transport types
   useEffect(() => {
     const newParams = new URLSearchParams()
 
@@ -48,12 +69,64 @@ export function DeparturesPage() {
       newParams.set('live', 'false')
     }
 
-    if (selectedTransportTypes.length > 0) {
-      newParams.set('transport_type', selectedTransportTypes.join(','))
+    // Only use debounced transport types for URL
+    if (sortedDebouncedTransportTypes.length > 0) {
+      newParams.set('transport_type', sortedDebouncedTransportTypes.join(','))
+    } else {
+      newParams.delete('transport_type')
     }
 
-    setSearchParams(newParams, { replace: true })
-  }, [paginationState, selectedTransportTypes, setSearchParams])
+    // Only update URL if parameters actually changed (shallow compare)
+    const currentParamsString = searchParams.toString()
+    const newParamsString = newParams.toString()
+
+    if (currentParamsString !== newParamsString) {
+      setSearchParams(newParams, { replace: true })
+    }
+  }, [paginationState, sortedDebouncedTransportTypes, setSearchParams, searchParams])
+
+  // Debounce transport type changes
+  useEffect(() => {
+    // Clear existing timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current)
+    }
+
+    // Check if transport types actually changed
+    const currentTypes = JSON.stringify(selectedTransportTypes.sort())
+    const debouncedTypes = JSON.stringify(debouncedTransportTypes.sort())
+
+    if (currentTypes !== debouncedTypes) {
+      setIsFilterUpdating(true)
+
+      // Dynamic debounce delay based on complexity
+      const debounceDelay = selectedTransportTypes.length > 4 ? 800 :
+                           selectedTransportTypes.length > 2 ? 500 : 300
+
+      // Set new timeout
+      debounceTimeoutRef.current = setTimeout(() => {
+        const sortedTypes = [...selectedTransportTypes].sort()
+        setDebouncedTransportTypes(sortedTypes)
+        setIsFilterUpdating(false)
+      }, debounceDelay)
+    }
+
+    // Cleanup
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current)
+      }
+    }
+  }, [selectedTransportTypes, debouncedTransportTypes])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Determine query parameters based on current pagination state
   const departuresParams = useMemo(() => {
@@ -66,7 +139,7 @@ export function DeparturesPage() {
     } = {
       station: stationId!,
       limit: paginationState.pageSize,
-      transport_type: selectedTransportTypes.length > 0 ? selectedTransportTypes : undefined,
+      transport_type: sortedDebouncedTransportTypes.length > 0 ? sortedDebouncedTransportTypes : undefined,
     }
 
     if (paginationState.fromTime) {
@@ -76,7 +149,7 @@ export function DeparturesPage() {
     }
 
     return baseParams
-  }, [stationId, paginationState, selectedTransportTypes])
+  }, [stationId, paginationState, sortedDebouncedTransportTypes])
 
   const { data: apiResponse, isLoading, error } = useDepartures(
     departuresParams,
@@ -112,7 +185,13 @@ export function DeparturesPage() {
       newParams.set('live', 'false')
     }
 
-    setSearchParams(newParams, { replace: true })
+    // Only update URL if parameters actually changed (shallow compare)
+    const currentParamsString = searchParams.toString()
+    const newParamsString = newParams.toString()
+
+    if (currentParamsString !== newParamsString) {
+      setSearchParams(newParams, { replace: true })
+    }
   }
 
   const goToNow = () => {
@@ -169,14 +248,31 @@ export function DeparturesPage() {
       <div className="rounded-lg border border-border bg-card p-4 shadow-md">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-lg font-semibold">Transport Types</h3>
-          {selectedTransportTypes.length > 0 && (
-            <button
-              onClick={() => setSelectedTransportTypes([])}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              Reset filters
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {isFilterUpdating && (
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-blue-500"></span>
+                {sortedDebouncedTransportTypes.length > 3 ? 'Loading complex filters...' : 'Updating...'}
+              </span>
+            )}
+            {selectedTransportTypes.length > 0 && (
+              <button
+                onClick={() => {
+                  setSelectedTransportTypes([])
+                  // Immediately clear debounced state as well
+                  setDebouncedTransportTypes([])
+                  setIsFilterUpdating(false)
+                  if (debounceTimeoutRef.current) {
+                    clearTimeout(debounceTimeoutRef.current)
+                    debounceTimeoutRef.current = null
+                  }
+                }}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {ALL_TRANSPORT_TYPES.map((type) => (
