@@ -89,3 +89,32 @@ def test_route_planner_caches_and_reuses_results(
     assert cached.status_code == 200
     assert cached.headers["X-Cache-Status"] == "hit"
     assert fake_mvg_client.route_calls == 1  # response satisfied via cache
+
+
+def test_request_id_header_is_always_emitted(api_client: TestClient) -> None:
+    response = api_client.get("/api/v1/health")
+    assert response.status_code == 200
+    generated_id = response.headers.get("X-Request-Id")
+    assert generated_id is not None and generated_id != ""
+
+    supplied_id = "test-request-id"
+    echoed = api_client.get("/api/v1/health", headers={"X-Request-Id": supplied_id})
+    assert echoed.status_code == 200
+    assert echoed.headers.get("X-Request-Id") == supplied_id
+
+
+def test_departures_marks_partial_payloads(
+    api_client: TestClient,
+    fake_mvg_client,
+) -> None:
+    fake_mvg_client.fail_departures_for.add("BUS")
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "ubahn"),
+        ("transport_type", "bus"),
+    ]
+    response = api_client.get("/api/v1/mvg/departures", params=params)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["partial"] is True
+    assert response.headers["X-Cache-Status"] == "miss"

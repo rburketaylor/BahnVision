@@ -51,6 +51,13 @@ class Departure(BaseModel):
 class DeparturesResponse(BaseModel):
     station: Station
     departures: list[Departure]
+    partial: bool = Field(
+        False,
+        description=(
+            "Indicates the payload may be incomplete due to transient upstream "
+            "errors when aggregating transport-specific results."
+        ),
+    )
 
     @classmethod
     def from_dtos(

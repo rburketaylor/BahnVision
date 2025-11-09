@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
@@ -28,6 +28,13 @@ _CACHE_DEPARTURES = "mvg_departures"
 _CACHE_STATION_SEARCH = "mvg_station_search"
 _CACHE_STATION_LIST = "mvg_station_list"
 _CACHE_ROUTE = "mvg_route"
+
+
+def _ensure_aware_utc(value: datetime) -> datetime:
+    """Treat naive datetimes as UTC and normalize all timestamps to UTC."""
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def get_client() -> MVGClient:
@@ -68,10 +75,27 @@ async def departures(
         int,
         Query(
             ge=0,
-            le=60,
+            le=240,
             description="Walking time or delay in minutes to offset the schedule.",
         ),
     ] = 0,
+    from_time: Annotated[
+        datetime | None,
+        Query(
+            description="UTC ISO timestamp to start results from. Cannot be used together with offset. "
+            "If provided, results are the next N departures starting at this time anchor.",
+            alias="from",
+        ),
+    ] = None,
+    window_minutes: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            le=240,
+            description="Optional window size in minutes for pagination stepping. "
+            "Used by clients for page navigation, does not affect server response size.",
+        ),
+    ] = None,
     client: MVGClient = Depends(get_client),
     cache: CacheService = Depends(get_cache_service),
 ) -> DeparturesResponse:
@@ -85,9 +109,30 @@ async def departures(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
 
+    # Validate mutual exclusivity of from_time and offset
+    if from_time is not None and offset != 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Cannot specify both 'from' and 'offset' parameters. Use 'from' for time-based pagination or 'offset' for minute-based offset.",
+        )
+
+    # Convert from_time to offset if provided
+    if from_time is not None:
+        from_time = _ensure_aware_utc(from_time)
+        now = datetime.now(timezone.utc)
+        # Calculate offset minutes as ceiling of (from_time - now) / 60, clamped at 0
+        delta_minutes = int((from_time - now).total_seconds() / 60)
+        offset = max(0, delta_minutes)
+        if offset > 240:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Offset derived from 'from' parameter exceeds maximum allowed value of 240 minutes.",
+            )
+
     settings = get_settings()
     all_departures = []
     station_details = None
+    partial_response = False
 
     if not parsed_transport_types:
         cache_key = _departures_cache_key(station, limit, offset, [])
@@ -222,6 +267,7 @@ async def departures(
                 continue
             # If we have some departures, we can return them
             if all_departures:
+                partial_response = True
                 break
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -230,6 +276,7 @@ async def departures(
             record_cache_event(_CACHE_DEPARTURES, "not_found")
             # If we have some departures, we can return them
             if all_departures:
+                partial_response = True
                 break
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
@@ -246,6 +293,7 @@ async def departures(
                 continue
             # If we have some departures, we can return them
             if all_departures:
+                partial_response = True
                 break
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
@@ -258,8 +306,13 @@ async def departures(
         )
 
     all_departures.sort(key=lambda d: d.planned_time)
+    if partial_response and "X-Cache-Status" not in response.headers:
+        response.headers["X-Cache-Status"] = "miss"
+
     return DeparturesResponse(
-        station=station_details, departures=all_departures[:limit]
+        station=station_details,
+        departures=all_departures[:limit],
+        partial=partial_response,
     )
 
 

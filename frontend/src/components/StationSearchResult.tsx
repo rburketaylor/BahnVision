@@ -47,7 +47,7 @@ export function StationSearchResult({
   optionId,
 }: StationSearchResultProps) {
   return (
-    <li
+    <div
       id={optionId}
       role="option"
       aria-selected={isActive}
@@ -71,6 +71,6 @@ export function StationSearchResult({
           {highlightMatch(station.place, query)}
         </span>
       </button>
-    </li>
+    </div>
   )
 }

@@ -113,6 +113,7 @@ class FakeMVGClient:
         self.call_count_departures = 0
         self.call_count_station_list = 0
         self.call_count_route = 0
+        self.last_departures_call: dict[str, Any] | None = None
 
     def configure(self, scenario: MVGClientScenario) -> None:
         """Set up MVG client behavior."""
@@ -139,6 +140,12 @@ class FakeMVGClient:
     ) -> tuple[Station, list[Departure]]:
         """Return configured departures or raise error."""
         self.call_count_departures += 1
+        self.last_departures_call = {
+            "station_query": station_query,
+            "limit": limit,
+            "offset": offset,
+            "transport_types": transport_types,
+        }
         if self.scenario.fail_departures:
             raise MVGServiceError("Failed to retrieve departures from MVG.")
         if self.scenario.not_found_station:

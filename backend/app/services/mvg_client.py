@@ -141,22 +141,27 @@ class MVGClient:
             departures = [self._map_departure(item) for item in raw_departures]
             return station, departures
 
+        # Convert transport_types to a list to avoid repeated conversions and ensure it's not consumed if it was a generator
+        transport_types_list = list(transport_types) if transport_types else []
+
         tasks = []
-        for tt in transport_types:
+        for tt in transport_types_list:
             tasks.append(
                 asyncio.to_thread(self._fetch_departures, station.id, limit, offset, [tt])
             )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         departures = []
-        for result in results:
+        for i, result in enumerate(results):
             if isinstance(result, list):
                 departures.extend([self._map_departure(item) for item in result])
             else:
-                # Log the error, but don't fail the entire request
-                print(f"Error fetching departures: {result}")
+                # Log the error with transport type context, but don't fail the entire request
+                transport_type = transport_types_list[i] if i < len(transport_types_list) else "unknown"
+                print(f"Error fetching departures for transport type {transport_type}: {result}")
 
-        departures.sort(key=lambda d: d.planned_time)
+        # Sort with defensive handling for null planned_time values
+        departures.sort(key=lambda d: (d.planned_time is None, d.planned_time))
         return station, departures[:limit]
 
     async def get_all_stations(self) -> list[Station]:
@@ -245,7 +250,26 @@ class MVGClient:
         transport_types: list[TransportType] | None,
     ) -> list[dict[str, Any]]:
         client = MvgApi(station_id)
-        return client.departures(limit=limit, offset=offset, transport_types=transport_types)
+        try:
+            return client.departures(limit=limit, offset=offset, transport_types=transport_types)
+        except MvgApiError as exc:
+            # If this is a 400 error, it's likely an unsupported transport type for this station
+            # Log the error and return empty list instead of failing
+            error_msg = str(exc)
+            error_lower = error_msg.lower()
+
+            # Check for HTTP 400 errors more robustly
+            is_400_error = (
+                "400" in error_msg or
+                "bad request" in error_lower or
+                "client error" in error_lower
+            )
+
+            if is_400_error:
+                print(f"Error fetching departures: Bad API call: {error_msg}")
+                return []
+            # Re-raise other errors
+            raise
 
     @staticmethod
     def _fetch_routes(
