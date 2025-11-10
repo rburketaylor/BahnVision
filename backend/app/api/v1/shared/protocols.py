@@ -4,21 +4,152 @@ This module provides concrete implementations of CacheRefreshProtocol for each
 MVG endpoint type, demonstrating how to use the shared caching patterns.
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from app.api.v1.shared.caching import CacheRefreshProtocol, MvgCacheProtocol
 from app.api.v1.shared.station_search_index import CachedStationSearchIndex
-from app.core.config import Settings
-from app.models.mvg import DeparturesResponse, RouteResponse, Station, StationListResponse, StationSearchResponse
+from app.core.config import Settings, get_settings
+from app.persistence.repositories import StationPayload, StationRepository
+from app.models.mvg import (
+    DeparturesResponse,
+    RouteResponse,
+    Station,
+    StationListResponse,
+    StationSearchResponse,
+)
 from app.services.cache import CacheService
 from app.services.mvg_client import (
     MVGClient,
+    Station as StationDTO,
     TransportType,
 )
-from app.services.mvg_client import (
-    StationNotFoundError as MVGStationNotFoundError,
-)
+from app.services.mvg_client import StationNotFoundError as MVGStationNotFoundError
+
+logger = logging.getLogger(__name__)
+
+
+class StationCatalog:
+    """Helper that loads station metadata from cache, persistence, or MVG."""
+
+    CACHE_KEY = "mvg:stations:all"
+
+    def __init__(
+        self,
+        client: MVGClient,
+        cache: CacheService,
+        repository: StationRepository | None,
+        *,
+        settings: Settings | None = None,
+    ):
+        self.client = client
+        self.cache = cache
+        self.repository = repository
+        self.settings = settings or get_settings()
+
+    async def get_stations(self) -> list[Station]:
+        """Return the most recent station catalog available to the service."""
+        for loader in (
+            self._load_from_station_list_cache,
+            self._load_from_repository,
+            self._fetch_from_mvg,
+        ):
+            stations = await loader()
+            if stations:
+                return stations
+        return []
+
+    async def _load_from_station_list_cache(self) -> list[Station]:
+        payload = await self.cache.get_json(self.CACHE_KEY)
+        if not payload:
+            return []
+        try:
+            response = StationListResponse.model_validate(payload)
+        except Exception as exc:
+            logger.warning("Failed to parse cached station list: %s", exc)
+            return []
+        return [
+            Station(
+                id=station.id,
+                name=station.name,
+                place=station.place,
+                latitude=station.latitude,
+                longitude=station.longitude,
+            )
+            for station in response.stations
+        ]
+
+    async def _load_from_repository(self) -> list[Station]:
+        if self.repository is None:
+            return []
+        try:
+            records = await self.repository.get_all_stations()
+        except Exception as exc:
+            logger.warning("Failed to read stations from repository: %s", exc)
+            return []
+        return [
+            Station(
+                id=record.station_id,
+                name=record.name,
+                place=record.place,
+                latitude=record.latitude,
+                longitude=record.longitude,
+            )
+            for record in records
+        ]
+
+    async def _fetch_from_mvg(self) -> list[Station]:
+        station_dtos = await self.client.get_all_stations()
+        stations = [self._normalize_station(dto) for dto in station_dtos]
+        if stations:
+            await self._persist_stations(stations)
+            await self._cache_station_list(stations)
+        return stations
+
+    async def _persist_stations(self, stations: list[Station]) -> None:
+        if self.repository is None:
+            return
+        payloads = [
+            StationPayload(
+                station_id=station.id,
+                name=station.name,
+                place=station.place,
+                latitude=station.latitude,
+                longitude=station.longitude,
+                transport_modes=[],
+            )
+            for station in stations
+        ]
+        try:
+            await self.repository.upsert_stations(payloads)
+        except Exception as exc:
+            logger.warning("Failed to persist station catalog: %s", exc)
+
+    async def _cache_station_list(self, stations: list[Station]) -> None:
+        """Persist the station catalog into Valkey for future reads."""
+        try:
+            response = StationListResponse(stations=stations)
+            await self.cache.set_json(
+                self.CACHE_KEY,
+                response.model_dump(mode="json"),
+                ttl_seconds=self.settings.mvg_station_list_cache_ttl_seconds,
+                stale_ttl_seconds=self.settings.mvg_station_list_cache_stale_ttl_seconds,
+            )
+        except Exception as exc:
+            logger.warning("Failed to cache station list: %s", exc)
+
+    def _normalize_station(self, station: Station | StationDTO) -> Station:
+        """Ensure station entries use the API's Pydantic schema."""
+        if isinstance(station, Station):
+            return station
+        return Station(
+            id=station.id,
+            name=station.name,
+            place=station.place,
+            latitude=station.latitude,
+            longitude=station.longitude,
+        )
 
 
 class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
@@ -102,16 +233,23 @@ class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
 class StationSearchRefreshProtocol(MvgCacheProtocol[StationSearchResponse]):
     """Optimized cache refresh protocol for station search endpoint using O(1) search index."""
 
-    def __init__(self, client: MVGClient, cache: CacheService):
+    def __init__(
+        self,
+        client: MVGClient,
+        cache: CacheService,
+        station_repository: StationRepository | None,
+    ):
         """
         Initialize protocol with search index support.
 
         Args:
             client: MVG client instance
             cache: Cache service for persistent search index
+            station_repository: Repository that holds persisted stations
         """
         self.client = client
         self.search_index = CachedStationSearchIndex(cache)
+        self.catalog = StationCatalog(client, cache, station_repository)
 
     def cache_name(self) -> str:
         return "mvg_station_search"
@@ -136,7 +274,10 @@ class StationSearchRefreshProtocol(MvgCacheProtocol[StationSearchResponse]):
         limit = kwargs["limit"]
 
         # Get all stations (cached call) - this is much faster with the search index
-        all_stations = await self.client.get_all_stations()
+        all_stations = await self.catalog.get_stations()
+
+        if not all_stations:
+            raise MVGStationNotFoundError(f"No stations found for query '{query}'.")
 
         # Get or build the high-performance search index
         index = await self.search_index.get_index(all_stations)
@@ -153,8 +294,14 @@ class StationSearchRefreshProtocol(MvgCacheProtocol[StationSearchResponse]):
 class StationListRefreshProtocol(MvgCacheProtocol[StationListResponse]):
     """Simplified cache refresh protocol for station list endpoint."""
 
-    def __init__(self, client: MVGClient):
+    def __init__(
+        self,
+        client: MVGClient,
+        cache: CacheService,
+        station_repository: StationRepository | None,
+    ):
         self.client = client
+        self.catalog = StationCatalog(client, cache, station_repository)
 
     def cache_name(self) -> str:
         return "mvg_station_list"
@@ -169,8 +316,8 @@ class StationListRefreshProtocol(MvgCacheProtocol[StationListResponse]):
         return "mvg_station_list_cache_stale_ttl_seconds"
 
     async def fetch_data(self, **kwargs: Any) -> StationListResponse:
-        stations = await self.client.get_all_stations()
-        return StationListResponse.from_dtos(stations if stations else [])
+        stations = await self.catalog.get_stations()
+        return StationListResponse(stations=stations if stations else [])
 
 
 class RouteRefreshProtocol(CacheRefreshProtocol[RouteResponse]):

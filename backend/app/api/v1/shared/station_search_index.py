@@ -8,8 +8,10 @@ replacing the inefficient O(n) linear scan approach.
 from typing import Annotated, Any, ClassVar
 from collections import defaultdict
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 import asyncio
 import logging
+import unicodedata
 
 from app.models.mvg import Station
 from app.services.cache import CacheService
@@ -33,10 +35,13 @@ class StationSearchIndex:
     name_index: dict[str, list[Station]] = field(default_factory=lambda: defaultdict(list))
     place_index: dict[str, list[Station]] = field(default_factory=lambda: defaultdict(list))
     exact_match_index: dict[str, Station] = field(default_factory=dict)
+    stations: list[Station] = field(default_factory=list)
 
     # Metadata
     total_stations: int = 0
     last_updated: float = field(default_factory=lambda: 0)
+
+    _FUZZY_MIN_RATIO: ClassVar[float] = 0.62
 
     def __post_init__(self) -> None:
         """Initialize the search index."""
@@ -59,6 +64,7 @@ class StationSearchIndex:
         self.name_index.clear()
         self.place_index.clear()
         self.exact_match_index.clear()
+        self.stations = list(stations)
 
         for station in stations:
             # Exact match index for perfect matches
@@ -66,17 +72,19 @@ class StationSearchIndex:
             self.exact_match_index[name_lower] = station
 
             # Name index for partial matches - split into words
-            name_words = name_lower.split()
-            for word in name_words:
-                if len(word) >= 2:  # Only index words with 2+ characters
-                    self.name_index[word].append(station)
+            for word in self._tokenize(name_lower):
+                self.name_index[word].append(station)
+            normalized_name = self._normalize_text(station.name)
+            for word in self._tokenize(normalized_name):
+                self.name_index[word].append(station)
 
             # Place index for location-based searches
             place_lower = station.place.lower()
-            place_words = place_lower.split()
-            for word in place_words:
-                if len(word) >= 2:  # Only index words with 2+ characters
-                    self.place_index[word].append(station)
+            for word in self._tokenize(place_lower):
+                self.place_index[word].append(station)
+            normalized_place = self._normalize_text(station.place)
+            for word in self._tokenize(normalized_place):
+                self.place_index[word].append(station)
 
         self.total_stations = len(stations)
         self.last_updated = asyncio.get_event_loop().time()
@@ -99,6 +107,7 @@ class StationSearchIndex:
             return []
 
         query_lower = query.strip().lower()
+        normalized_query = self._normalize_text(query)
 
         # Start with exact match - highest priority
         results: list[tuple[Station, int]] = []
@@ -109,7 +118,8 @@ class StationSearchIndex:
 
         # 2. Check name index for partial matches
         query_words = query_lower.split()
-        for word in query_words:
+        normalized_words = normalized_query.split() if normalized_query else []
+        for word in query_words + normalized_words:
             if len(word) >= 2 and word in self.name_index:
                 for station in self.name_index[word]:
                     # Calculate relevance score based on match quality
@@ -123,7 +133,7 @@ class StationSearchIndex:
                     results.append((station, relevance))
 
         # 3. Check place index for location matches
-        for word in query_words:
+        for word in query_words + normalized_words:
             if len(word) >= 2 and word in self.place_index:
                 for station in self.place_index[word]:
                     # Lower relevance for place matches
@@ -141,6 +151,16 @@ class StationSearchIndex:
 
         # Sort by relevance (descending) and return top results
         unique_results.sort(key=lambda x: x[1], reverse=True)
+
+        if len(unique_results) < limit:
+            remaining = limit - len(unique_results)
+            fuzzy_matches = self._fuzzy_search(
+                query_lower=query_lower,
+                normalized_query=normalized_query,
+                seen_stations=seen_stations,
+            )
+            unique_results.extend(fuzzy_matches[:remaining])
+
         return [station for station, _ in unique_results[:limit]]
 
     async def get_stats(self) -> dict[str, Any]:
@@ -158,6 +178,62 @@ class StationSearchIndex:
             "last_updated": self.last_updated,
         }
 
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        """Return a lowercase, accent-insensitive representation of text."""
+        normalized = unicodedata.normalize("NFKD", value)
+        stripped = ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+        return stripped.lower()
+
+    @staticmethod
+    def _tokenize(value: str) -> list[str]:
+        return [word for word in value.split() if len(word) >= 2]
+
+    def _fuzzy_search(
+        self,
+        *,
+        query_lower: str,
+        normalized_query: str,
+        seen_stations: set[str],
+    ) -> list[tuple[Station, int]]:
+        """Fallback fuzzy search across all stations for typos/substrings."""
+        candidates: list[tuple[Station, int]] = []
+        for station in self.stations:
+            if station.id in seen_stations:
+                continue
+
+            name_lower = station.name.lower()
+            place_lower = station.place.lower()
+            normalized_name = self._normalize_text(station.name)
+            normalized_place = self._normalize_text(station.place)
+
+            score = 0
+            if query_lower and query_lower in name_lower:
+                score = 90
+            elif query_lower and query_lower in place_lower:
+                score = 80
+            elif normalized_query:
+                if normalized_query in normalized_name:
+                    score = 85
+                elif normalized_query in normalized_place:
+                    score = 75
+
+            if score == 0:
+                ratio = max(
+                    SequenceMatcher(None, query_lower, name_lower).ratio() if query_lower else 0,
+                    SequenceMatcher(None, query_lower, place_lower).ratio() if query_lower else 0,
+                    SequenceMatcher(None, normalized_query, normalized_name).ratio() if normalized_query else 0,
+                    SequenceMatcher(None, normalized_query, normalized_place).ratio() if normalized_query else 0,
+                )
+                if ratio >= self._FUZZY_MIN_RATIO:
+                    score = int(ratio * 100)
+
+            if score:
+                candidates.append((station, score))
+
+        candidates.sort(key=lambda item: item[1], reverse=True)
+        return candidates
+
     async def clear(self) -> None:
         """Clear all indexes (useful for testing)."""
         self.name_index.clear()
@@ -165,6 +241,7 @@ class StationSearchIndex:
         self.exact_match_index.clear()
         self.total_stations = 0
         self.last_updated = 0
+        self.stations = []
 
     async def __aenter__(self) -> "StationSearchIndex":
         """Async context manager entry."""

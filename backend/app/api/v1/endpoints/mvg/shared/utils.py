@@ -7,6 +7,9 @@ different MVG endpoint modules to avoid code duplication.
 
 from datetime import datetime, timezone
 
+from fastapi import Depends
+
+from app.services.cache import CacheService, get_cache_service
 from app.services.mvg_client import MVGClient
 
 
@@ -24,10 +27,8 @@ def ensure_aware_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def get_client() -> MVGClient:
-    """Instantiate a fresh MVG client per request.
-
-    Returns:
-        A new MVGClient instance
-    """
-    return MVGClient()
+def get_client(
+    cache_service: CacheService = Depends(get_cache_service),
+) -> MVGClient:
+    """Instantiate a fresh MVG client per request."""
+    return MVGClient(cache_service=cache_service)

@@ -171,6 +171,24 @@ class DataMapper:
 class MVGClient:
     """Simplified wrapper around the mvg package with cleaner data mapping."""
 
+    def __init__(self, cache_service: Any | None = None):
+        """
+        Initialize MVG client with optional cache service for station search optimization.
+
+        Args:
+            cache_service: Optional CacheService for efficient station searches
+        """
+        self._cache_service = cache_service
+        self._search_index: Any | None = None
+
+    def _get_search_index(self):
+        """Get cached search index if cache service is available."""
+        if self._cache_service and self._search_index is None:
+            # Import here to avoid circular import
+            from app.api.v1.shared.station_search_index import CachedStationSearchIndex
+            self._search_index = CachedStationSearchIndex(self._cache_service)
+        return self._search_index
+
     async def get_station(self, query: str) -> Station:
         """Resolve a station by query (name or global id)."""
         start = time.perf_counter()
@@ -281,10 +299,22 @@ class MVGClient:
         return [self._map_station(item) for item in raw_stations]
 
     async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
-        """Search MVG for stations matching the query string."""
+        """Search MVG for stations matching the query string using optimized search index."""
         if limit <= 0:
             return []
 
+        # Try to use optimized search index if cache service is available
+        search_index = self._get_search_index()
+        if search_index:
+            try:
+                # Get all stations once and build/use search index
+                stations = await self.get_all_stations()
+                index = await search_index.get_index(stations)
+                return await index.search(query, limit)
+            except Exception as e:
+                logger.warning(f"Failed to use optimized station search index, falling back to linear search: {e}")
+
+        # Fallback to the original linear approach (but still cached via get_all_stations)
         stations = await self.get_all_stations()
         query_lower = query.lower()
         matches: list[Station] = []

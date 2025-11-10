@@ -18,8 +18,11 @@ from app.api.v1.shared.protocols import (
 )
 from app.core.config import get_settings
 from app.models.mvg import Station, StationSearchResponse
+from app.persistence.dependencies import get_station_repository
+from app.persistence.repositories import StationRepository
 from app.services.cache import CacheService, get_cache_service
 from app.services.mvg_client import MVGClient
+# from app.jobs.stations_sync import run_stations_sync, get_stations_sync_status
 
 router = APIRouter()
 
@@ -47,12 +50,13 @@ async def search_stations(
         int,
         Query(
             ge=1,
-            le=20,
-            description="Maximum number of stations to return (default: 8).",
+            le=50,
+            description="Maximum number of stations to return (default: 40).",
         ),
-    ] = 8,
+    ] = 40,
     client: MVGClient = Depends(get_client),
     cache: CacheService = Depends(get_cache_service),
+    station_repository: StationRepository = Depends(get_station_repository),
 ) -> StationSearchResponse:
     """Search MVG for station suggestions."""
     settings = get_settings()
@@ -60,7 +64,7 @@ async def search_stations(
 
     # Use the shared cache manager with optimized search index
     cache_manager = CacheManager(
-        protocol=StationSearchRefreshProtocol(client, cache),
+        protocol=StationSearchRefreshProtocol(client, cache, station_repository),
         cache=cache,
         cache_name=_CACHE_STATION_SEARCH,
     )
@@ -85,6 +89,7 @@ async def list_stations(
     background_tasks: BackgroundTasks,
     client: MVGClient = Depends(get_client),
     cache: CacheService = Depends(get_cache_service),
+    station_repository: StationRepository = Depends(get_station_repository),
 ) -> list[Station]:
     """Get the complete list of MVG stations."""
     settings = get_settings()
@@ -92,7 +97,7 @@ async def list_stations(
 
     # Use the shared cache manager for simplified caching logic
     cache_manager = CacheManager(
-        protocol=StationListRefreshProtocol(client),
+        protocol=StationListRefreshProtocol(client, cache, station_repository),
         cache=cache,
         cache_name=_CACHE_STATION_LIST,
     )
@@ -103,3 +108,21 @@ async def list_stations(
         background_tasks=background_tasks,
         settings=settings,
     )
+
+
+# @router.post(
+#     "/stations/sync",
+#     summary="Sync stations from MVG API to database",
+# )
+# async def sync_stations() -> dict[str, int]:
+#     """Trigger a manual sync of all MVG stations to the local database."""
+#     return await run_stations_sync()
+
+
+# @router.get(
+#     "/stations/sync/status",
+#     summary="Get stations sync status",
+# )
+# async def get_sync_status() -> dict[str, any]:
+#     """Get the current status of stations in the database."""
+#     return await get_stations_sync_status()
