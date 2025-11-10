@@ -377,10 +377,28 @@ class MVGClient:
     @staticmethod
     def _map_departure(data: dict[str, Any]) -> Departure:
         """Map raw departure data to Departure model."""
+        planned_time = DataMapper.convert_type(data.get("planned"), datetime)
+        realtime_time = DataMapper.convert_type(data.get("time"), datetime)
+        delay_minutes = DataMapper.convert_type(data.get("delay"), int) or 0
+
+        # Only populate planned_time when there's an actual delay or cancellation
+        # For on-time departures, planned_time should be None to avoid UI strikethrough
+        cancelled = bool(data.get("cancelled"))
+
+        if planned_time and realtime_time and not cancelled and delay_minutes <= 0:
+            # Calculate actual delay to be sure (handles cases where delay field might be inaccurate)
+            actual_delay = (realtime_time - planned_time).total_seconds() / 60
+            if actual_delay <= 1:  # Allow 1 minute tolerance for minor time differences
+                planned_time = None
+        elif cancelled and planned_time:
+            # For cancelled departures, keep planned_time to show original schedule
+            # realtime_time might be None or meaningless for cancelled services
+            pass
+
         return Departure(
-            planned_time=DataMapper.convert_type(data.get("planned"), datetime),
-            realtime_time=DataMapper.convert_type(data.get("time"), datetime),
-            delay_minutes=DataMapper.convert_type(data.get("delay"), int) or 0,
+            planned_time=planned_time,
+            realtime_time=realtime_time,
+            delay_minutes=delay_minutes,
             platform=DataMapper.convert_type(data.get("platform"), str),
             realtime=bool(data.get("realtime")),
             line=data.get("line", ""),
