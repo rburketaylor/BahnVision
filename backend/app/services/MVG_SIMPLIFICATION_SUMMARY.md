@@ -100,19 +100,16 @@ All mapping functions have been verified to produce identical results:
 
 ## Files Modified
 
-- `/backend/app/services/mvg_client_simplified.py` - New simplified implementation
-- Original file `/backend/app/services/mvg_client.py` - Preserved unchanged
+- `/backend/app/services/mvg_client.py` - Updated with simplified implementation
+- All functionality now lives in the main `mvg_client.py` file
 
 ## Usage
 
 The simplified client can be used as a drop-in replacement:
 
 ```python
-# Original import
+# Current import (simplified implementation)
 from app.services.mvg_client import MVGClient, parse_transport_types
-
-# Simplified import (identical interface)
-from app.services.mvg_client_simplified import MVGClient, parse_transport_types
 
 # All existing code works without changes
 client = MVGClient()

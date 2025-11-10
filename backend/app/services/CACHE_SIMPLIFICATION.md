@@ -4,7 +4,7 @@ This document describes the simplified cache service implementation that maintai
 
 ## Overview
 
-The `SimplifiedCacheService` in `cache_simplified.py` provides the same public API and behaviors as the original `CacheService` but with a cleaner, more maintainable architecture.
+The `SimplifiedCacheService` in `cache.py` provides the same public API and behaviors as the original `CacheService` but with a cleaner, more maintainable architecture.
 
 ## Key Simplifications
 
@@ -69,7 +69,7 @@ async with cache.single_flight(key, ttl_seconds, wait_timeout, retry_delay):
 ### As Drop-in Replacement
 
 ```python
-from app.services.cache_simplified import get_cache_service
+from app.services.cache import get_cache_service
 
 # Works exactly like the original
 cache = get_cache_service()
@@ -79,23 +79,25 @@ data = await cache.get_json("my_key")
 ### Direct Import
 
 ```python
-from app.services.cache_simplified import SimplifiedCacheService
-from app.services.cache_simplified import get_valkey_client
+from app.services.cache import SimplifiedCacheService
+from app.services.cache import get_valkey_client
 
 cache = SimplifiedCacheService(get_valkey_client())
 ```
 
 ### Migration
 
-To switch from the original to simplified service:
+The simplified cache service is now the active implementation. To use the simplified service:
 
-1. Update import statements:
+1. Use the standard import:
    ```python
-   # Old
    from app.services.cache import get_cache_service
+   from app.services.cache import CacheService
 
-   # New
-   from app.services.cache_simplified import get_cache_service
+   # Both point to the SimplifiedCacheService implementation
+   cache = get_cache_service()
+   # or
+   cache = CacheService(get_valkey_client())
    ```
 
 2. No code changes required - API is identical
@@ -137,7 +139,7 @@ The simplified service passes all compatibility tests:
 ```bash
 source .venv/bin/activate
 python -c "
-from app.services.cache_simplified import SimplifiedCacheService
+from app.services.cache import SimplifiedCacheService
 # ... compatibility tests pass
 "
 ```
