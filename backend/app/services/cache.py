@@ -66,7 +66,7 @@ class TTLConfig:
 
 
 class CircuitBreaker:
-    """Simple circuit breaker decorator pattern."""
+    """Circuit breaker decorator pattern."""
 
     def __init__(self, config: TTLConfig) -> None:
         self._config = config
@@ -113,7 +113,7 @@ class CircuitBreaker:
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
 
-class SimpleFallbackStore:
+class InMemoryFallbackStore:
     """Thread-safe in-memory fallback cache with automatic cleanup."""
 
     def __init__(self) -> None:
@@ -222,7 +222,7 @@ class SimplifiedCacheService:
         self._client = client
         self._config = TTLConfig()
         self._circuit_breaker = CircuitBreaker(self._config)
-        self._fallback_store = SimpleFallbackStore()
+        self._fallback_store = InMemoryFallbackStore()
         self._single_flight = SingleFlightLock(client, self._config)
 
     async def get_json(self, key: str) -> dict[str, Any] | None:

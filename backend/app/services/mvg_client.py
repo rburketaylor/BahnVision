@@ -543,7 +543,7 @@ def get_client() -> MVGClient:
 
 def parse_transport_types(raw_values: Iterable[str]) -> list[TransportType]:
     """Simplified transport type parsing with clean lookup logic."""
-    # Build simple lookup map
+    # Build lookup map
     transport_map = {}
     for transport_type in TransportType:
         # Add enum name variations
