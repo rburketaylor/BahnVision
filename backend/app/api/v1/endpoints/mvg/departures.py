@@ -112,81 +112,21 @@ async def departures(
                 detail="Offset derived from 'from' parameter exceeds maximum allowed value of 240 minutes.",
             )
 
-    # Setup cache manager with shared infrastructure
+    # Setup cache manager with optimized protocol
     settings = get_settings()
-    protocol = DeparturesRefreshProtocol(client)
+    protocol = DeparturesRefreshProtocol(client, parsed_transport_types)
     cache_manager = CacheManager(protocol, cache, _CACHE_DEPARTURES)
 
-    # Handle different transport type scenarios
-    if not parsed_transport_types:
-        # Single request for all transport types
-        cache_key = departures_cache_key(station, limit, offset, [])
-        return await cache_manager.get_cached_data(
-            cache_key=cache_key,
-            response=response,
-            background_tasks=background_tasks,
-            settings=settings,
-            station=station,
-            limit=limit,
-            offset=offset,
-            transport_types=[],
-        )
+    # Generate cache key that accounts for transport filters
+    cache_key = departures_cache_key(station, limit, offset, parsed_transport_types)
 
-    # Multiple requests for specific transport types
-    all_departures = []
-    station_details = None
-    partial_response = False
-
-    for transport_type in parsed_transport_types:
-        cache_key = departures_cache_key(station, limit, offset, [transport_type])
-
-        try:
-            departures_response = await cache_manager.get_cached_data(
-                cache_key=cache_key,
-                response=response,
-                background_tasks=background_tasks,
-                settings=settings,
-                station=station,
-                limit=limit,
-                offset=offset,
-                transport_types=[transport_type],
-            )
-
-            if not station_details:
-                station_details = departures_response.station
-            all_departures.extend(departures_response.departures)
-
-        except HTTPException as exc:
-            # For individual transport type failures, collect what we have and continue
-            if exc.status_code == status.HTTP_404_NOT_FOUND:
-                if all_departures:
-                    partial_response = True
-                    break
-                raise
-            elif exc.status_code in [
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                status.HTTP_502_BAD_GATEWAY,
-            ]:
-                if all_departures:
-                    partial_response = True
-                    break
-                raise
-
-    if not station_details:
-        # This should not happen if we have departures
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Station not found"
-        )
-
-    # Sort departures by planned time and limit results
-    all_departures.sort(key=lambda d: d.planned_time)
-
-    # Set cache status if not already set
-    if "X-Cache-Status" not in response.headers:
-        response.headers["X-Cache-Status"] = "miss"
-
-    return DeparturesResponse(
-        station=station_details,
-        departures=all_departures[:limit],
-        partial=partial_response,
+    # Single unified call regardless of transport type filters
+    return await cache_manager.get_cached_data(
+        cache_key=cache_key,
+        response=response,
+        background_tasks=background_tasks,
+        settings=settings,
+        station=station,
+        limit=limit,
+        offset=offset,
     )
