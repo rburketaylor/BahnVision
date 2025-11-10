@@ -19,23 +19,27 @@ def departures_cache_key(
 ) -> str:
     """Generate cache key for departures endpoint.
 
-    Optimized for the unified fetch strategy: always cache the complete response
-    (all transport types) and apply filtering client-side. This reduces cache
-    fragmentation and improves cache hit ratios.
+    Creates distinct cache keys based on transport type filters to ensure
+    proper cache isolation between different filter combinations.
 
     Args:
         station: Station name or ID
         limit: Maximum number of departures to return
         offset: Time offset in minutes
-        transport_types: List of transport type filters (used only for documentation)
+        transport_types: List of transport type filters
 
     Returns:
-        Standardized cache key string
+        Standardized cache key string with transport type segment
     """
     normalized_station = station.strip().lower()
-    # Always cache "all" transport types since we fetch everything in one call
-    # Filtering is applied client-side, so cache keys are consistent regardless of filters
-    return f"mvg:departures:{normalized_station}:{limit}:{offset}:all"
+
+    if transport_types:
+        # Create order-independent transport type segment for consistent cache keys
+        type_segment = "-".join(sorted({t.name for t in transport_types}))
+    else:
+        type_segment = "all"
+
+    return f"mvg:departures:{normalized_station}:{limit}:{offset}:{type_segment}"
 
 
 def station_search_cache_key(query: str, limit: int) -> str:

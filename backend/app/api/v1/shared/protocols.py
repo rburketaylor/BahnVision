@@ -30,11 +30,21 @@ class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
 
         Args:
             client: MVG client instance
-            filter_transport_types: Optional list of transport types to filter client-side.
+            filter_transport_types: Optional list of transport types to filter via MVG API.
                                     If None, all transport types are returned.
         """
         self.client = client
-        self.filter_transport_types = filter_transport_types
+        # Defensive deduplication in case call sites pass duplicates
+        if filter_transport_types:
+            seen = set()
+            deduplicated = []
+            for transport_type in filter_transport_types:
+                if transport_type not in seen:
+                    deduplicated.append(transport_type)
+                    seen.add(transport_type)
+            self.filter_transport_types = deduplicated
+        else:
+            self.filter_transport_types = filter_transport_types
 
     def cache_name(self) -> str:
         return "mvg_departures"
@@ -44,30 +54,33 @@ class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
 
     async def fetch_data(self, **kwargs: Any) -> DeparturesResponse:
         """
-        Fetch departures data with optional client-side filtering.
+        Fetch departures data with optional transport type filtering.
 
-        This method always makes a single call to MVG API to get all transport types,
-        then applies filtering client-side if specific transport types were requested.
+        This method uses different strategies based on whether transport type filters
+        are specified:
+        - No filters: Single call to get all transport types for efficiency
+        - With filters: Pass filters upstream to MVG API for server-side filtering
         """
         station = kwargs["station"]
         limit = kwargs["limit"]
         offset = kwargs["offset"]
 
-        # Always fetch all transport types in a single call for efficiency
-        station_details, departures_list = await self.client.get_departures(
-            station_query=station,
-            limit=limit,
-            offset=offset,
-            transport_types=None,  # Get all types in one call
-        )
-
-        # Apply client-side filtering if specific transport types were requested
         if self.filter_transport_types:
-            filter_set = set(self.filter_transport_types)
-            departures_list = [
-                departure for departure in departures_list
-                if departure.transport_type in filter_set
-            ]
+            # Pass filters upstream to MVG API for server-side filtering
+            station_details, departures_list = await self.client.get_departures(
+                station_query=station,
+                limit=limit,
+                offset=offset,
+                transport_types=self.filter_transport_types,
+            )
+        else:
+            # No filters: fetch all transport types in a single call for efficiency
+            station_details, departures_list = await self.client.get_departures(
+                station_query=station,
+                limit=limit,
+                offset=offset,
+                transport_types=None,
+            )
 
         return DeparturesResponse.from_dtos(station_details, departures_list)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -9,7 +10,9 @@ from typing import Any
 
 from mvg import MvgApi, MvgApiError, TransportType
 
-from app.core.metrics import observe_mvg_request
+from app.core.metrics import observe_mvg_request, record_mvg_transport_request
+
+logger = logging.getLogger(__name__)
 
 
 class StationNotFoundError(Exception):
@@ -214,11 +217,49 @@ class MVGClient:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         departures = []
         for i, result in enumerate(results):
-            if isinstance(result, list):
+            transport_type = transport_types_list[i] if i < len(transport_types_list) else "unknown"
+            transport_type_name = getattr(transport_type, 'name', str(transport_type))
+
+            if isinstance(result, Exception):
+                # Record failure metric
+                if isinstance(result, MvgApiError):
+                    error_msg = str(result).lower()
+                    if any(indicator in error_msg for indicator in ["400", "bad request", "client error"]):
+                        record_mvg_transport_request("departures", transport_type_name, "bad_request")
+                        reason = "bad request"
+                    elif any(indicator in error_msg for indicator in ["timeout", "timed out"]):
+                        record_mvg_transport_request("departures", transport_type_name, "timeout")
+                        reason = "timeout"
+                    else:
+                        record_mvg_transport_request("departures", transport_type_name, "error")
+                        reason = "MVG API error"
+                else:
+                    record_mvg_transport_request("departures", transport_type_name, "error")
+                    reason = "unexpected error"
+
+                logger.warning(
+                    "Error fetching departures for station %s, transport type %s: %s - %s",
+                    station_query,
+                    transport_type_name,
+                    reason,
+                    str(result)
+                )
+                # Fail-fast: raise error immediately for any transport type failure
+                raise MVGServiceError(f"Failed to fetch departures for transport type {transport_type_name}: {reason}") from result
+            elif isinstance(result, list):
+                # Record success metric
+                record_mvg_transport_request("departures", transport_type_name, "success")
                 departures.extend([self._map_departure(item) for item in result])
             else:
-                transport_type = transport_types_list[i] if i < len(transport_types_list) else "unknown"
-                print(f"Error fetching departures for transport type {transport_type}: {result}")
+                # This shouldn't happen, but handle it gracefully
+                record_mvg_transport_request("departures", transport_type_name, "error")
+                logger.warning(
+                    "Unexpected result type for station %s, transport type %s: %s",
+                    station_query,
+                    transport_type_name,
+                    type(result).__name__
+                )
+                raise MVGServiceError(f"Unexpected result type for transport type {transport_type_name}")
 
         departures.sort(key=lambda d: (d.planned_time is None, d.planned_time))
         return station, departures[:limit]
@@ -492,7 +533,7 @@ class MVGClient:
             is_400_error = any(indicator in error_msg for indicator in ["400", "bad request", "client error"])
 
             if is_400_error:
-                print(f"Error fetching departures: Bad API call: {exc}")
+                logger.debug("Bad API call for departures: %s", exc)
                 return []
             raise
 
@@ -542,7 +583,21 @@ def get_client() -> MVGClient:
 
 
 def parse_transport_types(raw_values: Iterable[str]) -> list[TransportType]:
-    """Simplified transport type parsing with clean lookup logic."""
+    """Parse transport type strings with deduplication and order preservation.
+
+    Normalizes input strings to TransportType enum values, handling synonyms
+    and case variations. Duplicates and synonym collisions are collapsed to
+    the first-seen TransportType value, preserving input order for unique types.
+
+    Args:
+        raw_values: Iterable of transport type strings (e.g., ["UBAHN", "S-Bahn"])
+
+    Returns:
+        List of unique TransportType enums in order of first appearance
+
+    Raises:
+        ValueError: If any input string cannot be mapped to a TransportType
+    """
     # Build lookup map
     transport_map = {}
     for transport_type in TransportType:
@@ -557,6 +612,8 @@ def parse_transport_types(raw_values: Iterable[str]) -> list[TransportType]:
             transport_map[display.replace("-", "").replace(" ", "")] = transport_type
 
     result = []
+    seen_types = set()  # Track seen TransportType values for deduplication
+
     for raw in raw_values:
         key = raw.strip().lower()
         if not key:
@@ -573,6 +630,9 @@ def parse_transport_types(raw_values: Iterable[str]) -> list[TransportType]:
         if not transport_type:
             raise ValueError(f"Unsupported transport type '{raw}'.")
 
-        result.append(transport_type)
+        # Add to result only if we haven't seen this TransportType before
+        if transport_type not in seen_types:
+            result.append(transport_type)
+            seen_types.add(transport_type)
 
     return result
