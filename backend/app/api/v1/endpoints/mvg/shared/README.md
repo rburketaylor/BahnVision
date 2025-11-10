@@ -25,6 +25,7 @@ Contains cache key generation functions extracted from the original `mvg.py`:
 
 - `departures_cache_key(station, limit, offset, transport_types) -> str`
   - Generates cache keys for departures endpoint
+  - Transport filters are deduplicated before fetching and caching to ensure consistent cache keys
   - Original location: lines 973-984 from `mvg.py`
 
 - `station_search_cache_key(query, limit) -> str`
