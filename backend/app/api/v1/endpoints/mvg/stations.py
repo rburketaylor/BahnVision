@@ -58,9 +58,9 @@ async def search_stations(
     settings = get_settings()
     cache_key = station_search_cache_key(query, limit)
 
-    # Use the shared cache manager for simplified caching logic
+    # Use the shared cache manager with optimized search index
     cache_manager = CacheManager(
-        protocol=StationSearchRefreshProtocol(client),
+        protocol=StationSearchRefreshProtocol(client, cache),
         cache=cache,
         cache_name=_CACHE_STATION_SEARCH,
     )

@@ -7,7 +7,8 @@ MVG endpoint type, demonstrating how to use the shared caching patterns.
 from datetime import datetime
 from typing import Any
 
-from app.api.v1.shared.caching import CacheRefreshProtocol
+from app.api.v1.shared.caching import CacheRefreshProtocol, MvgCacheProtocol
+from app.api.v1.shared.station_search_index import CachedStationSearchIndex
 from app.core.config import Settings
 from app.models.mvg import DeparturesResponse, RouteResponse, Station, StationListResponse, StationSearchResponse
 from app.services.cache import CacheService
@@ -23,8 +24,17 @@ from app.services.mvg_client import (
 class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
     """Cache refresh protocol for departures endpoint."""
 
-    def __init__(self, client: MVGClient):
+    def __init__(self, client: MVGClient, filter_transport_types: list[TransportType] | None = None):
+        """
+        Initialize protocol with optional transport type filtering.
+
+        Args:
+            client: MVG client instance
+            filter_transport_types: Optional list of transport types to filter client-side.
+                                    If None, all transport types are returned.
+        """
         self.client = client
+        self.filter_transport_types = filter_transport_types
 
     def cache_name(self) -> str:
         return "mvg_departures"
@@ -33,17 +43,32 @@ class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
         return DeparturesResponse
 
     async def fetch_data(self, **kwargs: Any) -> DeparturesResponse:
+        """
+        Fetch departures data with optional client-side filtering.
+
+        This method always makes a single call to MVG API to get all transport types,
+        then applies filtering client-side if specific transport types were requested.
+        """
         station = kwargs["station"]
         limit = kwargs["limit"]
         offset = kwargs["offset"]
-        transport_types = kwargs.get("transport_types", [])
 
+        # Always fetch all transport types in a single call for efficiency
         station_details, departures_list = await self.client.get_departures(
             station_query=station,
             limit=limit,
             offset=offset,
-            transport_types=transport_types or None,
+            transport_types=None,  # Get all types in one call
         )
+
+        # Apply client-side filtering if specific transport types were requested
+        if self.filter_transport_types:
+            filter_set = set(self.filter_transport_types)
+            departures_list = [
+                departure for departure in departures_list
+                if departure.transport_type in filter_set
+            ]
+
         return DeparturesResponse.from_dtos(station_details, departures_list)
 
     async def store_data(
@@ -61,11 +86,19 @@ class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
         )
 
 
-class StationSearchRefreshProtocol(CacheRefreshProtocol[StationSearchResponse]):
-    """Cache refresh protocol for station search endpoint."""
+class StationSearchRefreshProtocol(MvgCacheProtocol[StationSearchResponse]):
+    """Optimized cache refresh protocol for station search endpoint using O(1) search index."""
 
-    def __init__(self, client: MVGClient):
+    def __init__(self, client: MVGClient, cache: CacheService):
+        """
+        Initialize protocol with search index support.
+
+        Args:
+            client: MVG client instance
+            cache: Cache service for persistent search index
+        """
         self.client = client
+        self.search_index = CachedStationSearchIndex(cache)
 
     def cache_name(self) -> str:
         return "mvg_station_search"
@@ -73,43 +106,39 @@ class StationSearchRefreshProtocol(CacheRefreshProtocol[StationSearchResponse]):
     def get_model_class(self) -> type[StationSearchResponse]:
         return StationSearchResponse
 
+    def get_ttl_setting_name(self) -> str:
+        return "mvg_station_search_cache_ttl_seconds"
+
+    def get_stale_ttl_setting_name(self) -> str:
+        return "mvg_station_search_cache_stale_ttl_seconds"
+
     async def fetch_data(self, **kwargs: Any) -> StationSearchResponse:
+        """
+        Fetch station search results using optimized search index.
+
+        This method builds and uses a high-performance search index that provides
+        O(1) or O(log n) lookups instead of O(n) linear scans.
+        """
         query = kwargs["query"]
         limit = kwargs["limit"]
 
-        # Get all stations for search (this would need to be optimized in practice)
+        # Get all stations (cached call) - this is much faster with the search index
         all_stations = await self.client.get_all_stations()
 
-        query_lower = query.lower()
-        stations: list[Station] = []
-        for station in all_stations:
-            if query_lower in station.name.lower() or query_lower in station.place.lower():
-                stations.append(station)
-                if len(stations) >= limit:
-                    break
+        # Get or build the high-performance search index
+        index = await self.search_index.get_index(all_stations)
+
+        # Perform O(1) lookup instead of O(n) linear scan
+        stations = await index.search(query, limit)
 
         if not stations:
             raise MVGStationNotFoundError(f"No stations found for query '{query}'.")
 
         return StationSearchResponse.from_dtos(query, stations)
 
-    async def store_data(
-        self,
-        cache: CacheService,
-        cache_key: str,
-        data: StationSearchResponse,
-        settings: Settings,
-    ) -> None:
-        await cache.set_json(  # type: ignore
-            cache_key,
-            data.model_dump(mode="json"),
-            ttl_seconds=settings.mvg_station_search_cache_ttl_seconds,
-            stale_ttl_seconds=settings.mvg_station_search_cache_stale_ttl_seconds,
-        )
 
-
-class StationListRefreshProtocol(CacheRefreshProtocol[StationListResponse]):
-    """Cache refresh protocol for station list endpoint."""
+class StationListRefreshProtocol(MvgCacheProtocol[StationListResponse]):
+    """Simplified cache refresh protocol for station list endpoint."""
 
     def __init__(self, client: MVGClient):
         self.client = client
@@ -120,23 +149,15 @@ class StationListRefreshProtocol(CacheRefreshProtocol[StationListResponse]):
     def get_model_class(self) -> type[StationListResponse]:
         return StationListResponse
 
+    def get_ttl_setting_name(self) -> str:
+        return "mvg_station_list_cache_ttl_seconds"
+
+    def get_stale_ttl_setting_name(self) -> str:
+        return "mvg_station_list_cache_stale_ttl_seconds"
+
     async def fetch_data(self, **kwargs: Any) -> StationListResponse:
         stations = await self.client.get_all_stations()
         return StationListResponse.from_dtos(stations if stations else [])
-
-    async def store_data(
-        self,
-        cache: CacheService,
-        cache_key: str,
-        data: StationListResponse,
-        settings: Settings,
-    ) -> None:
-        await cache.set_json(  # type: ignore
-            cache_key,
-            data.model_dump(mode="json"),
-            ttl_seconds=settings.mvg_station_list_cache_ttl_seconds,
-            stale_ttl_seconds=settings.mvg_station_list_cache_stale_ttl_seconds,
-        )
 
 
 class RouteRefreshProtocol(CacheRefreshProtocol[RouteResponse]):
