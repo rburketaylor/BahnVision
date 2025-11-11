@@ -20,7 +20,7 @@ interface StationSearchProps {
   label?: string
 }
 
-const DEFAULT_LIMIT = 8
+const DEFAULT_LIMIT = 40
 const DEFAULT_DEBOUNCE = 300
 
 export function StationSearch({

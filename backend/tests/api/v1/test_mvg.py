@@ -557,7 +557,7 @@ def test_station_search_cache_hit(api_client, fake_cache):
         ],
     }
     fake_cache.configure(
-        "mvg:stations:search:marienplatz:8", CacheScenario(fresh_value=cached_payload)
+        "mvg:stations:search:marienplatz:40", CacheScenario(fresh_value=cached_payload)
     )
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -585,7 +585,7 @@ def test_station_search_stale_refresh(api_client, fake_cache):
         ],
     }
     fake_cache.configure(
-        "mvg:stations:search:marienplatz:8", CacheScenario(stale_value=stale_payload)
+        "mvg:stations:search:marienplatz:40", CacheScenario(stale_value=stale_payload)
     )
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -595,7 +595,7 @@ def test_station_search_stale_refresh(api_client, fake_cache):
 
 def test_station_search_cache_miss(api_client, fake_cache, fake_mvg_client):
     """Test station search with fresh fetch."""
-    fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
     assert response.status_code == 200
@@ -603,11 +603,30 @@ def test_station_search_cache_miss(api_client, fake_cache, fake_mvg_client):
     assert fake_mvg_client.call_count_station_list == 1
 
 
+def test_station_search_reuses_persisted_stations(
+    api_client,
+    fake_cache,
+    fake_mvg_client,
+    fake_station_repository,
+):
+    """Ensure repository data is used on subsequent cache misses."""
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
+
+    response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
+    assert response.status_code == 200
+    assert fake_mvg_client.call_count_station_list == 1
+    assert fake_station_repository.upsert_batches
+
+    second_response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
+    assert second_response.status_code == 200
+    assert fake_mvg_client.call_count_station_list == 1
+
+
 def test_station_search_not_found(api_client, fake_cache, fake_mvg_client):
     """Test station search when no stations match."""
     scenario = MVGClientScenario(station_search_result=[])
     fake_mvg_client.configure(scenario)
-    fake_cache.configure("mvg:stations:search:unknown:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:unknown:40", CacheScenario())
 
     response = api_client.get("/api/v1/mvg/stations/search?query=unknown")
     assert response.status_code == 404
@@ -615,7 +634,7 @@ def test_station_search_not_found(api_client, fake_cache, fake_mvg_client):
     # Verify not-found marker was cached
     assert len(fake_cache.recorded_sets) > 0
     for written_key, written_value, _, _ in fake_cache.recorded_sets:
-        if written_key == "mvg:stations:search:unknown:8":
+        if written_key == "mvg:stations:search:unknown:40":
             assert written_value.get("__status") == "not_found"
             break
     else:  # pragma: no cover - defensive guard for future regressions
@@ -626,7 +645,7 @@ def test_station_search_service_error(api_client, fake_cache, fake_mvg_client):
     """Test station search when MVG service fails."""
     scenario = MVGClientScenario(fail_station_list=True)
     fake_mvg_client.configure(scenario)
-    fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
     assert response.status_code == 502
@@ -640,7 +659,7 @@ def test_station_search_lock_timeout_with_stale(api_client, fake_cache):
     """
     stale_payload = {"query": "Marienplatz", "results": []}
     fake_cache.configure(
-        "mvg:stations:search:marienplatz:8", CacheScenario(stale_value=stale_payload)
+        "mvg:stations:search:marienplatz:40", CacheScenario(stale_value=stale_payload)
     )
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -650,7 +669,7 @@ def test_station_search_lock_timeout_with_stale(api_client, fake_cache):
 
 def test_station_search_lock_timeout_no_stale(api_client, fake_cache):
     """Test station search with lock timeout and no stale data."""
-    fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
     fake_cache.set_lock_timeout(True)
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")

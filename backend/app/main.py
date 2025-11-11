@@ -16,6 +16,27 @@ logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-Id"
 
 
+def _configure_sqlalchemy_logging(database_echo: bool) -> None:
+    """
+    Silence verbose SQLAlchemy logs unless echo is explicitly enabled.
+
+    SQLAlchemy logs under several namespaces (engine + pool). We drop them to
+    WARNING by default so bulk INSERT statements and parameter dumps only show
+    up when DATABASE_ECHO=true.
+    """
+    level = logging.INFO if database_echo else logging.WARNING
+    for name in (
+        "sqlalchemy",
+        "sqlalchemy.engine",
+        "sqlalchemy.engine.Engine",
+        "sqlalchemy.pool",
+        "sqlalchemy.pool.impl.AsyncAdaptedQueuePool",
+    ):
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
+        logger.propagate = database_echo
+
+
 def _install_request_id_middleware(app: FastAPI) -> None:
     """Ensure each response includes a stable X-Request-Id header."""
 
@@ -57,6 +78,8 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    _configure_sqlalchemy_logging(settings.database_echo)
 
     # Instrument FastAPI for tracing if enabled
     instrument_fastapi(app, enabled=settings.otel_enabled)

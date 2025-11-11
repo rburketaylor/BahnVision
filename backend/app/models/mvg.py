@@ -152,6 +152,20 @@ class RoutePlan(BaseModel):
         )
 
 
+class StationListResponse(BaseModel):
+    """Response model for station list endpoint."""
+
+    stations: list[Station] = Field(
+        default_factory=list, description="List of all available stations."
+    )
+
+    @classmethod
+    def from_dtos(cls, stations: Iterable[StationDTO]) -> "StationListResponse":
+        return cls(
+            stations=[Station.from_dto(dto) for dto in stations],
+        )
+
+
 class RouteResponse(BaseModel):
     origin: Station
     destination: Station

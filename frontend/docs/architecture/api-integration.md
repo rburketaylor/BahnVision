@@ -41,7 +41,7 @@ All requests hit the FastAPI backend served at `VITE_API_BASE_URL` (default `htt
   - 503 on cache lock timeout; retry with exponential backoff.
 
 ## `GET /api/v1/mvg/departures`
-- **Query params** (`backend/app/api/v1/endpoints/mvg.py:42-139`):
+- **Query params** (`backend/app/api/v1/endpoints/mvg/departures.py:42-139`):
   - `station` (string, required) – station ID or search term.
   - `limit` (int, default 10, range 1–40).
   - `offset` (int, default 0, range 0–60) – minutes to shift schedule.
@@ -79,7 +79,7 @@ All requests hit the FastAPI backend served at `VITE_API_BASE_URL` (default `htt
   - 503 when cache single-flight lock times out.
 
 ## `GET /api/v1/mvg/routes/plan`
-- **Query params** (`backend/app/api/v1/endpoints/mvg.py:164-318`):
+- **Query params** (`backend/app/api/v1/endpoints/mvg/routes.py:36-75`):
   - `origin` (string, required)
   - `destination` (string, required)
   - `departure_time` (ISO datetime, optional) **xor** `arrival_time` (ISO datetime, optional)

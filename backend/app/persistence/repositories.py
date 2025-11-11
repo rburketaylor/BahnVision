@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -282,3 +282,162 @@ class TransitDataRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+
+class StationRepository:
+    """Repository for station persistence operations."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert_station(self, payload: StationPayload) -> models.Station:
+        """Insert or update a station."""
+        stmt = insert(models.Station).values(
+            station_id=payload.station_id,
+            name=payload.name,
+            place=payload.place,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            transport_modes=list(payload.transport_modes),
+            timezone=payload.timezone,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[models.Station.station_id],
+            set_={
+                "name": stmt.excluded.name,
+                "place": stmt.excluded.place,
+                "latitude": stmt.excluded.latitude,
+                "longitude": stmt.excluded.longitude,
+                "transport_modes": stmt.excluded.transport_modes,
+                "timezone": stmt.excluded.timezone,
+                "updated_at": func.now(),
+            },
+        )
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+
+        # Return the upserted station
+        select_stmt = select(models.Station).where(
+            models.Station.station_id == payload.station_id
+        )
+        station_result = await self._session.execute(select_stmt)
+        station = station_result.scalar_one()
+
+        await self._session.commit()
+        return station
+
+    async def upsert_stations(self, payloads: list[StationPayload]) -> list[models.Station]:
+        """Bulk insert or update multiple stations."""
+        if not payloads:
+            return []
+
+        rows = [
+            {
+                "station_id": payload.station_id,
+                "name": payload.name,
+                "place": payload.place,
+                "latitude": payload.latitude,
+                "longitude": payload.longitude,
+                "transport_modes": list(payload.transport_modes),
+                "timezone": payload.timezone,
+            }
+            for payload in payloads
+        ]
+
+        # asyncpg caps positional parameters at 32767, so chunk the bulk upsert
+        # to avoid InterfaceError when persisting the ~4.7k MVG stations.
+        params_per_row = 7
+        max_rows_per_batch = 32767 // params_per_row
+        chunked_rows = [
+            rows[i : i + max_rows_per_batch]
+            for i in range(0, len(rows), max_rows_per_batch)
+        ]
+
+        for batch in chunked_rows:
+            stmt = insert(models.Station).values(batch)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[models.Station.station_id],
+                set_={
+                    "name": stmt.excluded.name,
+                    "place": stmt.excluded.place,
+                    "latitude": stmt.excluded.latitude,
+                    "longitude": stmt.excluded.longitude,
+                    "transport_modes": stmt.excluded.transport_modes,
+                    "timezone": stmt.excluded.timezone,
+                    "updated_at": func.now(),
+                },
+            )
+            await self._session.execute(stmt)
+
+        await self._session.flush()
+
+        # Return the upserted stations (chunked to respect asyncpg param limits)
+        station_ids = [payload.station_id for payload in payloads]
+        max_params = 32767
+        stations: list[models.Station] = []
+        for i in range(0, len(station_ids), max_params):
+            chunk = station_ids[i : i + max_params]
+            select_stmt = select(models.Station).where(
+                models.Station.station_id.in_(chunk)
+            )
+            result = await self._session.execute(select_stmt)
+            stations.extend(result.scalars().all())
+
+        await self._session.commit()
+        return stations
+
+    async def get_station_by_id(self, station_id: str) -> models.Station | None:
+        """Get a station by its ID."""
+        stmt = select(models.Station).where(models.Station.station_id == station_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def search_stations(
+        self,
+        query: str,
+        limit: int = 10
+    ) -> list[models.Station]:
+        """Search stations by name or place using database queries."""
+        search_pattern = f"%{query.lower()}%"
+
+        stmt = (
+            select(models.Station)
+            .where(
+                (models.Station.name.ilike(search_pattern) |
+                 models.Station.place.ilike(search_pattern))
+            )
+            .order_by(
+                # Prioritize exact name matches
+                models.Station.name.ilike(query.lower()).desc(),
+                # Then prioritize name matches over place matches
+                models.Station.name.ilike(search_pattern).desc(),
+                models.Station.name,
+            )
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_stations(self) -> list[models.Station]:
+        """Get all stations from the database."""
+        stmt = select(models.Station).order_by(models.Station.name)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_stations(self) -> int:
+        """Get the total number of stations in the database."""
+        stmt = select(func.count(models.Station.station_id))
+        result = await self._session.execute(stmt)
+        return result.scalar()
+
+    async def delete_station(self, station_id: str) -> bool:
+        """Delete a station by ID. Returns True if station was deleted."""
+        stmt = select(models.Station).where(models.Station.station_id == station_id)
+        result = await self._session.execute(stmt)
+        station = result.scalar_one_or_none()
+
+        if station:
+            await self._session.delete(station)
+            await self._session.flush()
+            return True
+        return False
