@@ -2,7 +2,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.api.v1.endpoints.mvg.shared import cache_keys
 from app.models.mvg import DeparturesResponse, RouteResponse, StationSearchResponse
+from app.services.mvg_client import TransportType
 from tests.api.conftest import CacheScenario, MVGClientScenario
 
 
@@ -107,6 +109,7 @@ def test_departures_cache_miss(api_client, fake_cache, fake_mvg_client):
     assert len(fake_cache.recorded_sets) > 0
 
 
+
 def test_departures_validation_error_invalid_transport(api_client):
     """Test departures endpoint with invalid transport_type parameter."""
     response = api_client.get(
@@ -202,6 +205,51 @@ def test_departures_transport_filters(api_client, fake_cache, transport_filter, 
 
     response = api_client.get(f"/api/v1/mvg/departures?{params}")
     assert response.status_code == 200
+
+
+def test_departures_upstream_receives_transport_filters(api_client, fake_mvg_client):
+    """Ensure parsed transport filters are forwarded to MVG client."""
+    api_client.get("/api/v1/mvg/departures", params={"station": "marienplatz"})
+    assert fake_mvg_client.last_departures_call["transport_types"] is None
+
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "UBAHN"),
+        ("transport_type", "BUS"),
+    ]
+    api_client.get("/api/v1/mvg/departures", params=params)
+    transport_types = fake_mvg_client.last_departures_call["transport_types"]
+    assert transport_types is not None
+    assert {t.name for t in transport_types} == {"UBAHN", "BUS"}
+
+
+def test_departures_api_duplicate_filters_deduplicated(api_client, fake_mvg_client):
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "UBAHN"),
+        ("transport_type", "UBAHN"),
+    ]
+    api_client.get("/api/v1/mvg/departures", params=params)
+
+    transport_types = fake_mvg_client.last_departures_call["transport_types"]
+    assert transport_types is not None
+    assert len(transport_types) == 1
+    assert transport_types[0] == TransportType.UBAHN
+
+
+def test_departures_api_synonym_filters_deduplicated(api_client, fake_mvg_client):
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "S-Bahn"),
+        ("transport_type", "SBAHN"),
+    ]
+    api_client.get("/api/v1/mvg/departures", params=params)
+
+    transport_types = fake_mvg_client.last_departures_call["transport_types"]
+    assert transport_types is not None
+    assert len(transport_types) == 1
+    assert transport_types[0] == TransportType.SBAHN
+
 
 
 def test_departures_from_parameter_conversion(api_client, fake_cache, fake_mvg_client):
@@ -696,3 +744,30 @@ def test_station_search_validates_limit_bounds(api_client):
     # Test limit too low
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz&limit=0")
     assert response.status_code == 422
+
+
+# ========== Cache Key Unit Tests ==========
+
+
+def test_departures_cache_key_without_filters():
+    key = cache_keys.departures_cache_key("Marienplatz", 10, 0, [])
+    assert key == "mvg:departures:marienplatz:10:0:all"
+
+
+def test_departures_cache_key_single_filter():
+    key = cache_keys.departures_cache_key("Marienplatz", 10, 0, [TransportType.UBAHN])
+    assert key == "mvg:departures:marienplatz:10:0:UBAHN"
+
+
+def test_departures_cache_key_multiple_filters_sorted():
+    filters_a = [TransportType.BUS, TransportType.TRAM]
+    filters_b = [TransportType.TRAM, TransportType.BUS]
+    key_a = cache_keys.departures_cache_key("Marienplatz", 10, 0, filters_a)
+    key_b = cache_keys.departures_cache_key("Marienplatz", 10, 0, filters_b)
+    assert key_a == key_b == "mvg:departures:marienplatz:10:0:BUS-TRAM"
+
+
+def test_departures_cache_key_normalizes_station_name():
+    key_a = cache_keys.departures_cache_key("Marienplatz", 10, 0, [])
+    key_b = cache_keys.departures_cache_key("  marienplatz  ", 10, 0, [])
+    assert key_a == key_b
