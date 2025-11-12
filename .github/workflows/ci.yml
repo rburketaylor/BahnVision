@@ -165,6 +165,22 @@ jobs:
   # Backend testing
   test-backend:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: bahnvision
+          POSTGRES_PASSWORD: bahnvision
+          POSTGRES_DB: bahnvision
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U bahnvision"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
     - uses: actions/checkout@v5
 
@@ -179,6 +195,12 @@ jobs:
       run: |
         pip install -r backend/requirements.txt
         pip install pytest pytest-asyncio pytest-cov httpx
+
+    - name: Run database migrations
+      working-directory: backend
+      env:
+        DATABASE_URL: ${{ env.DATABASE_URL }}
+      run: alembic upgrade head
 
     - name: Run tests with coverage
       run: |
