@@ -194,6 +194,26 @@ class Settings(BaseSettings):
         {"ge": 0.0},
     )
 
+    # === Cache warmup configuration ===
+    cache_warmup_departure_stations: list[str] = Field(
+        default_factory=list,
+        alias="CACHE_WARMUP_DEPARTURE_STATIONS",
+    )
+
+    cache_warmup_departure_limit: int = _create_field_with_default(
+        "cache_warmup_departure_limit",
+        10,
+        "CACHE_WARMUP_DEPARTURE_LIMIT",
+        {"ge": 1, "le": 40},
+    )
+
+    cache_warmup_departure_offset_minutes: int = _create_field_with_default(
+        "cache_warmup_departure_offset_minutes",
+        0,
+        "CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES",
+        {"ge": 0, "le": 240},
+    )
+
     # === CORS Configuration ===
     cors_allow_origins: list[str] = Field(
         default_factory=lambda: CORSConfig.DEFAULT_ORIGINS.copy(),
@@ -295,6 +315,16 @@ class Settings(BaseSettings):
             raise ValueError(msg)
 
         return parsed
+
+    @field_validator("cache_warmup_departure_stations", mode="before")
+    @classmethod
+    def parse_cache_warmup_stations(cls, value: Any) -> list[str]:
+        """Allow comma-separated station list definitions."""
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if value is None:
+            return []
+        return list(value)
 
 
 @lru_cache

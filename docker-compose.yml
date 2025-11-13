@@ -20,8 +20,29 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    image: bahnvision-backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      VALKEY_URL: ${VALKEY_URL:-valkey://valkey:6379/0}
+      VALKEY_CACHE_TTL_SECONDS: ${VALKEY_CACHE_TTL_SECONDS:-30}
+      VALKEY_CACHE_TTL_NOT_FOUND_SECONDS: ${VALKEY_CACHE_TTL_NOT_FOUND_SECONDS:-15}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://bahnvision:bahnvision@postgres:5432/bahnvision}
+    depends_on:
+      cache-warmup:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  cache-warmup:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: bahnvision-backend
     env_file:
       - .env
     environment:
@@ -34,6 +55,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    command: ["python", "-m", "app.jobs.cache_warmup"]
+    restart: "no"
 
   postgres:
     image: postgres:18-alpine
