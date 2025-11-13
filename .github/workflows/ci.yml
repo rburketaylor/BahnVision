@@ -300,8 +300,8 @@ jobs:
       with:
         name: e2e-test-results
         path: |
-          playwright-report/
-          test-results/
+          frontend/playwright-report/
+          frontend/test-results/
 
     - name: Cleanup
       if: always()
