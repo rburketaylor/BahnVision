@@ -42,6 +42,7 @@ This document is the canonical guide for all AI coding assistants working in thi
   - `npm run dev` → `http://127.0.0.1:5173`
 - Docker Compose (recommended):
   - `docker compose up --build`
+  - Compose starts a short-lived `cache-warmup` service first (`python -m app.jobs.cache_warmup`) so Valkey/Postgres already contain the MVG station catalog before the backend handles traffic.
   - Backend at `http://127.0.0.1:8000`; Frontend at `http://127.0.0.1:3000`
 - Database connectivity:
   - Default `DATABASE_URL` (local): `postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`
@@ -59,6 +60,7 @@ This document is the canonical guide for all AI coding assistants working in thi
   - `CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`, `_WAIT_SECONDS`, `_RETRY_DELAY_SECONDS`
   - `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`
   - Endpoint-specific TTLs (e.g., `MVG_*_CACHE_TTL_SECONDS`, `*_STALE_TTL_SECONDS`)
+  - Cache warmup knobs: `CACHE_WARMUP_DEPARTURE_STATIONS`, `CACHE_WARMUP_DEPARTURE_LIMIT`, `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES`
 - Persistence layer (`backend/app/persistence/`):
   - Async SQLAlchemy models and repositories
   - `core/database.py` provides a shared async engine

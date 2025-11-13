@@ -26,6 +26,9 @@ Place variables in the root `.env` or export them in the shell. Defaults are sho
 - `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS` (5.0) — Wait time for lock.
 - `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS` (0.05) — Retry delay while waiting.
 - `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS` (2.0) — Serve stale window when cache is unhealthy.
+- `CACHE_WARMUP_DEPARTURE_STATIONS` — Optional comma-separated list of station names/IDs to prewarm departures cache keys.
+- `CACHE_WARMUP_DEPARTURE_LIMIT` (10) — Number of departures requested per warmup station.
+- `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES` (0) — Offset minutes applied to warmup departures.
 - `CORS_ALLOW_ORIGINS` — Comma-separated list of allowed origins (no `*`).
 - `CORS_ALLOW_ORIGIN_REGEX` — Optional regex for origins.
 - `DATABASE_URL` (postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision) — Async SQLAlchemy DSN.
@@ -64,4 +67,3 @@ Frontend `.env` (frontend/.env):
 VITE_API_BASE_URL=http://localhost:8000
 VITE_ENABLE_DEBUG_LOGS=false
 ```
-

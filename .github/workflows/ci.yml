@@ -67,6 +67,8 @@ jobs:
       run: |
         cd frontend
         npm ci
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
     - name: Run npm audit
       run: |
@@ -210,9 +212,10 @@ jobs:
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v5
       with:
-        file: backend/coverage.xml
+        files: backend/coverage.xml
         flags: backend
         name: backend-coverage
+        token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -237,6 +240,8 @@ jobs:
       run: |
         cd frontend
         npm ci
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
     - name: Run unit tests
       run: |
@@ -246,9 +251,10 @@ jobs:
     - name: Upload coverage reports
       uses: codecov/codecov-action@v5
       with:
-        file: frontend/coverage/lcov.info
+        files: frontend/coverage/lcov.info
         flags: frontend
         name: frontend-coverage
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   # E2E testing
   test-e2e:
@@ -276,6 +282,8 @@ jobs:
     - name: Install frontend dependencies
       working-directory: frontend
       run: npm ci
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
     - name: Install Playwright browsers
       working-directory: frontend
