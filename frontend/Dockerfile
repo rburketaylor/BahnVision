@@ -5,6 +5,10 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
+# Skip downloading Playwright browsers during image builds; CI installs them when needed.
+ARG PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=${PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD}
+
 # Copy package files
 COPY package*.json ./
 
