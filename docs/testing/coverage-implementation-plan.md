@@ -17,7 +17,7 @@ Pre‑requisites
     - `DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`
   - Valkey only needed for end-to-end; unit tests use fakes.
 - Frontend
-  - Node 20+, `cd frontend && npm ci`
+  - Node 24+, `cd frontend && npm ci`
 
 Conventions
 - New back-end test files under `backend/tests/**` mirror source tree where practical.
