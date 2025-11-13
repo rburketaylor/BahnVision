@@ -3,7 +3,8 @@
  * Reference: frontend/api-integration.md
  */
 
-export type TransportType = 'BAHN' | 'SBAHN' | 'UBAHN' | 'TRAM' | 'BUS' | 'REGIONAL_BUS' | 'SEV' | 'SCHIFF'
+export type TransportType = 'BAHN' | 'SBAHN' | 'UBAHN' | 'TRAM' | 'BUS' | 'REGIONAL_BUS' | 'SCHIFF' | 'SEV'
+// SEV included for type compatibility but not shown in UI due to API issues
 
 export type CacheStatus = 'hit' | 'miss' | 'stale' | 'stale-refresh'
 
@@ -105,6 +106,8 @@ export interface DeparturesParams {
   station: string
   limit?: number
   offset?: number
+  from?: string // UTC ISO timestamp
+  window_minutes?: number
   transport_type?: TransportType[]
 }
 

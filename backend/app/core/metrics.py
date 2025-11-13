@@ -23,6 +23,11 @@ MVG_REQUEST_LATENCY = Histogram(
     "Latency of outbound MVG client requests.",
     labelnames=("endpoint",),
 )
+MVG_TRANSPORT_REQUESTS = Counter(
+    "bahnvision_mvg_transport_requests_total",
+    "Outbound MVG client requests per transport type.",
+    labelnames=("endpoint", "transport_type", "result"),
+)
 
 
 def record_cache_event(cache: str, event: str) -> None:
@@ -39,3 +44,8 @@ def observe_mvg_request(endpoint: str, result: str, duration_seconds: float) -> 
     """Record MVG request result and latency."""
     MVG_REQUESTS.labels(endpoint=endpoint, result=result).inc()
     MVG_REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration_seconds)
+
+
+def record_mvg_transport_request(endpoint: str, transport_type: str, result: str) -> None:
+    """Record MVG request result per transport type."""
+    MVG_TRANSPORT_REQUESTS.labels(endpoint=endpoint, transport_type=transport_type, result=result).inc()

@@ -14,6 +14,7 @@ function renderWithProviders(ui: ReactElement) {
     defaultOptions: {
       queries: {
         retry: false,
+        retryDelay: 1, // Minimal delay for tests
       },
     },
   })
@@ -82,7 +83,7 @@ describe('StationSearch', () => {
     server.use(
       http.get(`${BASE_URL}/api/v1/mvg/stations/search`, () => {
         errorHandler()
-        return HttpResponse.json({ detail: 'Service unavailable' }, { status: 503 })
+        return HttpResponse.json({ detail: 'Bad request' }, { status: 400 })
       })
     )
 

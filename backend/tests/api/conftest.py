@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.persistence.dependencies import get_station_repository
+from app.persistence.repositories import StationPayload
 from app.services.cache import CacheService
 from app.services.mvg_client import (
     Departure,
@@ -113,6 +115,7 @@ class FakeMVGClient:
         self.call_count_departures = 0
         self.call_count_station_list = 0
         self.call_count_route = 0
+        self.last_departures_call: dict[str, Any] | None = None
 
     def configure(self, scenario: MVGClientScenario) -> None:
         """Set up MVG client behavior."""
@@ -139,6 +142,12 @@ class FakeMVGClient:
     ) -> tuple[Station, list[Departure]]:
         """Return configured departures or raise error."""
         self.call_count_departures += 1
+        self.last_departures_call = {
+            "station_query": station_query,
+            "limit": limit,
+            "offset": offset,
+            "transport_types": transport_types,
+        }
         if self.scenario.fail_departures:
             raise MVGServiceError("Failed to retrieve departures from MVG.")
         if self.scenario.not_found_station:
@@ -294,6 +303,36 @@ class FakeMVGClient:
         return origin, destination, [plan]
 
 
+@dataclass
+class FakeStationRecord:
+    station_id: str
+    name: str
+    place: str
+    latitude: float
+    longitude: float
+
+
+class FakeStationRepository:
+    def __init__(self) -> None:
+        self._records: dict[str, FakeStationRecord] = {}
+        self.upsert_batches: list[list[StationPayload]] = []
+
+    async def get_all_stations(self) -> list[FakeStationRecord]:
+        return list(self._records.values())
+
+    async def upsert_stations(self, payloads: list[StationPayload]) -> list[FakeStationRecord]:
+        self.upsert_batches.append(payloads)
+        for payload in payloads:
+            self._records[payload.station_id] = FakeStationRecord(
+                station_id=payload.station_id,
+                name=payload.name,
+                place=payload.place,
+                latitude=payload.latitude,
+                longitude=payload.longitude,
+            )
+        return list(self._records.values())
+
+
 @pytest.fixture
 def fake_cache() -> FakeCacheService:
     """Provide a fake cache service instance."""
@@ -307,7 +346,17 @@ def fake_mvg_client() -> FakeMVGClient:
 
 
 @pytest.fixture
-def api_client(fake_cache: FakeCacheService, fake_mvg_client: FakeMVGClient) -> TestClient:
+def fake_station_repository() -> FakeStationRepository:
+    """Provide a fake station repository for persistence-backed logic."""
+    return FakeStationRepository()
+
+
+@pytest.fixture
+def api_client(
+    fake_cache: FakeCacheService,
+    fake_mvg_client: FakeMVGClient,
+    fake_station_repository: FakeStationRepository,
+) -> TestClient:
     """Provide a TestClient with dependency overrides."""
     app = create_app()
 
@@ -315,10 +364,12 @@ def api_client(fake_cache: FakeCacheService, fake_mvg_client: FakeMVGClient) -> 
     app.dependency_overrides[CacheService] = lambda: fake_cache
 
     # Import the actual dependencies to override them
-    from app.api.v1.endpoints.mvg import get_cache_service, get_client
+    from app.services.cache import get_cache_service
+    from app.api.v1.endpoints.mvg.shared.utils import get_client
 
     app.dependency_overrides[get_cache_service] = lambda: fake_cache
     app.dependency_overrides[get_client] = lambda: fake_mvg_client
+    app.dependency_overrides[get_station_repository] = lambda: fake_station_repository
 
     client = TestClient(app)
 

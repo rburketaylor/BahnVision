@@ -6,6 +6,6 @@ This directory centralises project documentation so engineering, product, and op
 - `product/` – product requirements, personas, and scope/vision material for the BahnVision experience.
 - `operations/` – (reserved) deployment guides, alerting playbooks, and runbooks as they are produced.
 - `archive/` – historical documents kept for context (e.g. the original AI-first design vision and legacy TODO lists).
- - `roadmap/` – milestones, task tracking, and branch plans (see `roadmap/persistence-branch-plan.md`).
+ - `roadmap/` – milestones, task tracking, and branch plans.
 
 Each subdirectory should own its README or index as content grows; cross-link updates belong in PR descriptions when docs move.

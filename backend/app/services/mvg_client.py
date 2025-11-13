@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -9,7 +10,9 @@ from typing import Any
 
 from mvg import MvgApi, MvgApiError, TransportType
 
-from app.core.metrics import observe_mvg_request
+from app.core.metrics import observe_mvg_request, record_mvg_transport_request
+
+logger = logging.getLogger(__name__)
 
 
 class StationNotFoundError(Exception):
@@ -96,8 +99,95 @@ class RoutePlan:
     legs: list[RouteLeg]
 
 
+class DataMapper:
+    """Simplified data extraction and transformation utility."""
+
+    @staticmethod
+    def safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
+        """Safely get a value from dictionary with fallback keys."""
+        if not data:
+            return default
+        for key in keys:
+            if key in data:
+                return data[key]
+        return default
+
+    @staticmethod
+    def safe_get_nested(data: dict[str, Any], *paths: list[str]) -> Any:
+        """Get value from nested paths like ['station', 'id'] or 'name'."""
+        if not data:
+            return None
+
+        for path in paths:
+            if isinstance(path, str):
+                # Direct key access
+                if path in data:
+                    return data[path]
+            elif isinstance(path, list):
+                # Nested access
+                current = data
+                for key in path:
+                    if isinstance(current, dict) and key in current:
+                        current = current[key]
+                    else:
+                        break
+                else:
+                    return current
+        return None
+
+    @staticmethod
+    def convert_type(value: Any, target_type: type) -> Any:
+        """Universal type converter with error handling."""
+        if value is None:
+            return None
+
+        try:
+            if target_type == int:
+                return int(float(value))  # Handle "15.0" strings
+            elif target_type == float:
+                return float(value)
+            elif target_type == datetime:
+                return datetime.fromtimestamp(int(value), tz=timezone.utc)
+            elif target_type == str:
+                return str(value) if value is not None else None
+            return target_type(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def extract_minutes(value: Any) -> int | None:
+        """Extract minutes from various formats."""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            for key in ("minutes", "duration", "total", "value"):
+                result = DataMapper.convert_type(value.get(key), int)
+                if result is not None:
+                    return result
+            return None
+        return DataMapper.convert_type(value, int)
+
+
 class MVGClient:
-    """Thin wrapper around the mvg package with asyncio-friendly helpers."""
+    """Simplified wrapper around the mvg package with cleaner data mapping."""
+
+    def __init__(self, cache_service: Any | None = None):
+        """
+        Initialize MVG client with optional cache service for station search optimization.
+
+        Args:
+            cache_service: Optional CacheService for efficient station searches
+        """
+        self._cache_service = cache_service
+        self._search_index: Any | None = None
+
+    def _get_search_index(self):
+        """Get cached search index if cache service is available."""
+        if self._cache_service and self._search_index is None:
+            # Import here to avoid circular import
+            from app.api.v1.shared.station_search_index import CachedStationSearchIndex
+            self._search_index = CachedStationSearchIndex(self._cache_service)
+        return self._search_index
 
     async def get_station(self, query: str) -> Station:
         """Resolve a station by query (name or global id)."""
@@ -113,13 +203,7 @@ class MVGClient:
             raise StationNotFoundError(f"Station not found for query '{query}'.")
 
         observe_mvg_request("station_lookup", "success", time.perf_counter() - start)
-        return Station(
-            id=raw_station["id"],
-            name=raw_station["name"],
-            place=raw_station["place"],
-            latitude=raw_station["latitude"],
-            longitude=raw_station["longitude"],
-        )
+        return self._map_station(raw_station)
 
     async def get_departures(
         self,
@@ -130,6 +214,7 @@ class MVGClient:
     ) -> tuple[Station, list[Departure]]:
         """Fetch departures for a station specified via query string."""
         station = await self.get_station(station_query)
+
         if not transport_types:
             raw_departures = await asyncio.to_thread(
                 self._fetch_departures,
@@ -141,22 +226,60 @@ class MVGClient:
             departures = [self._map_departure(item) for item in raw_departures]
             return station, departures
 
-        tasks = []
-        for tt in transport_types:
-            tasks.append(
-                asyncio.to_thread(self._fetch_departures, station.id, limit, offset, [tt])
-            )
+        transport_types_list = list(transport_types)
+        tasks = [
+            asyncio.to_thread(self._fetch_departures, station.id, limit, offset, [tt])
+            for tt in transport_types_list
+        ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         departures = []
-        for result in results:
-            if isinstance(result, list):
+        for i, result in enumerate(results):
+            transport_type = transport_types_list[i] if i < len(transport_types_list) else "unknown"
+            transport_type_name = getattr(transport_type, 'name', str(transport_type))
+
+            if isinstance(result, Exception):
+                # Record failure metric
+                if isinstance(result, MvgApiError):
+                    error_msg = str(result).lower()
+                    if any(indicator in error_msg for indicator in ["400", "bad request", "client error"]):
+                        record_mvg_transport_request("departures", transport_type_name, "bad_request")
+                        reason = "bad request"
+                    elif any(indicator in error_msg for indicator in ["timeout", "timed out"]):
+                        record_mvg_transport_request("departures", transport_type_name, "timeout")
+                        reason = "timeout"
+                    else:
+                        record_mvg_transport_request("departures", transport_type_name, "error")
+                        reason = "MVG API error"
+                else:
+                    record_mvg_transport_request("departures", transport_type_name, "error")
+                    reason = "unexpected error"
+
+                logger.warning(
+                    "Error fetching departures for station %s, transport type %s: %s - %s",
+                    station_query,
+                    transport_type_name,
+                    reason,
+                    str(result)
+                )
+                # Fail-fast: raise error immediately for any transport type failure
+                raise MVGServiceError(f"Failed to fetch departures for transport type {transport_type_name}: {reason}") from result
+            elif isinstance(result, list):
+                # Record success metric
+                record_mvg_transport_request("departures", transport_type_name, "success")
                 departures.extend([self._map_departure(item) for item in result])
             else:
-                # Log the error, but don't fail the entire request
-                print(f"Error fetching departures: {result}")
+                # This shouldn't happen, but handle it gracefully
+                record_mvg_transport_request("departures", transport_type_name, "error")
+                logger.warning(
+                    "Unexpected result type for station %s, transport type %s: %s",
+                    station_query,
+                    transport_type_name,
+                    type(result).__name__
+                )
+                raise MVGServiceError(f"Unexpected result type for transport type {transport_type_name}")
 
-        departures.sort(key=lambda d: d.planned_time)
+        departures.sort(key=lambda d: (d.planned_time is None, d.planned_time))
         return station, departures[:limit]
 
     async def get_all_stations(self) -> list[Station]:
@@ -173,22 +296,25 @@ class MVGClient:
             return []
 
         observe_mvg_request("station_list", "success", time.perf_counter() - start)
-        return [
-            Station(
-                id=item["id"],
-                name=item["name"],
-                place=item["place"],
-                latitude=item["latitude"],
-                longitude=item["longitude"],
-            )
-            for item in raw_stations
-        ]
+        return [self._map_station(item) for item in raw_stations]
 
     async def search_stations(self, query: str, limit: int = 10) -> list[Station]:
-        """Search MVG for stations matching the query string."""
+        """Search MVG for stations matching the query string using optimized search index."""
         if limit <= 0:
             return []
 
+        # Try to use optimized search index if cache service is available
+        search_index = self._get_search_index()
+        if search_index:
+            try:
+                # Get all stations once and build/use search index
+                stations = await self.get_all_stations()
+                index = await search_index.get_index(stations)
+                return await index.search(query, limit)
+            except Exception as e:
+                logger.warning(f"Failed to use optimized station search index, falling back to linear search: {e}")
+
+        # Fallback to the original linear approach (but still cached via get_all_stations)
         stations = await self.get_all_stations()
         query_lower = query.lower()
         matches: list[Station] = []
@@ -238,6 +364,207 @@ class MVGClient:
         return origin, destination, plans
 
     @staticmethod
+    def _map_station(data: dict[str, Any]) -> Station:
+        """Map raw station data to Station model."""
+        return Station(
+            id=data["id"],
+            name=data["name"],
+            place=data["place"],
+            latitude=data["latitude"],
+            longitude=data["longitude"],
+        )
+
+    @staticmethod
+    def _map_departure(data: dict[str, Any]) -> Departure:
+        """Map raw departure data to Departure model."""
+        planned_time = DataMapper.convert_type(data.get("planned"), datetime)
+        realtime_time = DataMapper.convert_type(data.get("time"), datetime)
+        delay_minutes = DataMapper.convert_type(data.get("delay"), int) or 0
+
+        # Only populate planned_time when there's an actual delay or cancellation
+        # For on-time departures, planned_time should be None to avoid UI strikethrough
+        cancelled = bool(data.get("cancelled"))
+
+        if planned_time and realtime_time and not cancelled and delay_minutes <= 0:
+            # Calculate actual delay to be sure (handles cases where delay field might be inaccurate)
+            actual_delay = (realtime_time - planned_time).total_seconds() / 60
+            if actual_delay <= 1:  # Allow 1 minute tolerance for minor time differences
+                planned_time = None
+        elif cancelled and planned_time:
+            # For cancelled departures, keep planned_time to show original schedule
+            # realtime_time might be None or meaningless for cancelled services
+            pass
+
+        return Departure(
+            planned_time=planned_time,
+            realtime_time=realtime_time,
+            delay_minutes=delay_minutes,
+            platform=DataMapper.convert_type(data.get("platform"), str),
+            realtime=bool(data.get("realtime")),
+            line=data.get("line", ""),
+            destination=data.get("destination", ""),
+            transport_type=data.get("type", ""),
+            icon=data.get("icon"),
+            cancelled=bool(data.get("cancelled")),
+            messages=[str(message) for message in data.get("messages", [])],
+        )
+
+    @staticmethod
+    def _map_route_plan(data: dict[str, Any]) -> RoutePlan:
+        """Map raw route plan data to RoutePlan model."""
+        return RoutePlan(
+            duration_minutes=DataMapper.extract_minutes(data.get("duration")),
+            transfers=DataMapper.convert_type(
+                DataMapper.safe_get(data, "transfers", "changes"), int
+            ),
+            departure=MVGClient._map_route_stop(data.get("departure")),
+            arrival=MVGClient._map_route_stop(data.get("arrival")),
+            legs=MVGClient._map_route_legs(data),
+        )
+
+    @staticmethod
+    def _map_route_legs(data: dict[str, Any]) -> list[RouteLeg]:
+        """Map route legs from raw data."""
+        legs_payload = DataMapper.safe_get(data, "legs", "connections") or []
+        return [
+            leg for leg in (MVGClient._map_route_leg(item) for item in legs_payload if isinstance(item, dict))
+            if leg is not None
+        ]
+
+    @staticmethod
+    def _map_route_leg(data: dict[str, Any]) -> RouteLeg | None:
+        """Map raw route leg data to RouteLeg model."""
+        origin = MVGClient._map_route_stop(
+            DataMapper.safe_get(data, "departure", "origin")
+        )
+        destination = MVGClient._map_route_stop(
+            DataMapper.safe_get(data, "arrival", "destination")
+        )
+
+        # Extract transport type with nested fallback
+        transport_type = DataMapper.safe_get_nested(
+            data, ["transportType"], ["product"], ["line", "transportType"]
+        )
+
+        # Extract line information
+        line_name = (
+            DataMapper.safe_get(data.get("line") or {}, "name", "label", "symbol")
+            or data.get("line")
+        )
+
+        direction = DataMapper.safe_get(data, "destination", "direction") or (data.get("line") or {}).get("destination")
+
+        duration = DataMapper.extract_minutes(data.get("duration"))
+        distance = DataMapper.convert_type(
+            DataMapper.safe_get(data, "distance", "distanceInMeters")
+            or (data.get("distance") or {}).get("meters") if isinstance(data.get("distance"), dict) else None,
+            int
+        )
+
+        intermediate_stops = MVGClient._map_intermediate_stops(data)
+
+        # Return None if leg has no meaningful content
+        if origin is None and destination is None and not intermediate_stops:
+            return None
+
+        return RouteLeg(
+            origin=origin,
+            destination=destination,
+            transport_type=transport_type,
+            line=line_name,
+            direction=direction,
+            duration_minutes=duration,
+            distance_meters=distance,
+            intermediate_stops=intermediate_stops,
+        )
+
+    @staticmethod
+    def _map_route_stop(data: dict[str, Any] | None) -> RouteStop | None:
+        """Map raw route stop data to RouteStop model."""
+        if not data:
+            return None
+
+        # Extract station info with nested fallbacks
+        station_id = (
+            DataMapper.safe_get_nested(data, ["station", "id"], ["stop", "id"], ["station", "globalId"])
+            or DataMapper.safe_get(data, "stationId", "stopId")
+        )
+
+        name = (
+            DataMapper.safe_get_nested(data, ["station", "name"], ["stop", "name"])
+            or DataMapper.safe_get(data, "name", "stationName")
+        )
+
+        place = (
+            DataMapper.safe_get_nested(data, ["station", "place"], ["stop", "place"], ["station", "municipality"])
+            or data.get("place")
+        )
+
+        latitude = DataMapper.convert_type(
+            DataMapper.safe_get_nested(data, ["station", "latitude"], ["stop", "latitude"], ["station", "lat"])
+            or data.get("latitude"),
+            float
+        )
+
+        longitude = DataMapper.convert_type(
+            DataMapper.safe_get_nested(data, ["station", "longitude"], ["stop", "longitude"], ["station", "lon"])
+            or data.get("longitude"),
+            float
+        )
+
+        # Extract time information
+        planned_time = DataMapper.convert_type(
+            DataMapper.safe_get(data, "planned", "plannedTime", "scheduledTime", "scheduledDepartureTime", "scheduledArrivalTime"),
+            datetime
+        )
+
+        realtime_time = DataMapper.convert_type(
+            DataMapper.safe_get(data, "time", "realtime", "departureTime", "arrivalTime"),
+            datetime
+        )
+
+        # Extract transport information
+        transport_type = DataMapper.safe_get_nested(
+            data, ["transportType"], ["product"], ["line", "transportType"]
+        )
+
+        line_name = (
+            DataMapper.safe_get(data.get("line") or {}, "name", "label", "symbol")
+            or data.get("line")
+        )
+
+        destination = DataMapper.safe_get(data, "destination", "direction") or (data.get("line") or {}).get("destination")
+
+        return RouteStop(
+            id=DataMapper.convert_type(station_id, str),
+            name=name,
+            place=place,
+            latitude=latitude,
+            longitude=longitude,
+            planned_time=planned_time,
+            realtime_time=realtime_time,
+            platform=DataMapper.convert_type(data.get("platform"), str),
+            transport_type=transport_type,
+            line=line_name,
+            destination=destination,
+            delay_minutes=DataMapper.convert_type(
+                DataMapper.safe_get(data, "delay", "delayInMinutes"), int
+            ),
+            messages=[str(message) for message in data.get("messages", [])],
+        )
+
+    @staticmethod
+    def _map_intermediate_stops(data: dict[str, Any]) -> list[RouteStop]:
+        """Map intermediate stops from route leg data."""
+        intermediate_raw = DataMapper.safe_get(data, "intermediateStops", "stops") or []
+        return [
+            stop for stop in (
+                MVGClient._map_route_stop(item) for item in intermediate_raw if isinstance(item, dict)
+            )
+            if stop is not None
+        ]
+
+    @staticmethod
     def _fetch_departures(
         station_id: str,
         limit: int,
@@ -245,7 +572,18 @@ class MVGClient:
         transport_types: list[TransportType] | None,
     ) -> list[dict[str, Any]]:
         client = MvgApi(station_id)
-        return client.departures(limit=limit, offset=offset, transport_types=transport_types)
+        try:
+            return client.departures(limit=limit, offset=offset, transport_types=transport_types)
+        except MvgApiError as exc:
+            error_msg = str(exc).lower()
+
+            # Check for HTTP 400 errors more robustly
+            is_400_error = any(indicator in error_msg for indicator in ["400", "bad request", "client error"])
+
+            if is_400_error:
+                logger.debug("Bad API call for departures: %s", exc)
+                return []
+            raise
 
     @staticmethod
     def _fetch_routes(
@@ -266,25 +604,8 @@ class MVGClient:
         return client.route(**kwargs)
 
     @staticmethod
-    def _map_departure(data: dict[str, Any]) -> Departure:
-        planned = MVGClient._to_datetime(data.get("planned"))
-        realtime = MVGClient._to_datetime(data.get("time"))
-        return Departure(
-            planned_time=planned,
-            realtime_time=realtime,
-            delay_minutes=int(data.get("delay") or 0),
-            platform=str(data["platform"]) if data.get("platform") is not None else None,
-            realtime=bool(data.get("realtime")),
-            line=data.get("line", ""),
-            destination=data.get("destination", ""),
-            transport_type=data.get("type", ""),
-            icon=data.get("icon"),
-            cancelled=bool(data.get("cancelled")),
-            messages=[str(message) for message in data.get("messages", [])],
-        )
-
-    @staticmethod
     def _extract_routes(payload: dict[str, Any] | list[Any] | None) -> list[dict[str, Any]]:
+        """Extract routes from various possible payload structures."""
         if payload is None:
             return []
         if isinstance(payload, list):
@@ -296,213 +617,70 @@ class MVGClient:
                     return [item for item in value if isinstance(item, dict)]
         return []
 
-    @staticmethod
-    def _map_route_plan(data: dict[str, Any]) -> RoutePlan:
-        duration = MVGClient._to_minutes(data.get("duration"))
-        transfers = MVGClient._to_int(data.get("transfers") or data.get("changes"))
-        departure = MVGClient._map_route_stop(data.get("departure"))
-        arrival = MVGClient._map_route_stop(data.get("arrival"))
 
-        legs_payload = data.get("legs") or data.get("connections") or []
-        legs = [
-            leg
-            for leg in (MVGClient._map_route_leg(item) for item in legs_payload if isinstance(item, dict))
-            if leg is not None
-        ]
-        return RoutePlan(
-            duration_minutes=duration,
-            transfers=transfers,
-            departure=departure,
-            arrival=arrival,
-            legs=legs,
-        )
+def get_client() -> MVGClient:
+    """Instantiate a fresh MVG client per request.
 
-    @staticmethod
-    def _map_route_leg(data: dict[str, Any]) -> RouteLeg | None:
-        origin = MVGClient._map_route_stop(data.get("departure") or data.get("origin"))
-        destination = MVGClient._map_route_stop(data.get("arrival") or data.get("destination"))
-        transport_type = (
-            data.get("transportType")
-            or data.get("product")
-            or ((data.get("line") or {}).get("transportType"))
-        )
-        line_info = data.get("line") or {}
-        line_name = (
-            line_info.get("name")
-            or line_info.get("label")
-            or line_info.get("symbol")
-            or data.get("line")
-        )
-        direction = (
-            data.get("destination")
-            or line_info.get("destination")
-            or data.get("direction")
-        )
-        duration = MVGClient._to_minutes(data.get("duration"))
-        distance = MVGClient._to_int(
-            data.get("distance")
-            or data.get("distanceInMeters")
-            or (data.get("distance") or {}).get("meters") if isinstance(data.get("distance"), dict) else None
-        )
-        intermediate_raw = data.get("intermediateStops") or data.get("stops") or []
-        intermediate_stops = [
-            stop
-            for stop in (MVGClient._map_route_stop(item) for item in intermediate_raw if isinstance(item, dict))
-            if stop is not None
-        ]
+    This function is included for backward compatibility with existing import patterns.
+    The correct location for this function is app.api.v1.endpoints.mvg.shared.utils.
 
-        if origin is None and destination is None and not intermediate_stops:
-            return None
-
-        return RouteLeg(
-            origin=origin,
-            destination=destination,
-            transport_type=transport_type,
-            line=line_name,
-            direction=direction,
-            duration_minutes=duration,
-            distance_meters=distance,
-            intermediate_stops=intermediate_stops,
-        )
-
-    @staticmethod
-    def _map_route_stop(data: dict[str, Any] | None) -> RouteStop | None:
-        if not data:
-            return None
-        station_payload = data.get("station") or data.get("stop") or {}
-        identifier = (
-            station_payload.get("id")
-            or station_payload.get("globalId")
-            or data.get("stationId")
-            or data.get("stopId")
-        )
-        name = station_payload.get("name") or data.get("name") or data.get("stationName")
-        place = station_payload.get("place") or station_payload.get("municipality") or data.get("place")
-        latitude = MVGClient._to_float(
-            station_payload.get("latitude") or station_payload.get("lat") or data.get("latitude")
-        )
-        longitude = MVGClient._to_float(
-            station_payload.get("longitude") or station_payload.get("lon") or data.get("longitude")
-        )
-        planned_time = MVGClient._to_datetime(
-            data.get("planned")
-            or data.get("plannedTime")
-            or data.get("scheduledTime")
-            or data.get("scheduledDepartureTime")
-            or data.get("scheduledArrivalTime")
-        )
-        realtime_time = MVGClient._to_datetime(
-            data.get("time")
-            or data.get("realtime")
-            or data.get("departureTime")
-            or data.get("arrivalTime")
-        )
-        platform = str(data.get("platform")) if data.get("platform") is not None else None
-        transport_type = (
-            data.get("transportType")
-            or data.get("product")
-            or (data.get("line") or {}).get("transportType")
-        )
-        line_info = data.get("line") or {}
-        line_name = (
-            line_info.get("name")
-            or line_info.get("label")
-            or line_info.get("symbol")
-            or data.get("line")
-        )
-        destination = (
-            data.get("destination")
-            or line_info.get("destination")
-            or data.get("direction")
-        )
-        delay = data.get("delay") or data.get("delayInMinutes")
-        messages = [str(message) for message in data.get("messages", [])]
-
-        return RouteStop(
-            id=str(identifier) if identifier is not None else None,
-            name=name,
-            place=place,
-            latitude=latitude,
-            longitude=longitude,
-            planned_time=planned_time,
-            realtime_time=realtime_time,
-            platform=platform,
-            transport_type=transport_type,
-            line=line_name,
-            destination=destination,
-            delay_minutes=int(delay) if delay is not None else None,
-            messages=messages,
-        )
-
-    @staticmethod
-    def _to_datetime(timestamp: int | float | None) -> datetime | None:
-        if timestamp is None:
-            return None
-        return datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
-
-    @staticmethod
-    def _to_minutes(value: Any) -> int | None:
-        if value is None:
-            return None
-        if isinstance(value, dict):
-            for key in ("minutes", "duration", "total", "value"):
-                candidate = value.get(key)
-                if candidate is not None:
-                    try:
-                        return int(candidate)
-                    except (TypeError, ValueError):
-                        continue
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _to_int(value: Any) -> int | None:
-        if value is None:
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _to_float(value: Any) -> float | None:
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
+    Returns:
+        A new MVGClient instance
+    """
+    return MVGClient()
 
 
 def parse_transport_types(raw_values: Iterable[str]) -> list[TransportType]:
-    """Convert string inputs into MVG transport type enums."""
-    normalized_map: dict[str, TransportType] = {}
-    for item in TransportType:
-        normalized_map[item.name.lower()] = item
-        display = item.value[0].lower()
-        normalized_map[display] = item
-        normalized_map[display.replace("-", "").replace(" ", "")] = item
+    """Parse transport type strings with deduplication and order preservation.
 
-    transport_types: list[TransportType] = []
+    Normalizes input strings to TransportType enum values, handling synonyms
+    and case variations. Duplicates and synonym collisions are collapsed to
+    the first-seen TransportType value, preserving input order for unique types.
+
+    Args:
+        raw_values: Iterable of transport type strings (e.g., ["UBAHN", "S-Bahn"])
+
+    Returns:
+        List of unique TransportType enums in order of first appearance
+
+    Raises:
+        ValueError: If any input string cannot be mapped to a TransportType
+    """
+    # Build lookup map
+    transport_map = {}
+    for transport_type in TransportType:
+        # Add enum name variations
+        name_lower = transport_type.name.lower()
+        transport_map[name_lower] = transport_type
+
+        # Add display value variations
+        if transport_type.value:
+            display = transport_type.value[0].lower()
+            transport_map[display] = transport_type
+            transport_map[display.replace("-", "").replace(" ", "")] = transport_type
+
+    result = []
+    seen_types = set()  # Track seen TransportType values for deduplication
+
     for raw in raw_values:
         key = raw.strip().lower()
         if not key:
             continue
-        candidates = (
-            key,
-            key.replace("-", ""),
-            key.replace(" ", ""),
-            key.replace(" ", "").replace("-", ""),
-        )
-        transport_type = None
-        for candidate in candidates:
-            transport_type = normalized_map.get(candidate)
-            if transport_type:
-                break
+
+        # Try direct lookup
+        transport_type = transport_map.get(key)
+
+        # Try normalized version if direct lookup fails
+        if not transport_type:
+            clean_key = key.replace("-", "").replace(" ", "")
+            transport_type = transport_map.get(clean_key)
+
         if not transport_type:
             raise ValueError(f"Unsupported transport type '{raw}'.")
-        transport_types.append(transport_type)
-    return transport_types
+
+        # Add to result only if we haven't seen this TransportType before
+        if transport_type not in seen_types:
+            result.append(transport_type)
+            seen_types.add(transport_type)
+
+    return result

@@ -14,7 +14,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.api.v1.endpoints import mvg as mvg_module
+from app.services.cache import get_cache_service
+from app.api.v1.endpoints.mvg.shared.utils import get_client
 from app.main import create_app
 from app.services.cache import CacheService
 from app.services.mvg_client import (
@@ -86,6 +87,8 @@ class FakeMVGClient:
         self.fail_departures = False
         self.fail_routes = False
         self.fail_station_list = False
+        self.fail_departures_for: set[str] = set()
+        self.last_departures_call: dict = {}
 
     async def get_departures(
         self,
@@ -95,8 +98,29 @@ class FakeMVGClient:
         transport_types=None,
     ) -> tuple[Station, list[Departure]]:
         self.departure_calls += 1
+
+        # Track call arguments for testing
+        self.last_departures_call = {
+            "station_query": station_query,
+            "limit": limit,
+            "offset": offset,
+            "transport_types": transport_types,
+        }
+
         if self.fail_departures:
             raise MVGServiceError("departures unavailable")
+        types_list = list(transport_types) if transport_types else []
+        if types_list:
+            primary = types_list[0]
+            if hasattr(primary, "name"):
+                transport_name = str(primary.name)
+            elif hasattr(primary, "value") and isinstance(primary.value, str):
+                transport_name = primary.value
+            else:
+                transport_name = str(primary)
+            if transport_name.upper() in self.fail_departures_for:
+                raise MVGServiceError(f"departures unavailable for {transport_name}")
+
         station = Station(
             id=f"station:{station_query}",
             name=station_query.title(),
@@ -105,20 +129,90 @@ class FakeMVGClient:
             longitude=11.57549,
         )
         now = datetime.now(tz=timezone.utc)
-        departure = Departure(
-            planned_time=now,
-            realtime_time=now + timedelta(minutes=1),
-            delay_minutes=1,
-            platform="1",
-            realtime=True,
-            line="U3",
-            destination="Olympiazentrum",
-            transport_type="UBAHN",
-            icon=None,
-            cancelled=False,
-            messages=["Mind the gap"],
-        )
-        return station, [departure]
+
+        # Create mixed-mode departures for testing
+        all_departures = [
+            Departure(
+                planned_time=now + timedelta(minutes=1),
+                realtime_time=now + timedelta(minutes=2),
+                delay_minutes=1,
+                platform="1",
+                realtime=True,
+                line="U3",
+                destination="Olympiazentrum",
+                transport_type="UBAHN",
+                icon=None,
+                cancelled=False,
+                messages=["Mind the gap"],
+            ),
+            Departure(
+                planned_time=now + timedelta(minutes=3),
+                realtime_time=now + timedelta(minutes=3),
+                delay_minutes=0,
+                platform="2",
+                realtime=True,
+                line="Bus 100",
+                destination="Hauptbahnhof",
+                transport_type="BUS",
+                icon=None,
+                cancelled=False,
+                messages=[],
+            ),
+            Departure(
+                planned_time=now + timedelta(minutes=5),
+                realtime_time=now + timedelta(minutes=6),
+                delay_minutes=1,
+                platform="3",
+                realtime=True,
+                line="Tram 17",
+                destination="Sendlinger Tor",
+                transport_type="TRAM",
+                icon=None,
+                cancelled=False,
+                messages=["Slight delay"],
+            ),
+            Departure(
+                planned_time=now + timedelta(minutes=7),
+                realtime_time=now + timedelta(minutes=7),
+                delay_minutes=0,
+                platform="4",
+                realtime=True,
+                line="U1",
+                destination="Messestadt",
+                transport_type="UBAHN",
+                icon=None,
+                cancelled=False,
+                messages=[],
+            ),
+            Departure(
+                planned_time=now + timedelta(minutes=9),
+                realtime_time=now + timedelta(minutes=10),
+                delay_minutes=1,
+                platform="5",
+                realtime=True,
+                line="SBahn 8",
+                destination="Flughafen",
+                transport_type="SBAHN",
+                icon=None,
+                cancelled=False,
+                messages=["Airport express"],
+            ),
+        ]
+
+        # Check for failures in the requested transport types
+        if transport_types:
+            transport_type_names = {t.name if hasattr(t, 'name') else str(t) for t in transport_types}
+            for transport_name in transport_type_names:
+                if transport_name.upper() in self.fail_departures_for:
+                    raise MVGServiceError(f"departures unavailable for {transport_name}")
+            filtered_departures = [d for d in all_departures if d.transport_type in transport_type_names]
+        else:
+            filtered_departures = all_departures
+
+        # Apply limit
+        departures_to_return = filtered_departures[:limit]
+
+        return station, departures_to_return
 
     async def get_all_stations(self) -> list[Station]:
         self.station_list_calls += 1
@@ -246,8 +340,8 @@ def fake_mvg_client() -> FakeMVGClient:
 @pytest.fixture()
 def api_client(cache_service: CacheService, fake_mvg_client: FakeMVGClient) -> Iterator[TestClient]:
     app = create_app()
-    app.dependency_overrides[mvg_module.get_cache_service] = lambda: cache_service
-    app.dependency_overrides[mvg_module.get_client] = lambda: fake_mvg_client
+    app.dependency_overrides[get_cache_service] = lambda: cache_service
+    app.dependency_overrides[get_client] = lambda: fake_mvg_client
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()

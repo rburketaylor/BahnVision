@@ -1,8 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.api.v1.endpoints.mvg.shared import cache_keys
 from app.models.mvg import DeparturesResponse, RouteResponse, StationSearchResponse
+from app.services.mvg_client import TransportType
 from tests.api.conftest import CacheScenario, MVGClientScenario
 
 
@@ -107,6 +109,7 @@ def test_departures_cache_miss(api_client, fake_cache, fake_mvg_client):
     assert len(fake_cache.recorded_sets) > 0
 
 
+
 def test_departures_validation_error_invalid_transport(api_client):
     """Test departures endpoint with invalid transport_type parameter."""
     response = api_client.get(
@@ -202,6 +205,187 @@ def test_departures_transport_filters(api_client, fake_cache, transport_filter, 
 
     response = api_client.get(f"/api/v1/mvg/departures?{params}")
     assert response.status_code == 200
+
+
+def test_departures_upstream_receives_transport_filters(api_client, fake_mvg_client):
+    """Ensure parsed transport filters are forwarded to MVG client."""
+    api_client.get("/api/v1/mvg/departures", params={"station": "marienplatz"})
+    assert fake_mvg_client.last_departures_call["transport_types"] is None
+
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "UBAHN"),
+        ("transport_type", "BUS"),
+    ]
+    api_client.get("/api/v1/mvg/departures", params=params)
+    transport_types = fake_mvg_client.last_departures_call["transport_types"]
+    assert transport_types is not None
+    assert {t.name for t in transport_types} == {"UBAHN", "BUS"}
+
+
+def test_departures_api_duplicate_filters_deduplicated(api_client, fake_mvg_client):
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "UBAHN"),
+        ("transport_type", "UBAHN"),
+    ]
+    api_client.get("/api/v1/mvg/departures", params=params)
+
+    transport_types = fake_mvg_client.last_departures_call["transport_types"]
+    assert transport_types is not None
+    assert len(transport_types) == 1
+    assert transport_types[0] == TransportType.UBAHN
+
+
+def test_departures_api_synonym_filters_deduplicated(api_client, fake_mvg_client):
+    params = [
+        ("station", "marienplatz"),
+        ("transport_type", "S-Bahn"),
+        ("transport_type", "SBAHN"),
+    ]
+    api_client.get("/api/v1/mvg/departures", params=params)
+
+    transport_types = fake_mvg_client.last_departures_call["transport_types"]
+    assert transport_types is not None
+    assert len(transport_types) == 1
+    assert transport_types[0] == TransportType.SBAHN
+
+
+
+def test_departures_from_parameter_conversion(api_client, fake_cache, fake_mvg_client):
+    """Test departures endpoint converts from timestamp to offset correctly."""
+    # Test with a future timestamp (should convert to positive offset)
+    future_time = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=30)
+
+    response = api_client.get(
+        "/api/v1/mvg/departures",
+        params={"station": "Marienplatz", "from": future_time.isoformat()},
+    )
+    assert response.status_code == 200
+
+    # Verify MVG client was called with offset close to 30 minutes
+    assert fake_mvg_client.call_count_departures == 1
+    call_args = fake_mvg_client.last_departures_call
+    assert call_args['offset'] >= 25  # Allow some variance for test execution time
+    assert call_args['offset'] <= 35
+
+
+def test_departures_from_parameter_past_time(api_client, fake_cache, fake_mvg_client):
+    """Test departures endpoint handles past timestamps by clamping to 0 offset."""
+    # Test with a past timestamp (should be clamped to 0)
+    past_time = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=30)
+
+    response = api_client.get(
+        "/api/v1/mvg/departures",
+        params={"station": "Marienplatz", "from": past_time.isoformat()},
+    )
+    assert response.status_code == 200
+
+    # Verify MVG client was called with offset = 0 (clamped)
+    assert fake_mvg_client.call_count_departures == 1
+    call_args = fake_mvg_client.last_departures_call
+    assert call_args['offset'] == 0
+
+
+def test_departures_mutually_exclusive_from_and_offset(api_client):
+    """Test departures endpoint rejects both from and offset parameters."""
+    future_time = datetime.now(timezone.utc).isoformat()
+    response = api_client.get(
+        "/api/v1/mvg/departures",
+        params={"station": "Marienplatz", "from": future_time, "offset": 30},
+    )
+    assert response.status_code == 422
+    assert "Cannot specify both 'from' and 'offset'" in response.json()["detail"]
+
+
+def test_departures_from_parameter_with_transport_filters(api_client, fake_cache):
+    """Test departures endpoint handles from parameter with transport filters."""
+    future_time = datetime.now(timezone.utc).isoformat()
+    cached_payload = {
+        "station": {
+            "id": "de:09162:6",
+            "name": "Marienplatz",
+            "place": "München",
+            "latitude": 48.137,
+            "longitude": 11.575,
+        },
+        "departures": [],
+    }
+    fake_cache.configure(
+        "mvg:departures:marienplatz:10:30:ubahn", CacheScenario(fresh_value=cached_payload)
+    )
+
+    response = api_client.get(
+        "/api/v1/mvg/departures",
+        params={
+            "station": "Marienplatz",
+            "from": future_time,
+            "limit": 10,
+            "transport_type": "UBAHN",
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_departures_window_minutes_parameter(api_client, fake_cache):
+    """Test departures endpoint accepts window_minutes parameter."""
+    cached_payload = {
+        "station": {
+            "id": "de:09162:6",
+            "name": "Marienplatz",
+            "place": "München",
+            "latitude": 48.137,
+            "longitude": 11.575,
+        },
+        "departures": [],
+    }
+    fake_cache.configure(
+        "mvg:departures:marienplatz:20:0:all", CacheScenario(fresh_value=cached_payload)
+    )
+
+    response = api_client.get(
+        "/api/v1/mvg/departures?station=Marienplatz&limit=20&window_minutes=60"
+    )
+    assert response.status_code == 200
+
+
+def test_departures_window_minutes_validation(api_client):
+    """Test departures endpoint validates window_minutes bounds."""
+    # Test window_minutes too high
+    response = api_client.get("/api/v1/mvg/departures?station=Marienplatz&window_minutes=300")
+    assert response.status_code == 422
+
+    # Test window_minutes too low
+    response = api_client.get("/api/v1/mvg/departures?station=Marienplatz&window_minutes=0")
+    assert response.status_code == 422
+
+
+def test_departures_relaxed_offset_upper_bound(api_client, fake_cache):
+    """Test departures endpoint allows larger offset values."""
+    cached_payload = {
+        "station": {
+            "id": "de:09162:6",
+            "name": "Marienplatz",
+            "place": "München",
+            "latitude": 48.137,
+            "longitude": 11.575,
+        },
+        "departures": [],
+    }
+    fake_cache.configure(
+        "mvg:departures:marienplatz:10:180:all", CacheScenario(fresh_value=cached_payload)
+    )
+
+    response = api_client.get("/api/v1/mvg/departures?station=Marienplatz&offset=180&limit=10")
+    assert response.status_code == 200
+
+    # Test that the old upper bound (60) would fail but new bound (240) passes
+    response = api_client.get("/api/v1/mvg/departures?station=Marienplatz&offset=200&limit=10")
+    assert response.status_code == 200
+
+    # Test that values above new bound still fail
+    response = api_client.get("/api/v1/mvg/departures?station=Marienplatz&offset=250&limit=10")
+    assert response.status_code == 422
 
 
 # ========== Route Planning Endpoint Tests ==========
@@ -421,7 +605,7 @@ def test_station_search_cache_hit(api_client, fake_cache):
         ],
     }
     fake_cache.configure(
-        "mvg:stations:search:marienplatz:8", CacheScenario(fresh_value=cached_payload)
+        "mvg:stations:search:marienplatz:40", CacheScenario(fresh_value=cached_payload)
     )
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -449,7 +633,7 @@ def test_station_search_stale_refresh(api_client, fake_cache):
         ],
     }
     fake_cache.configure(
-        "mvg:stations:search:marienplatz:8", CacheScenario(stale_value=stale_payload)
+        "mvg:stations:search:marienplatz:40", CacheScenario(stale_value=stale_payload)
     )
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -459,7 +643,7 @@ def test_station_search_stale_refresh(api_client, fake_cache):
 
 def test_station_search_cache_miss(api_client, fake_cache, fake_mvg_client):
     """Test station search with fresh fetch."""
-    fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
     assert response.status_code == 200
@@ -467,11 +651,30 @@ def test_station_search_cache_miss(api_client, fake_cache, fake_mvg_client):
     assert fake_mvg_client.call_count_station_list == 1
 
 
+def test_station_search_reuses_persisted_stations(
+    api_client,
+    fake_cache,
+    fake_mvg_client,
+    fake_station_repository,
+):
+    """Ensure repository data is used on subsequent cache misses."""
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
+
+    response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
+    assert response.status_code == 200
+    assert fake_mvg_client.call_count_station_list == 1
+    assert fake_station_repository.upsert_batches
+
+    second_response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
+    assert second_response.status_code == 200
+    assert fake_mvg_client.call_count_station_list == 1
+
+
 def test_station_search_not_found(api_client, fake_cache, fake_mvg_client):
     """Test station search when no stations match."""
     scenario = MVGClientScenario(station_search_result=[])
     fake_mvg_client.configure(scenario)
-    fake_cache.configure("mvg:stations:search:unknown:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:unknown:40", CacheScenario())
 
     response = api_client.get("/api/v1/mvg/stations/search?query=unknown")
     assert response.status_code == 404
@@ -479,7 +682,7 @@ def test_station_search_not_found(api_client, fake_cache, fake_mvg_client):
     # Verify not-found marker was cached
     assert len(fake_cache.recorded_sets) > 0
     for written_key, written_value, _, _ in fake_cache.recorded_sets:
-        if written_key == "mvg:stations:search:unknown:8":
+        if written_key == "mvg:stations:search:unknown:40":
             assert written_value.get("__status") == "not_found"
             break
     else:  # pragma: no cover - defensive guard for future regressions
@@ -490,7 +693,7 @@ def test_station_search_service_error(api_client, fake_cache, fake_mvg_client):
     """Test station search when MVG service fails."""
     scenario = MVGClientScenario(fail_station_list=True)
     fake_mvg_client.configure(scenario)
-    fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
     assert response.status_code == 502
@@ -504,7 +707,7 @@ def test_station_search_lock_timeout_with_stale(api_client, fake_cache):
     """
     stale_payload = {"query": "Marienplatz", "results": []}
     fake_cache.configure(
-        "mvg:stations:search:marienplatz:8", CacheScenario(stale_value=stale_payload)
+        "mvg:stations:search:marienplatz:40", CacheScenario(stale_value=stale_payload)
     )
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -514,7 +717,7 @@ def test_station_search_lock_timeout_with_stale(api_client, fake_cache):
 
 def test_station_search_lock_timeout_no_stale(api_client, fake_cache):
     """Test station search with lock timeout and no stale data."""
-    fake_cache.configure("mvg:stations:search:marienplatz:8", CacheScenario())
+    fake_cache.configure("mvg:stations:search:marienplatz:40", CacheScenario())
     fake_cache.set_lock_timeout(True)
 
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz")
@@ -541,3 +744,30 @@ def test_station_search_validates_limit_bounds(api_client):
     # Test limit too low
     response = api_client.get("/api/v1/mvg/stations/search?query=Marienplatz&limit=0")
     assert response.status_code == 422
+
+
+# ========== Cache Key Unit Tests ==========
+
+
+def test_departures_cache_key_without_filters():
+    key = cache_keys.departures_cache_key("Marienplatz", 10, 0, [])
+    assert key == "mvg:departures:marienplatz:10:0:all"
+
+
+def test_departures_cache_key_single_filter():
+    key = cache_keys.departures_cache_key("Marienplatz", 10, 0, [TransportType.UBAHN])
+    assert key == "mvg:departures:marienplatz:10:0:UBAHN"
+
+
+def test_departures_cache_key_multiple_filters_sorted():
+    filters_a = [TransportType.BUS, TransportType.TRAM]
+    filters_b = [TransportType.TRAM, TransportType.BUS]
+    key_a = cache_keys.departures_cache_key("Marienplatz", 10, 0, filters_a)
+    key_b = cache_keys.departures_cache_key("Marienplatz", 10, 0, filters_b)
+    assert key_a == key_b == "mvg:departures:marienplatz:10:0:BUS-TRAM"
+
+
+def test_departures_cache_key_normalizes_station_name():
+    key_a = cache_keys.departures_cache_key("Marienplatz", 10, 0, [])
+    key_b = cache_keys.departures_cache_key("  marienplatz  ", 10, 0, [])
+    assert key_a == key_b

@@ -3,12 +3,13 @@
  * Accessible autocomplete component for MVG stations.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ChangeEvent } from 'react'
 import { useStationSearch } from '../hooks/useStationSearch'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Station } from '../types/api'
 import { ApiError } from '../services/api'
 import { StationSearchResult } from './StationSearchResult'
+import { StationSearchLoading } from './StationSearchLoading'
 
 interface StationSearchProps {
   onSelect?: (station: Station) => void
@@ -19,7 +20,7 @@ interface StationSearchProps {
   label?: string
 }
 
-const DEFAULT_LIMIT = 8
+const DEFAULT_LIMIT = 40
 const DEFAULT_DEBOUNCE = 300
 
 export function StationSearch({
@@ -58,6 +59,13 @@ export function StationSearch({
   const showError = Boolean(apiError && apiError.statusCode !== 404)
   const isDropdownVisible = isOpen && (hasResults || showNoResults || showError || isFetching)
   const isInitialLoading = isLoading || (isFetching && !hasResults)
+
+  // Enhanced timeout detection
+  const isTimeoutError = apiError?.statusCode === 408
+  const hasBeenLoadingTooLong = isFetching && !hasResults && !isLoading
+
+  // Enhanced loading state detection
+  const showEnhancedLoading = isInitialLoading && isEnabled && debouncedQuery.length > 0
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -104,6 +112,12 @@ export function StationSearch({
     onSelect?.(station)
   }
 
+  const cancelSearch = () => {
+    setQuery('')
+    setIsOpen(false)
+    setActiveIndex(-1)
+  }
+
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (!isDropdownVisible || (!hasResults && !showNoResults && !showError)) {
       return
@@ -146,6 +160,20 @@ export function StationSearch({
     }
   }
 
+  // Cancel ongoing search when user clears the input
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value
+    setQuery(nextValue)
+
+    // If clearing the input, close dropdown immediately and cancel any ongoing requests
+    if (nextValue.trim().length === 0) {
+      setIsOpen(false)
+      setActiveIndex(-1)
+    } else {
+      setIsOpen(true)
+    }
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <label htmlFor={inputId} className="mb-1 block text-sm font-medium text-gray-700">
@@ -157,11 +185,7 @@ export function StationSearch({
           id={inputId}
           type="text"
           value={query}
-          onChange={event => {
-            const nextValue = event.target.value
-            setQuery(nextValue)
-            setIsOpen(nextValue.trim().length > 0)
-          }}
+          onChange={handleInputChange}
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -174,11 +198,24 @@ export function StationSearch({
               ? `${listboxId}-option-${results[activeIndex].id}`
               : undefined
           }
-          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+          className={`w-full rounded-lg border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 transition-all ${
+              showEnhancedLoading
+                ? 'border-blue-300 bg-blue-50 text-gray-900 focus:border-blue-500 focus:ring-blue-500/20'
+                : 'border-gray-300 bg-white text-gray-900 focus:border-primary focus:ring-primary/40'
+            }`}
         />
-        {isInitialLoading && (
+        {showEnhancedLoading && (
           <div className="absolute inset-y-0 right-3 flex items-center">
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-primary" />
+            <div className="flex items-center gap-2 pr-2">
+              <span className="text-xs text-blue-600 font-medium animate-pulse">
+                Searching...
+              </span>
+              <div className={`h-5 w-5 animate-spin rounded-full border-2 ${
+                hasBeenLoadingTooLong
+                  ? 'border-orange-300 border-t-orange-600'
+                  : 'border-blue-300 border-t-blue-600'
+              }`} />
+            </div>
           </div>
         )}
       </div>
@@ -188,12 +225,22 @@ export function StationSearch({
         {showError && 'Unable to load stations'}
       </div>
       {isDropdownVisible && (
-        <ul
+        <div
           id={listboxId}
           role="listbox"
-          className="absolute z-40 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg"
+          className="absolute z-40 mt-2 max-h-96 w-full overflow-auto rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg"
         >
-          {hasResults &&
+          {/* Enhanced loading state */}
+          {showEnhancedLoading && (
+            <StationSearchLoading
+              query={debouncedQuery}
+              hasBeenLoadingTooLong={hasBeenLoadingTooLong}
+              onCancel={cancelSearch}
+            />
+          )}
+
+          {/* Regular results */}
+          {!showEnhancedLoading && hasResults &&
             results.map((station, index) => (
               <StationSearchResult
                 key={station.id}
@@ -205,25 +252,49 @@ export function StationSearch({
               />
             ))}
 
-          {showNoResults && (
-            <li className="px-4 py-3 text-sm text-gray-400" role="option" aria-disabled="true">
-              No stations found
-            </li>
+          {/* No results state */}
+          {!showEnhancedLoading && showNoResults && (
+            <div className="px-4 py-3 text-sm text-gray-400" role="option" aria-disabled="true">
+              No stations found for "{debouncedQuery}"
+            </div>
           )}
 
-          {showError && (
-            <li className="px-4 py-3 text-sm text-red-500" role="option" aria-disabled="true">
-              Unable to load stations.{' '}
-              <button
-                type="button"
-                className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
-                onClick={() => refetch()}
-              >
-                Try again
-              </button>
-            </li>
+          {/* Error state */}
+          {!showEnhancedLoading && showError && (
+            <div className="px-4 py-3 text-sm text-red-500" role="option" aria-disabled="true">
+              {isTimeoutError ? (
+                <>
+                  <div className="mb-2">
+                    <strong>Search timed out.</strong> The station search is taking longer than expected.
+                  </div>
+                  <div className="mb-2 p-2 bg-yellow-50 rounded border border-yellow-200 text-xs">
+                    <strong>This sometimes happens on first searches</strong> when the backend is loading data from external services. Please try again.
+                  </div>
+                  <button
+                    type="button"
+                    className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
+                    onClick={() => refetch()}
+                  >
+                    Try again
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="mb-2">
+                    <strong>Unable to load stations.</strong> Please check your connection and try again.
+                  </div>
+                  <button
+                    type="button"
+                    className="font-medium text-red-400 underline underline-offset-2 hover:text-red-300"
+                    onClick={() => refetch()}
+                  >
+                    Try again
+                  </button>
+                </>
+              )}
+            </div>
           )}
-        </ul>
+        </div>
       )}
     </div>
   )

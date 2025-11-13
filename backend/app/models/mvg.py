@@ -51,6 +51,13 @@ class Departure(BaseModel):
 class DeparturesResponse(BaseModel):
     station: Station
     departures: list[Departure]
+    partial: bool = Field(
+        False,
+        description=(
+            "Indicates the payload may be incomplete due to transient upstream "
+            "errors when aggregating transport-specific results."
+        ),
+    )
 
     @classmethod
     def from_dtos(
@@ -142,6 +149,20 @@ class RoutePlan(BaseModel):
             departure=RouteStop.from_dto(dto.departure),
             arrival=RouteStop.from_dto(dto.arrival),
             legs=[RouteLeg.from_dto(leg) for leg in dto.legs],
+        )
+
+
+class StationListResponse(BaseModel):
+    """Response model for station list endpoint."""
+
+    stations: list[Station] = Field(
+        default_factory=list, description="List of all available stations."
+    )
+
+    @classmethod
+    def from_dtos(cls, stations: Iterable[StationDTO]) -> "StationListResponse":
+        return cls(
+            stations=[Station.from_dto(dto) for dto in stations],
         )
 
 

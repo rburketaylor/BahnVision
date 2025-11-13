@@ -12,10 +12,12 @@ FastAPI backend and React frontend for Munich transit data: live MVG departures,
 - Async SQLAlchemy targeting PostgreSQL; Alembic-ready migrations.
 - Prometheus metrics at `/metrics` for latency, cache events, and MVG health.
 - Docker Compose for local development.
+- Optional cache warmup container hydrates MVG station data during startup so the first user doesn't wait for MVG.
 
 ## Quick Start
 - Docker Compose (recommended):
   1) `docker compose up --build`
+     - Compose launches a short-lived `cache-warmup` container that runs `python -m app.jobs.cache_warmup` before the API starts, hydrating Valkey/Postgres with the MVG station catalog.
   2) API docs: http://127.0.0.1:8000/docs
   3) Frontend: http://127.0.0.1:3000
 
@@ -33,8 +35,14 @@ Frontend quick start: see `frontend/README.md`.
 - Per-feature TTLs: `MVG_DEPARTURES_CACHE_TTL_SECONDS`, `MVG_STATION_SEARCH_CACHE_TTL_SECONDS`, `MVG_ROUTE_CACHE_TTL_SECONDS` and corresponding `_STALE_TTL_SECONDS`.
 - Single-flight tuning: `CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`, `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS`, `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS`.
 - Circuit breaker window: `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`.
+- Cache warmup knobs: `CACHE_WARMUP_DEPARTURE_STATIONS` (comma-separated station queries), `CACHE_WARMUP_DEPARTURE_LIMIT` (defaults to 10), `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES` (defaults to 0).
 
 Store secrets and overrides in environment variables or a local `.env` (not committed). See `docs/runtime-configuration.md` for a full list and examples. Copy `.env.example` to `.env` at the repo root to get started. Docker Compose reads `.env` for the backend and passes `VITE_*` envs to the frontend build.
+
+## Cache Warmup
+- Run manually via `cd backend && python -m app.jobs.cache_warmup` to hydrate the station catalog (and optional departures caches) without starting the API.
+- Docker Compose executes the same command through the `cache-warmup` service before the backend container starts, so the very first search reuses cached MVG data.
+- Configure departure hydration with `CACHE_WARMUP_DEPARTURE_STATIONS`, `CACHE_WARMUP_DEPARTURE_LIMIT`, and `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES`. Leave the station list empty to skip departures warmup.
 
 ## API
 - `GET /api/v1/health` — readiness probe

@@ -21,6 +21,13 @@ services:
         condition: service_healthy
       toxiproxy:
         condition: service_started
+  cache-warmup:
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://bahnvision:bahnvision@toxiproxy:5432/bahnvision"
+      VALKEY_URL: "valkey://toxiproxy:6379/0"
+    depends_on:
+      toxiproxy:
+        condition: service_started
   # Monitoring
   prometheus:
     image: prom/prometheus:v3.7.3
