@@ -1,7 +1,36 @@
+import { useState, useMemo } from 'react'
 import type { Departure } from '../types/api'
 
 interface DeparturesBoardProps {
   departures: Departure[]
+  use24Hour?: boolean
+}
+
+interface TimeFormatToggleProps {
+  use24Hour: boolean
+  onToggle: (use24Hour: boolean) => void
+}
+
+function TimeFormatToggle({ use24Hour, onToggle }: TimeFormatToggleProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Time Format:</span>
+      <div className="relative inline-flex h-7 w-[4.5rem] items-center rounded-md bg-gray-200 dark:bg-gray-600 transition-colors">
+        <button
+          onClick={() => onToggle(!use24Hour)}
+          className="relative inline-flex h-7 w-[4.5rem] items-center rounded-md bg-transparent transition-colors"
+        >
+          <span
+            className={`inline-block h-5 w-[2.25rem] transform rounded-sm bg-white shadow-md transition-transform flex items-center justify-center text-sm font-sans font-semibold ${
+              use24Hour ? 'translate-x-1' : 'translate-x-8'
+            }`}
+          >
+            {use24Hour ? '24' : '12'}
+          </span>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // Transport type color mapping
@@ -24,40 +53,28 @@ const getTransportTypeColor = (transportType?: string) => {
 }
 
 // Format time for display
-const formatTime = (dateString: string | null | undefined) => {
+const formatTime = (dateString: string | null | undefined, use24Hour: boolean = true) => {
   if (!dateString) return 'N/A'
   return new Date(dateString).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hour12: !use24Hour,
   })
 }
 
-export function DeparturesBoard({ departures }: DeparturesBoardProps) {
+export function DeparturesBoard({ departures, use24Hour: initialUse24Hour = true }: DeparturesBoardProps) {
+  const [use24Hour, setUse24Hour] = useState(initialUse24Hour)
+
   // Sort departures by effective departure time (realtime if available, otherwise planned)
-  const sortedDepartures = [...departures].sort((a, b) => {
-    const timeA = a.realtime_time || a.planned_time
-    const timeB = b.realtime_time || b.planned_time
-    if (!timeA) return 1
-    if (!timeB) return -1
-    return new Date(timeA).getTime() - new Date(timeB).getTime()
-  })
-
-  // Group departures by hour
-  const groupedDepartures = sortedDepartures.reduce<Record<string, Departure[]>>((groups, departure) => {
-    const effectiveTime = departure.realtime_time || departure.planned_time
-    if (!effectiveTime) return groups
-
-    const date = new Date(effectiveTime)
-    const pad = (value: number) => value.toString().padStart(2, '0')
-    const hourKey = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}`
-
-    if (!groups[hourKey]) {
-      groups[hourKey] = []
-    }
-    groups[hourKey].push(departure)
-    return groups
-  }, {})
+  const sortedDepartures = useMemo(() =>
+    [...departures].sort((a, b) => {
+      const timeA = a.realtime_time || a.planned_time
+      const timeB = b.realtime_time || b.planned_time
+      if (!timeA) return 1
+      if (!timeB) return -1
+      return new Date(timeA).getTime() - new Date(timeB).getTime()
+    }), [departures]
+  )
 
   if (sortedDepartures.length === 0) {
     return (
@@ -70,118 +87,91 @@ export function DeparturesBoard({ departures }: DeparturesBoardProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {Object.entries(groupedDepartures).map(([hourKey, hourDepartures]) => {
-        const headerDeparture = hourDepartures[0]
-        const headerTime = headerDeparture?.realtime_time || headerDeparture?.planned_time
-        const headerLabel = headerTime
-          ? new Date(headerTime).toLocaleString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-              day: '2-digit',
-              month: 'short',
-            })
-          : hourKey
+    <div className="space-y-4">
+      {/* Header with time format toggle */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold text-foreground">
+          {sortedDepartures.length} departure{sortedDepartures.length !== 1 ? 's' : ''}
+        </h2>
+        <TimeFormatToggle use24Hour={use24Hour} onToggle={setUse24Hour} />
+      </div>
 
-        return (
-          <div key={hourKey} className="space-y-4">
-            {/* Time header */}
-            <div className="sticky top-20 z-10 bg-background/95 backdrop-blur-sm border-b border-border pb-2">
-              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                <span className="w-2 h-2 bg-primary rounded-full"></span>
-                {headerLabel}
-              </h3>
-            </div>
+      {/* Departures list with better spacing */}
+      <div className="space-y-3">
+        {sortedDepartures.map((departure, index) => {
+          const time = formatTime(departure.realtime_time || departure.planned_time, use24Hour)
+          const isDelayed = departure.delay_minutes && departure.delay_minutes > 0
+          const transportType = departure.transport_type === 'REGIONAL_BUS' ? 'BUS' : departure.transport_type
 
-            {/* Departure cards */}
-            <div className="grid gap-3 sm:gap-4">
-              {hourDepartures.map((departure, index) => (
-                <div
-                  key={`${hourKey}-${index}`}
-                  className={`
-                    relative rounded-lg border transition-all duration-200 hover:shadow-md
-                    ${departure.cancelled
-                      ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
-                      : 'bg-card border-border hover:border-primary/50'
-                    }
-                  `}
-                >
-                  <div className="p-4 sm:p-5">
-                    {/* Header with line and time */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex flex-col items-center">
-                          <span className={`
-                            px-3 py-1 rounded-md text-xs font-bold text-center min-w-[3rem]
-                            ${getTransportTypeColor(departure.transport_type)}
-                          `}>
-                            {departure.line}
-                          </span>
-                          {departure.transport_type && (
-                            <span className="text-xs text-gray-500 mt-1">
-                              {departure.transport_type === 'REGIONAL_BUS' ? 'BUS' : departure.transport_type}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex-1">
-                          <div className="font-semibold text-foreground text-lg">
-                            {departure.destination}
-                          </div>
-                          {departure.platform && (
-                            <div className="text-sm text-gray-500 mt-1">
-                              Platform {departure.platform}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Departure time and status */}
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-foreground">
-                          {formatTime(departure.realtime_time || departure.planned_time)}
-                        </div>
-
-                        {/* Delay indicator */}
-                        {departure.delay_minutes !== undefined && (
-                          <div className="mt-1">
-                            {departure.cancelled ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                ❌ Cancelled
-                              </span>
-                            ) : departure.delay_minutes > 0 ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                ⚠️ +{departure.delay_minutes} min
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                ✅ On time
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Time comparison for delayed trains */}
-                    {departure.realtime_time && departure.planned_time &&
-                     new Date(departure.realtime_time).getTime() !== new Date(departure.planned_time).getTime() && (
-                      <div className="text-xs text-gray-500 border-t border-border pt-2 mt-2">
-                        <div className="flex items-center gap-2">
-                          <span>Scheduled: {formatTime(departure.planned_time)}</span>
-                          <span>→</span>
-                          <span>Actual: {formatTime(departure.realtime_time)}</span>
-                        </div>
-                      </div>
-                    )}
+          return (
+            <div key={index} className="group">
+              <div
+                className={`
+                  flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 border
+                  ${departure.cancelled
+                    ? 'bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800/60 hover:bg-red-50/60 dark:hover:bg-red-900/30'
+                    : isDelayed
+                      ? 'bg-yellow-50/40 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800/60 hover:bg-yellow-50/60 dark:hover:bg-yellow-900/30'
+                      : 'bg-card border-border hover:border-primary/30 hover:shadow-sm'
+                  }
+                `}
+              >
+                {/* Transport line and type */}
+                <div className="flex items-center gap-3 min-w-[5rem]">
+                  <div className={`
+                    px-3 py-1.5 rounded-lg text-sm font-bold text-center min-w-[3rem]
+                    ${getTransportTypeColor(departure.transport_type)}
+                  `}>
+                    {departure.line}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                    {transportType}
                   </div>
                 </div>
-              ))}
+
+                {/* Time */}
+                <div className="text-xl font-mono font-semibold text-foreground min-w-[5rem]">
+                  {time}
+                </div>
+
+  
+                {/* Destination */}
+                <div className="flex-1 text-base font-medium text-foreground">
+                  {departure.destination}
+                </div>
+
+                {/* Platform and delay info */}
+                <div className="flex items-center gap-3">
+                  {departure.platform && (
+                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-300">
+                      Platform {departure.platform}
+                    </span>
+                  )}
+
+                  {departure.cancelled ? (
+                    <span className="px-3 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm font-medium">
+                      Cancelled
+                    </span>
+                  ) : isDelayed && departure.delay_minutes ? (
+                    <span className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 rounded-lg text-sm font-medium">
+                      +{departure.delay_minutes}m delay
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg text-sm font-medium">
+                      On time
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Separator */}
+              {index < sortedDepartures.length - 1 && (
+                <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent my-4" />
+              )}
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
