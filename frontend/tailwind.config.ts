@@ -27,10 +27,39 @@ export default {
         'card-foreground': '#E0E0E0',
         border: '#2C2C2C',
         input: '#2C2C2C',
-      },
+
+        // Light theme palette (for consistency)
+        light: {
+          background: '#ffffff',
+          foreground: '#111827',
+          card: '#ffffff',
+          'card-foreground': '#111827',
+          border: '#e5e7eb',
+          input: '#ffffff',
+        },
+
+        // Additional utility colors
+        muted: {
+          DEFAULT: '#6b7280',
+          foreground: '#374151',
+        },
+        secondary: {
+          DEFAULT: '#6b7280',
+          foreground: '#ffffff',
+        },
+        accent: {
+          DEFAULT: '#0065AE',
+          foreground: '#ffffff',
+        },
+
+        },
       fontFamily: {
         sans: ['Inter', 'Roboto', 'system-ui', 'sans-serif'],
       },
+      maxWidth: {
+        '8xl': '88rem',
+        '9xl': '96rem',
+      }
     },
   },
   plugins: [],

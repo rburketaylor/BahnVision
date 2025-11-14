@@ -33,7 +33,9 @@ function highlightMatch(text: string, query: string) {
   return (
     <>
       {before}
-      <span className="font-semibold text-gray-900">{match}</span>
+      <span className="font-semibold bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded">
+        {match}
+      </span>
       {after}
     </>
   )
@@ -51,25 +53,27 @@ export function StationSearchResult({
       id={optionId}
       role="option"
       aria-selected={isActive}
-      className={`cursor-pointer border-b border-gray-200 px-4 py-3 transition-colors last:border-b-0 ${
-        isActive ? 'bg-gray-100' : 'hover:bg-gray-100'
+      className={`px-4 py-3 cursor-pointer transition-colors ${
+        isActive ? 'bg-muted' : 'hover:bg-muted'
       }`}
     >
       <button
         type="button"
-        className="w-full text-left focus:outline-none" 
+        className="w-full text-left focus:outline-none"
         onMouseDown={event => {
           // Prevent losing focus before click handler fires
           event.preventDefault()
         }}
         onClick={() => onSelect(station)}
       >
-        <span className="block text-base font-medium text-gray-900">
+        <div className="font-medium text-foreground">
           {highlightMatch(station.name, query)}
-        </span>
-        <span className="block text-sm text-gray-600">
-          {highlightMatch(station.place, query)}
-        </span>
+        </div>
+        {station.place !== station.name && (
+          <div className="text-sm text-gray-500">
+            {highlightMatch(station.place, query)}
+          </div>
+        )}
       </button>
     </div>
   )
