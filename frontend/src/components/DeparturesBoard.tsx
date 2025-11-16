@@ -1,153 +1,177 @@
-import React from 'react'
+import { useState, useMemo } from 'react'
 import type { Departure } from '../types/api'
 
 interface DeparturesBoardProps {
   departures: Departure[]
+  use24Hour?: boolean
 }
 
-export function DeparturesBoard({ departures }: DeparturesBoardProps) {
-  // Sort departures by effective departure time (realtime if available, otherwise planned)
-  const sortedDepartures = [...departures].sort((a, b) => {
-    const timeA = a.realtime_time || a.planned_time
-    const timeB = b.realtime_time || b.planned_time
-    if (!timeA) return 1
-    if (!timeB) return -1
-    return new Date(timeA).getTime() - new Date(timeB).getTime()
+interface TimeFormatToggleProps {
+  use24Hour: boolean
+  onToggle: (use24Hour: boolean) => void
+}
+
+function TimeFormatToggle({ use24Hour, onToggle }: TimeFormatToggleProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Time Format:</span>
+      <div className="relative inline-flex h-7 w-[4.5rem] items-center rounded-md bg-gray-200 dark:bg-gray-600 transition-colors">
+        <button
+          onClick={() => onToggle(!use24Hour)}
+          className="relative inline-flex h-7 w-[4.5rem] items-center rounded-md bg-transparent transition-colors"
+        >
+          <span
+            className={`inline-block h-5 w-[2.25rem] transform rounded-sm bg-white shadow-md transition-transform flex items-center justify-center text-sm font-sans font-semibold ${
+              use24Hour ? 'translate-x-1' : 'translate-x-8'
+            }`}
+          >
+            {use24Hour ? '24' : '12'}
+          </span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Transport type color mapping
+const getTransportTypeColor = (transportType?: string) => {
+  switch (transportType) {
+    case 'UBAHN':
+      return 'bg-ubahn text-white'
+    case 'SBAHN':
+      return 'bg-sbahn text-white'
+    case 'TRAM':
+      return 'bg-tram text-white'
+    case 'BUS':
+    case 'REGIONAL_BUS':
+      return 'bg-bus text-white'
+    case 'BAHN':
+      return 'bg-gray-700 text-white'
+    default:
+      return 'bg-gray-600 text-white'
+  }
+}
+
+// Format time for display
+const formatTime = (dateString: string | null | undefined, use24Hour: boolean = true) => {
+  if (!dateString) return 'N/A'
+  return new Date(dateString).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: !use24Hour,
   })
+}
 
-  // Group departures by hour
-  const groupedDepartures = sortedDepartures.reduce<Record<string, Departure[]>>((groups, departure) => {
-    const effectiveTime = departure.realtime_time || departure.planned_time
-    if (!effectiveTime) return groups
+export function DeparturesBoard({ departures, use24Hour: initialUse24Hour = true }: DeparturesBoardProps) {
+  const [use24Hour, setUse24Hour] = useState(initialUse24Hour)
 
-    const date = new Date(effectiveTime)
-    const pad = (value: number) => value.toString().padStart(2, '0')
-    const hourKey = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}`
+  // Sort departures by effective departure time (realtime if available, otherwise planned)
+  const sortedDepartures = useMemo(() =>
+    [...departures].sort((a, b) => {
+      const timeA = a.realtime_time || a.planned_time
+      const timeB = b.realtime_time || b.planned_time
+      if (!timeA) return 1
+      if (!timeB) return -1
+      return new Date(timeA).getTime() - new Date(timeB).getTime()
+    }), [departures]
+  )
 
-    if (!groups[hourKey]) {
-      groups[hourKey] = []
-    }
-    groups[hourKey].push(departure)
-    return groups
-  }, {})
+  if (sortedDepartures.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-6xl mb-4">🚦</div>
+        <div className="text-gray-500 text-lg font-medium">No departures found</div>
+        <div className="text-gray-400 text-sm mt-1">Try adjusting your filters or time range</div>
+      </div>
+    )
+  }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-border">
-        <thead className="bg-card sticky top-0 z-10">
-          <tr>
-            <th
-              scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"
-            >
-              Line
-            </th>
-            <th
-              scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"
-            >
-              Destination
-            </th>
-            <th
-              scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"
-            >
-              Platform
-            </th>
-            <th
-              scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"
-            >
-              Departure
-            </th>
-            <th
-              scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"
-            >
-              Delay
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-card divide-y divide-border">
-          {Object.entries(groupedDepartures).map(([hourKey, hourDepartures]) => {
-            const headerDeparture = hourDepartures[0]
-            const headerTime = headerDeparture?.realtime_time || headerDeparture?.planned_time
-            const headerLabel = headerTime
-              ? new Date(headerTime).toLocaleString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false,
-                  day: '2-digit',
-                  month: 'short',
-                })
-              : hourKey
+    <div className="space-y-4">
+      {/* Header with time format toggle */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold text-foreground">
+          {sortedDepartures.length} departure{sortedDepartures.length !== 1 ? 's' : ''}
+        </h2>
+        <TimeFormatToggle use24Hour={use24Hour} onToggle={setUse24Hour} />
+      </div>
 
-            return (
-              <React.Fragment key={hourKey}>
-                {/* Hour header row */}
-                <tr className="bg-gray-800/50">
-                  <td colSpan={5} className="px-6 py-2 text-sm font-semibold text-gray-300">
-                    {headerLabel}
-                  </td>
-                </tr>
-                {/* Departures for this hour */}
-                {hourDepartures.map((departure, index) => (
-                  <tr
-                    key={`${hourKey}-${index}`}
-                    className={departure.cancelled ? 'bg-red-900/50' : 'hover:bg-gray-800/30'}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-input text-gray-300`}
-                        >
-                          {departure.line}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-foreground">{departure.destination}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-foreground">{departure.platform}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-foreground">
-                        {departure.realtime_time ? (
-                          <>
-                            <span className="font-semibold">{new Date(departure.realtime_time).toLocaleTimeString()}</span>
-                            {departure.planned_time && (
-                              <span className="text-xs text-gray-500 ml-2 line-through">
-                                {new Date(departure.planned_time).toLocaleTimeString()}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span>{departure.planned_time ? new Date(departure.planned_time).toLocaleTimeString() : 'N/A'}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          departure.delay_minutes > 0 ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'
-                        }`}
-                      >
-                        {departure.delay_minutes > 0 ? `+${departure.delay_minutes}` : 'On time'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </React.Fragment>
-            )
-          })}
-        </tbody>
-      </table>
-      {sortedDepartures.length === 0 && (
-        <div className="text-center py-8 text-gray-500">
-          No departures found for the selected time and filters.
-        </div>
-      )}
+      {/* Departures list with better spacing */}
+      <div className="space-y-3">
+        {sortedDepartures.map((departure, index) => {
+          const time = formatTime(departure.realtime_time || departure.planned_time, use24Hour)
+          const isDelayed = departure.delay_minutes && departure.delay_minutes > 0
+          const transportType = departure.transport_type === 'REGIONAL_BUS' ? 'BUS' : departure.transport_type
+
+          return (
+            <div key={index} className="group">
+              <div
+                className={`
+                  flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 border
+                  ${departure.cancelled
+                    ? 'bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800/60 hover:bg-red-50/60 dark:hover:bg-red-900/30'
+                    : isDelayed
+                      ? 'bg-yellow-50/40 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800/60 hover:bg-yellow-50/60 dark:hover:bg-yellow-900/30'
+                      : 'bg-card border-border hover:border-primary/30 hover:shadow-sm'
+                  }
+                `}
+              >
+                {/* Transport line and type */}
+                <div className="flex items-center gap-3 min-w-[5rem]">
+                  <div className={`
+                    px-3 py-1.5 rounded-lg text-sm font-bold text-center min-w-[3rem]
+                    ${getTransportTypeColor(departure.transport_type)}
+                  `}>
+                    {departure.line}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                    {transportType}
+                  </div>
+                </div>
+
+                {/* Time */}
+                <div className="text-xl font-mono font-semibold text-foreground min-w-[5rem]">
+                  {time}
+                </div>
+
+  
+                {/* Destination */}
+                <div className="flex-1 text-base font-medium text-foreground">
+                  {departure.destination}
+                </div>
+
+                {/* Platform and delay info */}
+                <div className="flex items-center gap-3">
+                  {departure.platform && (
+                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-300">
+                      Platform {departure.platform}
+                    </span>
+                  )}
+
+                  {departure.cancelled ? (
+                    <span className="px-3 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm font-medium">
+                      Cancelled
+                    </span>
+                  ) : isDelayed && departure.delay_minutes ? (
+                    <span className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 rounded-lg text-sm font-medium">
+                      +{departure.delay_minutes}m delay
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg text-sm font-medium">
+                      On time
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Separator */}
+              {index < sortedDepartures.length - 1 && (
+                <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent my-4" />
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

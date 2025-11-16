@@ -281,172 +281,205 @@ export function DeparturesPage() {
   const canGoPrevious = paginationState.fromTime !== null || paginationState.pageIndex > 0
 
   return (
-    <div className="space-y-8">
-      <header>
-        {stationId && <h1 className="text-4xl font-bold text-foreground">Departures for {station?.name}</h1>}
+    <div className="max-w-full">
+      {/* Header with station info */}
+      <header className="mb-8">
+        {stationId && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-bold text-foreground">
+                Departures for {station?.name}
+              </h1>
+              {station?.id && (
+                <p className="text-sm text-gray-400 mt-1">Station ID: {station.id}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                paginationState.live
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+              }`}>
+                {paginationState.live ? '🟢 Live' : '⏸️ Manual'}
+              </div>
+              {selectedTransportTypes.length > 0 && (
+                <div className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
+                  {selectedTransportTypes.length} filter{selectedTransportTypes.length !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* Transport Type Filters */}
-      <div className="rounded-lg border border-border bg-card p-4 shadow-md">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Transport Types</h3>
-          <div className="flex items-center gap-2">
-            {isFilterUpdating && (
-              <span className="text-xs text-gray-500 flex items-center gap-1">
-                <span className="h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-blue-500"></span>
-                {sortedDebouncedTransportTypes.length > 3 ? 'Loading complex filters...' : 'Updating...'}
-              </span>
-            )}
-            {selectedTransportTypes.length > 0 && (
-              <button
-                onClick={() => {
-                  setSelectedTransportTypes([])
-                  // Immediately clear debounced state as well
-                  setDebouncedTransportTypes([])
-                  setIsFilterUpdating(false)
-                  if (debounceTimeoutRef.current) {
-                    clearTimeout(debounceTimeoutRef.current)
-                    debounceTimeoutRef.current = null
-                  }
-                }}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                Reset filters
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {ALL_TRANSPORT_TYPES.map((type) => (
-            <button
-              key={type}
-              onClick={() => toggleTransportType(type)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-                selectedTransportTypes.includes(type)
-                  ? 'bg-gray-900 text-white border border-gray-900 shadow-sm'
-                  : 'bg-white text-gray-900 border border-gray-300 hover:bg-gray-100'
-              }`}
-            >
-              {type === 'REGIONAL_BUS' ? 'REGIONAL BUS' : type}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Pagination Controls */}
-      <div className="rounded-lg border border-border bg-card p-4 shadow-md">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 items-center">
-          {/* Page Navigation */}
-          <div className="flex gap-2">
-            <button
-              onClick={goToPreviousPage}
-              disabled={!canGoPrevious}
-              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
-                canGoPrevious
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              Prev
-            </button>
-            <button
-              onClick={goToNextPage}
-              className="px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
-            >
-              Next
-            </button>
-          </div>
-
-          {/* Page Size Selector */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Page Size</label>
-            <select
-              value={paginationState.pageSize}
-              onChange={(e) => updatePaginationState({ pageSize: parseInt(e.target.value, 10) })}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={30}>30</option>
-              <option value={40}>40</option>
-            </select>
-          </div>
-
-          {/* Step Selector */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Step (min)</label>
-            <select
-              value={paginationState.pageStepMinutes}
-              onChange={(e) => updatePaginationState({ pageStepMinutes: parseInt(e.target.value, 10) })}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value={15}>15</option>
-              <option value={30}>30</option>
-              <option value={60}>60</option>
-            </select>
-          </div>
-
-          {/* Time Picker */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Start Time</label>
-            <input
-              type="datetime-local"
-              value={toDateTimeLocalValue(paginationState.fromTime)}
-              onChange={(e) => {
-                if (e.target.value) {
-                  const nextIso = fromDateTimeLocalValue(e.target.value)
-                  if (!nextIso) {
-                    return
-                  }
-                  updatePaginationState({
-                    fromTime: nextIso,
-                    pageIndex: 0,
-                    live: false,
-                  })
-                } else {
-                  goToNow()
-                }
-              }}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          {/* Jump to Now */}
-          <div>
-            <button
-              onClick={goToNow}
-              className={`w-full px-3 py-2 rounded text-sm font-medium transition-colors ${
-                paginationState.live
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-600 text-white hover:bg-gray-700'
-              }`}
-            >
-              {paginationState.live ? 'Live' : 'Jump to Now'}
-            </button>
-          </div>
-
-          {/* Live Status */}
-          <div className="text-center">
-            <div className={`text-xs font-medium ${
-              paginationState.live ? 'text-green-600' : 'text-gray-500'
-            }`}>
-              {paginationState.live ? '🟢 Auto-refresh' : '⏸️ Manual'}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+        {/* Transport Type Filters - Takes 1 column on large screens */}
+        <div className="lg:col-span-1">
+          <div className="rounded-lg border border-border bg-card p-4 shadow-md sticky top-20">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-foreground flex items-center justify-between">
+                <span>Filters</span>
+                {isFilterUpdating && (
+                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                    <span className="h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-primary"></span>
+                  </span>
+                )}
+              </h3>
             </div>
-            {paginationState.fromTime && (
-              <div className="text-xs text-gray-500">
-                From: {new Date(paginationState.fromTime).toLocaleString()}
+
+            <div className="space-y-4">
+              {/* Transport Types */}
+              <div>
+                <h4 className="text-sm font-medium text-foreground mb-2">Transport Types</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+                  {ALL_TRANSPORT_TYPES.map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => toggleTransportType(type)}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all text-center ${
+                        selectedTransportTypes.includes(type)
+                          ? 'bg-primary text-primary-foreground border border-primary shadow-sm'
+                          : 'bg-input text-foreground border border-border hover:bg-muted'
+                      }`}
+                    >
+                      {type === 'REGIONAL_BUS' ? 'REGIONAL BUS' : type}
+                    </button>
+                  ))}
+                </div>
+                {selectedTransportTypes.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSelectedTransportTypes([])
+                      setDebouncedTransportTypes([])
+                      setIsFilterUpdating(false)
+                      if (debounceTimeoutRef.current) {
+                        clearTimeout(debounceTimeoutRef.current)
+                        debounceTimeoutRef.current = null
+                      }
+                    }}
+                    className="mt-2 w-full text-sm text-primary hover:text-primary/80"
+                  >
+                    Reset filters
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area - Takes 3 columns on large screens */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Pagination Controls - More compact design */}
+          <div className="rounded-lg border border-border bg-card p-4 shadow-md">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
+              {/* Page Navigation */}
+              <div className="flex gap-2 col-span-2 sm:col-span-1">
+                <button
+                  onClick={goToPreviousPage}
+                  disabled={!canGoPrevious}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    canGoPrevious
+                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                      : 'bg-muted text-muted-foreground cursor-not-allowed'
+                  }`}
+                >
+                  ← Prev
+                </button>
+                <button
+                  onClick={goToNextPage}
+                  className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                >
+                  Next →
+                </button>
+              </div>
+
+              {/* Page Size Selector */}
+              <div>
+                <label className="block text-xs font-medium text-foreground mb-1">Results</label>
+                <select
+                  value={paginationState.pageSize}
+                  onChange={(e) => updatePaginationState({ pageSize: parseInt(e.target.value, 10) })}
+                  className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={30}>30</option>
+                  <option value={40}>40</option>
+                </select>
+              </div>
+
+              {/* Step Selector */}
+              <div>
+                <label className="block text-xs font-medium text-foreground mb-1">Step</label>
+                <select
+                  value={paginationState.pageStepMinutes}
+                  onChange={(e) => updatePaginationState({ pageStepMinutes: parseInt(e.target.value, 10) })}
+                  className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+                >
+                  <option value={15}>15m</option>
+                  <option value={30}>30m</option>
+                  <option value={60}>1h</option>
+                </select>
+              </div>
+
+              {/* Time Picker */}
+              <div>
+                <label className="block text-xs font-medium text-foreground mb-1">Time</label>
+                <input
+                  type="datetime-local"
+                  value={toDateTimeLocalValue(paginationState.fromTime)}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      const nextIso = fromDateTimeLocalValue(e.target.value)
+                      if (!nextIso) return
+                      updatePaginationState({
+                        fromTime: nextIso,
+                        pageIndex: 0,
+                        live: false,
+                      })
+                    } else {
+                      goToNow()
+                    }
+                  }}
+                  className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+
+              {/* Jump to Now */}
+              <div>
+                <button
+                  onClick={goToNow}
+                  className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    paginationState.live
+                      ? 'bg-green-600 text-white'
+                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                  }`}
+                >
+                  {paginationState.live ? 'Live' : 'Now'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Departures Board */}
+          <section className="rounded-lg border border-border bg-card p-4 sm:p-6 shadow-lg">
+            {isLoading && (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2">
+                  <span className="h-5 w-5 animate-spin rounded-full border border-gray-300 border-t-primary"></span>
+                  <span className="text-gray-400">Loading departures...</span>
+                </div>
               </div>
             )}
-          </div>
+            {error && (
+              <div className="text-center py-8">
+                <p className="text-red-500">Error fetching departures: {error.message}</p>
+              </div>
+            )}
+            {departures && <DeparturesBoard departures={departures} />}
+          </section>
         </div>
       </div>
-
-      {/* Departures Board */}
-      <section className="rounded-lg border border-border bg-card p-6 shadow-lg">
-        {isLoading && <p className="text-center text-gray-400">Loading departures...</p>}
-        {error && <p className="text-center text-red-500">Error fetching departures: {error.message}</p>}
-        {departures && <DeparturesBoard departures={departures} />}
-      </section>
     </div>
   )
 }
