@@ -40,7 +40,7 @@ describe('useRoutePlanner', () => {
     }
     mockPlanRoute.mockResolvedValue({ data: { routes: [] } })
 
-    renderHook(() => useRoutePlanner(params), {
+    renderHook(() => useRoutePlanner({ params }), {
       wrapper: createWrapper(queryClient),
     })
 
@@ -48,8 +48,8 @@ describe('useRoutePlanner', () => {
       expect(mockPlanRoute).toHaveBeenCalledWith(params)
     })
 
-    const query = queryClient.getQueryCache().find(['routes', 'plan', params])
-    expect(query?.queryKey).toEqual(['routes', 'plan', params])
+    const query = queryClient.getQueryCache().find(['route-plan', params])
+    expect(query?.queryKey).toEqual(['route-plan', params])
     expect(query?.options.staleTime).toBe(120_000)
   })
 
@@ -59,7 +59,7 @@ describe('useRoutePlanner', () => {
       destination: 'de:2',
     }
 
-    const { result } = renderHook(() => useRoutePlanner(params, false), {
+    const { result } = renderHook(() => useRoutePlanner({ params, enabled: false }), {
       wrapper: createWrapper(queryClient),
     })
 
