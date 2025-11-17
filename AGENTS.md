@@ -8,7 +8,7 @@ This document is the canonical guide for all AI coding assistants working in thi
 - Persistence uses async SQLAlchemy with a shared engine; observability exports Prometheus metrics.
 
 ## Core References
-- Backend spec: `backend/docs/architecture/tech-spec.md`
+- Backend spec: `docs/tech-spec.md`
 - Frontend docs hub: `frontend/docs/README.md`
 - Compose topology and envs: `docker-compose.yml`
 

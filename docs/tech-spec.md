@@ -39,6 +39,7 @@ Primary flows:
 | Endpoint | Description | Cache TTL / Strategy |
 | --- | --- | --- |
 | `GET /mvg/stations/search` | Autocomplete stations by free-text query. | Configurable TTL (`MVG_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
+| `GET /mvg/stations/list` | Get all MVG stations. | Heavily cached with long TTL (`MVG_STATION_LIST_CACHE_TTL_SECONDS`) and stale fallback. |
 | `GET /mvg/departures` | Live departures for a station with optional transport filter, limit, and offset. | TTL (`MVG_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store. |
 | `GET /mvg/routes/plan` | Simple route planning; includes MVG route fallback metadata. | TTL (`MVG_ROUTE_CACHE_TTL_SECONDS`); refresh in background when stale served. |
 | `GET /health` | Readiness and dependency probes (Valkey, Postgres, MVG reachability). | Non-cached; returns `503` when critical dependencies down. |

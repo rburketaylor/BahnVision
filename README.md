@@ -193,6 +193,8 @@ See `docs/runtime-configuration.md` for detailed examples and use cases.
     - `limit` (optional): Maximum results (default 40, max 50)
   - **Example**: `GET /api/v1/mvg/stations/search?query=marien&limit=5`
   - **Response**: Array of station objects with id, name, latitude, longitude
+- `GET /api/v1/mvg/stations/list` — Get all MVG stations (cached)
+  - **Response**: Array of all station objects
 
 #### Live Departures
 - `GET /api/v1/mvg/departures` — Real-time departures for a station
@@ -221,13 +223,13 @@ See `docs/runtime-configuration.md` for detailed examples and use cases.
 
 ```bash
 # Station search
-curl "http://127.0.0.1:8000/api/v1/mvg/stations/search?q=hauptbahnhof"
+curl "http://127.0.0.1:8000/api/v1/mvg/stations/search?query=hauptbahnhof"
 
 # U-Bahn departures from Marienplatz
 curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=marienplatz&transport_type=UBAHN"
 
 # Route planning with all transport types
-curl "http://127.0.0.1:8000/api/v1/mvg/routes/plan?from_station=sendlinger_tor&to_station=olympiazentrum"
+curl "http://127.0.0.1:8000/api/v1/mvg/routes/plan?origin=sendlinger_tor&destination=olympiazentrum"
 
 # Check application health
 curl "http://127.0.0.1:8000/api/v1/health"

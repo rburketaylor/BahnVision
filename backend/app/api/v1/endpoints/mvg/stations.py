@@ -22,7 +22,6 @@ from app.persistence.dependencies import get_station_repository
 from app.persistence.repositories import StationRepository
 from app.services.cache import CacheService, get_cache_service
 from app.services.mvg_client import MVGClient
-# from app.jobs.stations_sync import run_stations_sync, get_stations_sync_status
 
 router = APIRouter()
 
@@ -108,21 +107,3 @@ async def list_stations(
         background_tasks=background_tasks,
         settings=settings,
     )
-
-
-# @router.post(
-#     "/stations/sync",
-#     summary="Sync stations from MVG API to database",
-# )
-# async def sync_stations() -> dict[str, int]:
-#     """Trigger a manual sync of all MVG stations to the local database."""
-#     return await run_stations_sync()
-
-
-# @router.get(
-#     "/stations/sync/status",
-#     summary="Get stations sync status",
-# )
-# async def get_sync_status() -> dict[str, any]:
-#     """Get the current status of stations in the database."""
-#     return await get_stations_sync_status()
