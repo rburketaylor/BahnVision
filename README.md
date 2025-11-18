@@ -4,7 +4,7 @@ FastAPI backend and React frontend for Munich transit data: live MVG departures,
 ## Overview
 - Backend exposes versioned REST APIs for departures, station search, routes, health, and metrics.
 - Cache-first reads with single-flight locking and stale fallbacks keep responses predictable during upstream issues.
-- Persistence layer currently stores the station catalog to support search and future analytics.
+- Persistence layer stores the station catalog for search functionality; departure and route data served directly from MVG API with caching.
 
 ## Features
 - FastAPI with typed Pydantic schemas and dependency injection.
@@ -18,9 +18,9 @@ FastAPI backend and React frontend for Munich transit data: live MVG departures,
 
 ### Caching Strategy
 
-The BahnVision backend implements a sophisticated multi-layered caching system designed for high availability and predictable latency:
+The BahnVision backend implements a streamlined caching system designed for high availability and predictable latency:
 
-#### Multi-Tier Cache Architecture
+#### Cache Architecture
 1. **Primary Cache**: Valkey-backed distributed cache with configurable TTLs per endpoint
 2. **Stale Cache**: Background refresh serves stale data while fresh data is fetched
 3. **Circuit Breaker**: In-process fallback cache when Valkey becomes unavailable
@@ -252,7 +252,6 @@ Endpoints return bare JSON models defined in `app/models/mvg.py` and raise FastA
 ### Backend Testing
 - **Framework**: pytest with async support
 - **Location**: `backend/tests/`
-- **Coverage Goals**: ≥80% statement coverage, ≥75% overall coverage
 - **Test Types**:
   - Unit tests for services, repositories, and utilities
   - Integration tests for API endpoints with TestClient
@@ -262,9 +261,6 @@ Endpoints return bare JSON models defined in `app/models/mvg.py` and raise FastA
 ```bash
 # Run all backend tests
 pytest backend/tests/
-
-# Run with coverage
-pytest backend/tests/ --cov=app --cov-report=html
 
 # Run specific test suites
 pytest backend/tests/test_api/
@@ -276,7 +272,6 @@ pytest backend/tests/test_mvg_client/
 - **Frameworks**: Vitest (unit/integration), Playwright (E2E), React Testing Library
 - **Mocking**: MSW (Mock Service Worker) for API mocking
 - **Location**: `frontend/src/` (co-located with components) and `frontend/tests/`
-- **Coverage Goals**: ≥80% statement coverage
 
 ```bash
 # Run unit/integration tests
@@ -293,10 +288,9 @@ npm run test:e2e:headed
 ```
 
 ### CI/CD Integration
-- **Backend**: GitHub Actions run pytest with coverage reporting to Codecov
+- **Backend**: GitHub Actions run pytest for testing
 - **Frontend**: GitHub Actions run Vitest and Playwright tests
-- **Coverage Reports**: Automatic upload to Codecov for both backend and frontend
-- **Quality Gates**: Tests must pass before merge, coverage trends monitored
+- **Quality Gates**: Tests must pass before merge
 
 ### Testing Strategy
 1. **Backend Priority**: Focus on cache behavior, API contracts, and error handling
@@ -313,9 +307,9 @@ npm run test:e2e:headed
   - `api/` — versioned routes, metrics exporter, and HTTP handlers
   - `services/` — stateless domain services (cache, MVG client, business logic)
   - `models/` — Pydantic request/response schemas and validation
-  - `persistence/` — async SQLAlchemy models, repositories, and dependencies
+  - `persistence/` — async SQLAlchemy models (stations) and repositories
   - `core/` — configuration, shared database engine, and utilities
-  - `jobs/` — standalone scripts (cache warmup, data migration)
+  - `jobs/` — standalone scripts (cache warmup)
 - `backend/tests` — comprehensive pytest suites mirroring `app/` structure
   - `test_api/` — API endpoint tests with TestClient
   - `test_services/` — service layer tests with fakes and mocks

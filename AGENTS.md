@@ -8,9 +8,11 @@ This document is the canonical guide for all AI coding assistants working in thi
 - Persistence uses async SQLAlchemy with a shared engine; observability exports Prometheus metrics.
 
 ## Core References
+- Main README: `README.md` for complete project overview and current implementation
 - Backend spec: `docs/tech-spec.md`
 - Frontend docs hub: `frontend/docs/README.md`
 - Compose topology and envs: `docker-compose.yml`
+- Backend docs hub: `backend/docs/README.md`
 
 ## Agent Protocol
 - Read before changing; propose small, verifiable plans.
@@ -22,12 +24,15 @@ This document is the canonical guide for all AI coding assistants working in thi
 ## Repository Structure
 - Backend runtime: `backend/app`
   - `main.py` — FastAPI app factory with lifespan management
-  - `api/routes.py` — registers versioned routers under `/api/v1`
-  - `api/metrics.py` — exposes Prometheus metrics at `/metrics`
+  - `api/` — versioned routes under `/api/v1`, metrics exporter
+    - `api/v1/endpoints/` — actual endpoint implementations
+    - `api/v1/shared/` — shared caching patterns and utilities
+    - `api/metrics.py` — exposes Prometheus metrics at `/metrics`
   - `services/` — shared infrastructure (e.g., MVG client, cache service)
   - `models/` — Pydantic schemas for request/response validation
-  - `persistence/` — async SQLAlchemy models, repositories, dependencies
+  - `persistence/` — async SQLAlchemy models (stations) and repositories
   - `core/config.py` — Pydantic settings, Valkey/database config
+  - `jobs/` — standalone scripts (cache warmup)
 - Frontend runtime: `frontend/`
   - `src/components`, `src/pages`, `src/hooks`, `src/services`
   - Vite + React 19 + TypeScript; Tailwind; TanStack Query; React Router
@@ -62,7 +67,8 @@ This document is the canonical guide for all AI coding assistants working in thi
   - Endpoint-specific TTLs (e.g., `MVG_*_CACHE_TTL_SECONDS`, `*_STALE_TTL_SECONDS`)
   - Cache warmup knobs: `CACHE_WARMUP_DEPARTURE_STATIONS`, `CACHE_WARMUP_DEPARTURE_LIMIT`, `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES`
 - Persistence layer (`backend/app/persistence/`):
-  - Async SQLAlchemy models and repositories
+  - Async SQLAlchemy models and repositories (stations actively used)
+  - Additional models exist for future analytics features (not currently implemented)
   - `core/database.py` provides a shared async engine
 - HTTP schemas in `backend/app/models/` enforce request/response contracts.
 
@@ -77,10 +83,8 @@ This document is the canonical guide for all AI coding assistants working in thi
   - `bahnvision_cache_refresh_seconds{cache}` — histogram of cache refresh latency.
   - `bahnvision_mvg_requests_total{endpoint,result}` — MVG client request outcomes.
   - `bahnvision_mvg_request_seconds{endpoint}` — histogram of MVG client request latency.
-  - Planned: `bahnvision_api_request_duration_seconds{route}` and `bahnvision_api_exceptions_total{route,type}`.
 - Response headers: `X-Cache-Status` indicates cache path (`hit`, `miss`, `stale`, `stale-refresh`).
-- Planned: structured JSON logging with `request_id`, `station_id`, `cache_status`, `mvg_status`.
-- SLAs (targets): cache hit ratio >70%, MVG P95 latency <750ms, API exception rate <5/min.
+- SLAs (targets): cache hit ratio >70%, MVG P95 latency <750ms.
 
 ## Coding Style
 - Python: PEP 8, 4-space indentation, snake_case modules.
@@ -90,12 +94,14 @@ This document is the canonical guide for all AI coding assistants working in thi
 
 ## Testing Guidelines
 - Backend:
-  - Use `pytest`; place tests under `backend/tests/` mirroring `app/`.
+  - Use `pytest`; place tests under `backend/tests/` mirroring `app/` structure.
   - Test FastAPI routes via `TestClient`; override dependencies as needed.
   - Use in-memory doubles (e.g., `FakeValkey`, `FakeMVGClient`) to keep tests deterministic.
+  - Note: No coverage tools currently configured (pytest only)
 - Frontend:
   - Unit/integration via Vitest + React Testing Library
   - E2E via Playwright; use MSW for API mocking
+  - Coverage tools available via `npm run test:coverage`
 
 ## Dependency & Versioning Policy
 - Verify current versions (e.g., `pip index versions <pkg>`); do not guess based on memory.
@@ -120,6 +126,8 @@ This document is the canonical guide for all AI coding assistants working in thi
 - Stale cache keys use `:stale` suffix; inspect both `{key}` and `{key}:stale`.
 - SQLAlchemy engine disposal occurs in app lifespan; tests must respect this lifecycle.
 - Transport type enum casing: API accepts case-insensitive input; MVG uses uppercase.
+- Database models include complex analytics schemas (DepartureObservation, WeatherObservation, RouteSnapshot) but only Station models are actively used in current implementation.
+- Architecture documentation in archive/ folder shows planned features not yet implemented.
 
 ## Troubleshooting
 - Backend not starting: confirm `DATABASE_URL` and Valkey reachability, then retry.

@@ -39,7 +39,7 @@ curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=de:09162:6&transport_t
 
 ## Caching
 
-Valkey‑backed cache with cache‑aside reads, single‑flight stampede protection, and stale refresh to keep latency predictable during upstream issues. See technical details in `backend/docs/architecture/tech-spec.md`.
+Valkey‑backed cache with cache‑aside reads, single‑flight stampede protection, and stale refresh to keep latency predictable during upstream issues. See technical details in `backend/docs/archive/tech-spec.md`.
 
 ## Database
 
@@ -54,7 +54,7 @@ Async SQLAlchemy engine and repositories live under `backend/app/persistence/`. 
 ## Documentation
 
 - Docs hub: `backend/docs/README.md`
-- Technical spec: `backend/docs/architecture/tech-spec.md`
+- Technical spec: `backend/docs/archive/tech-spec.md`
  - Roadmap & branch plan: `backend/docs/roadmap/persistence-branch-plan.md`
 
 ## Contributing
