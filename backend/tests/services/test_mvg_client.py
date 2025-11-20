@@ -9,6 +9,12 @@ from typing import Any
 import pytest
 
 import app.services.mvg_client as mvg_client_module
+from app.services.mvg_mapping import (
+    extract_routes,
+    map_route_leg,
+    map_route_plan,
+    map_route_stop,
+)
 from app.services.mvg_client import (
     MVGClient,
     MVGServiceError,
@@ -309,14 +315,14 @@ def test_extract_routes_handles_multiple_payload_shapes():
         ]
     }
 
-    assert MVGClient._extract_routes(list_payload) == [{"id": "route-1"}]
-    assert MVGClient._extract_routes(dict_payload) == [{"id": "route-2"}]
-    assert MVGClient._extract_routes({"routes": [{"id": "route-3"}]}) == [{"id": "route-3"}]
-    assert MVGClient._extract_routes(None) == []
+    assert extract_routes(list_payload) == [{"id": "route-1"}]
+    assert extract_routes(dict_payload) == [{"id": "route-2"}]
+    assert extract_routes({"routes": [{"id": "route-3"}]}) == [{"id": "route-3"}]
+    assert extract_routes(None) == []
 
 
 def test_map_route_stop_handles_nested_station_fields():
-    """_map_route_stop maps nested station/line metadata and tolerates partial payloads."""
+    """map_route_stop maps nested station/line metadata and tolerates partial payloads."""
     raw_stop = {
         "station": {
             "id": "de:09162:5",
@@ -332,7 +338,7 @@ def test_map_route_stop_handles_nested_station_fields():
         "messages": ["Delayed"],
         "delayInMinutes": 2,
     }
-    stop = MVGClient._map_route_stop(raw_stop)
+    stop = map_route_stop(raw_stop)
     assert isinstance(stop, RouteStop)
     assert stop.id == "de:09162:5"
     assert stop.name == "Marienplatz"
@@ -349,12 +355,12 @@ def test_map_route_stop_handles_nested_station_fields():
         "place": "Munich",
         "plannedTime": 1_700_000_500,
     }
-    assert MVGClient._map_route_stop(minimal_stop) is not None
-    assert MVGClient._map_route_stop(None) is None
+    assert map_route_stop(minimal_stop) is not None
+    assert map_route_stop(None) is None
 
 
 def test_map_route_leg_maps_transport_metadata():
-    """_map_route_leg builds RouteLeg with direction, duration, and intermediate stops."""
+    """map_route_leg builds RouteLeg with direction, duration, and intermediate stops."""
     raw_leg = {
         "origin": {
             "stationId": "start",
@@ -380,7 +386,7 @@ def test_map_route_leg_maps_transport_metadata():
         ],
     }
 
-    leg = MVGClient._map_route_leg(raw_leg)
+    leg = map_route_leg(raw_leg)
     assert isinstance(leg, RouteLeg)
     assert leg.transport_type == "UBAHN"
     assert leg.line == "U3"
@@ -388,11 +394,11 @@ def test_map_route_leg_maps_transport_metadata():
     assert leg.duration_minutes == 5
     assert len(leg.intermediate_stops) == 1
 
-    assert MVGClient._map_route_leg({}) is None
+    assert map_route_leg({}) is None
 
 
 def test_map_route_plan_maps_duration_transfers_and_legs():
-    """_map_route_plan converts duration/transfers and nests mapped legs."""
+    """map_route_plan converts duration/transfers and nests mapped legs."""
     raw_plan = {
         "duration": {"minutes": 25},
         "changes": "2",
@@ -416,7 +422,7 @@ def test_map_route_plan_maps_duration_transfers_and_legs():
         ],
     }
 
-    plan = MVGClient._map_route_plan(raw_plan)
+    plan = map_route_plan(raw_plan)
     assert isinstance(plan, RoutePlan)
     assert plan.duration_minutes == 25
     assert plan.transfers == 2

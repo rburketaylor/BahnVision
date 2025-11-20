@@ -1,6 +1,9 @@
 """Unit tests for parse_transport_types function."""
 
-from app.services.mvg_client import parse_transport_types, TransportType
+import pytest
+from mvg import TransportType
+
+from app.services.mvg_transport import parse_transport_types
 
 
 def test_parse_transport_types_deduplication_and_order_preservation() -> None:
@@ -77,3 +80,9 @@ def test_parse_transport_types_case_variations() -> None:
 
     expected = [TransportType.UBAHN, TransportType.BUS, TransportType.TRAM]
     assert result == expected
+
+
+def test_parse_transport_types_invalid_value() -> None:
+    """Unsupported transport types raise ValueError."""
+    with pytest.raises(ValueError):
+        parse_transport_types(["UBAHN", "zeppelin"])
