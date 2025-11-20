@@ -1,2 +1,4 @@
 -r requirements.runtime.txt
 pytest==8.4.2
+ruff==0.9.6
+black==25.1.0
