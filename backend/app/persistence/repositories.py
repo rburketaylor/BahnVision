@@ -210,7 +210,9 @@ class TransitDataRepository:
         if not rows:
             return 0
         stmt = insert(models.DepartureObservation).values(rows)
-        result = await self._session.execute(stmt.returning(models.DepartureObservation.id))
+        result = await self._session.execute(
+            stmt.returning(models.DepartureObservation.id)
+        )
         return len(result.scalars().all())
 
     async def record_weather_observations(
@@ -243,7 +245,9 @@ class TransitDataRepository:
         if not rows:
             return 0
         stmt = insert(models.WeatherObservation).values(rows)
-        result = await self._session.execute(stmt.returning(models.WeatherObservation.id))
+        result = await self._session.execute(
+            stmt.returning(models.WeatherObservation.id)
+        )
         return len(result.scalars().all())
 
     async def link_departure_weather(
@@ -313,7 +317,7 @@ class StationRepository:
                 "updated_at": func.now(),
             },
         )
-        result = await self._session.execute(stmt)
+        await self._session.execute(stmt)
         await self._session.flush()
 
         # Return the upserted station
@@ -326,7 +330,9 @@ class StationRepository:
         await self._session.commit()
         return station
 
-    async def upsert_stations(self, payloads: list[StationPayload]) -> list[models.Station]:
+    async def upsert_stations(
+        self, payloads: list[StationPayload]
+    ) -> list[models.Station]:
         """Bulk insert or update multiple stations."""
         if not payloads:
             return []
@@ -393,9 +399,7 @@ class StationRepository:
         return result.scalar_one_or_none()
 
     async def search_stations(
-        self,
-        query: str,
-        limit: int = 10
+        self, query: str, limit: int = 10
     ) -> list[models.Station]:
         """Search stations by name or place using database queries."""
         search_pattern = f"%{query.lower()}%"
@@ -403,8 +407,10 @@ class StationRepository:
         stmt = (
             select(models.Station)
             .where(
-                (models.Station.name.ilike(search_pattern) |
-                 models.Station.place.ilike(search_pattern))
+                (
+                    models.Station.name.ilike(search_pattern)
+                    | models.Station.place.ilike(search_pattern)
+                )
             )
             .order_by(
                 # Prioritize exact name matches

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,7 +14,6 @@ from app.persistence.repositories import StationPayload
 from app.services.cache import CacheService
 from app.services.mvg_client import (
     Departure,
-    MVGClient,
     MVGServiceError,
     RouteLeg,
     RoutePlan,
@@ -34,7 +31,9 @@ class CacheScenario:
     fresh_value: dict[str, Any] | None = None
     stale_value: dict[str, Any] | None = None
     should_timeout: bool = False
-    recorded_sets: list[tuple[str, dict[str, Any], int | None, int | None]] | None = None
+    recorded_sets: list[tuple[str, dict[str, Any], int | None, int | None]] | None = (
+        None
+    )
 
 
 class FakeCacheService:
@@ -42,7 +41,9 @@ class FakeCacheService:
 
     def __init__(self) -> None:
         self._cache: dict[str, CacheScenario] = {}
-        self.recorded_sets: list[tuple[str, dict[str, Any], int | None, int | None]] = []
+        self.recorded_sets: list[tuple[str, dict[str, Any], int | None, int | None]] = (
+            []
+        )
         self._lock_timeout = False
 
     def configure(self, key: str, scenario: CacheScenario) -> None:
@@ -151,7 +152,9 @@ class FakeMVGClient:
         if self.scenario.fail_departures:
             raise MVGServiceError("Failed to retrieve departures from MVG.")
         if self.scenario.not_found_station:
-            raise StationNotFoundError(f"Station not found for query '{station_query}'.")
+            raise StationNotFoundError(
+                f"Station not found for query '{station_query}'."
+            )
         if self.scenario.departures_result:
             return self.scenario.departures_result
 
@@ -213,7 +216,10 @@ class FakeMVGClient:
         query_lower = query.lower()
         results: list[Station] = []
         for station in stations:
-            if query_lower in station.name.lower() or query_lower in station.place.lower():
+            if (
+                query_lower in station.name.lower()
+                or query_lower in station.place.lower()
+            ):
                 results.append(station)
                 if len(results) >= limit:
                     break
@@ -320,7 +326,9 @@ class FakeStationRepository:
     async def get_all_stations(self) -> list[FakeStationRecord]:
         return list(self._records.values())
 
-    async def upsert_stations(self, payloads: list[StationPayload]) -> list[FakeStationRecord]:
+    async def upsert_stations(
+        self, payloads: list[StationPayload]
+    ) -> list[FakeStationRecord]:
         self.upsert_batches.append(payloads)
         for payload in payloads:
             self._records[payload.station_id] = FakeStationRecord(

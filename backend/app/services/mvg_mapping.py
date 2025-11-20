@@ -49,13 +49,13 @@ class DataMapper:
             return None
 
         try:
-            if target_type == int:
+            if target_type is int:
                 return int(float(value))
-            if target_type == float:
+            if target_type is float:
                 return float(value)
-            if target_type == datetime:
+            if target_type is datetime:
                 return datetime.fromtimestamp(int(value), tz=timezone.utc)
-            if target_type == str:
+            if target_type is str:
                 return str(value) if value is not None else None
             return target_type(value)
         except (TypeError, ValueError):
@@ -133,38 +133,38 @@ def map_route_legs(data: dict[str, Any]) -> list[RouteLeg]:
     """Map route legs from raw data."""
     legs_payload = DataMapper.safe_get(data, "legs", "connections") or []
     return [
-        leg for leg in (map_route_leg(item) for item in legs_payload if isinstance(item, dict))
+        leg
+        for leg in (
+            map_route_leg(item) for item in legs_payload if isinstance(item, dict)
+        )
         if leg is not None
     ]
 
 
 def map_route_leg(data: dict[str, Any]) -> RouteLeg | None:
     """Map raw route leg data to RouteLeg DTO."""
-    origin = map_route_stop(
-        DataMapper.safe_get(data, "departure", "origin")
-    )
-    destination = map_route_stop(
-        DataMapper.safe_get(data, "arrival", "destination")
-    )
+    origin = map_route_stop(DataMapper.safe_get(data, "departure", "origin"))
+    destination = map_route_stop(DataMapper.safe_get(data, "arrival", "destination"))
 
     transport_type = DataMapper.safe_get_nested(
         data, ["transportType"], ["product"], ["line", "transportType"]
     )
 
     line_payload = data.get("line") or {}
-    line_name = (
-        DataMapper.safe_get(line_payload, "name", "label", "symbol")
-        or data.get("line")
-    )
+    line_name = DataMapper.safe_get(
+        line_payload, "name", "label", "symbol"
+    ) or data.get("line")
 
-    direction = DataMapper.safe_get(data, "destination", "direction") or line_payload.get("destination")
+    direction = DataMapper.safe_get(
+        data, "destination", "direction"
+    ) or line_payload.get("destination")
 
     duration = DataMapper.extract_minutes(data.get("duration"))
-    distance = DataMapper.convert_type(
-        DataMapper.safe_get(data, "distance", "distanceInMeters")
-        or (data.get("distance") or {}).get("meters") if isinstance(data.get("distance"), dict) else None,
-        int
-    )
+    distance_val = DataMapper.safe_get(data, "distance", "distanceInMeters")
+    if isinstance(distance_val, dict):
+        distance_val = distance_val.get("meters")
+
+    distance = DataMapper.convert_type(distance_val, int)
 
     intermediate_stops = map_intermediate_stops(data)
 
@@ -188,41 +188,49 @@ def map_route_stop(data: dict[str, Any] | None) -> RouteStop | None:
     if not data:
         return None
 
-    station_id = (
-        DataMapper.safe_get_nested(data, ["station", "id"], ["stop", "id"], ["station", "globalId"])
-        or DataMapper.safe_get(data, "stationId", "stopId")
-    )
+    station_id = DataMapper.safe_get_nested(
+        data, ["station", "id"], ["stop", "id"], ["station", "globalId"]
+    ) or DataMapper.safe_get(data, "stationId", "stopId")
 
-    name = (
-        DataMapper.safe_get_nested(data, ["station", "name"], ["stop", "name"])
-        or DataMapper.safe_get(data, "name", "stationName")
-    )
+    name = DataMapper.safe_get_nested(
+        data, ["station", "name"], ["stop", "name"]
+    ) or DataMapper.safe_get(data, "name", "stationName")
 
-    place = (
-        DataMapper.safe_get_nested(data, ["station", "place"], ["stop", "place"], ["station", "municipality"])
-        or data.get("place")
-    )
+    place = DataMapper.safe_get_nested(
+        data, ["station", "place"], ["stop", "place"], ["station", "municipality"]
+    ) or data.get("place")
 
     latitude = DataMapper.convert_type(
-        DataMapper.safe_get_nested(data, ["station", "latitude"], ["stop", "latitude"], ["station", "lat"])
+        DataMapper.safe_get_nested(
+            data, ["station", "latitude"], ["stop", "latitude"], ["station", "lat"]
+        )
         or data.get("latitude"),
-        float
+        float,
     )
 
     longitude = DataMapper.convert_type(
-        DataMapper.safe_get_nested(data, ["station", "longitude"], ["stop", "longitude"], ["station", "lon"])
+        DataMapper.safe_get_nested(
+            data, ["station", "longitude"], ["stop", "longitude"], ["station", "lon"]
+        )
         or data.get("longitude"),
-        float
+        float,
     )
 
     planned_time = DataMapper.convert_type(
-        DataMapper.safe_get(data, "planned", "plannedTime", "scheduledTime", "scheduledDepartureTime", "scheduledArrivalTime"),
-        datetime
+        DataMapper.safe_get(
+            data,
+            "planned",
+            "plannedTime",
+            "scheduledTime",
+            "scheduledDepartureTime",
+            "scheduledArrivalTime",
+        ),
+        datetime,
     )
 
     realtime_time = DataMapper.convert_type(
         DataMapper.safe_get(data, "time", "realtime", "departureTime", "arrivalTime"),
-        datetime
+        datetime,
     )
 
     transport_type = DataMapper.safe_get_nested(
@@ -230,12 +238,13 @@ def map_route_stop(data: dict[str, Any] | None) -> RouteStop | None:
     )
 
     line_payload = data.get("line") or {}
-    line_name = (
-        DataMapper.safe_get(line_payload, "name", "label", "symbol")
-        or data.get("line")
-    )
+    line_name = DataMapper.safe_get(
+        line_payload, "name", "label", "symbol"
+    ) or data.get("line")
 
-    destination = DataMapper.safe_get(data, "destination", "direction") or line_payload.get("destination")
+    destination = DataMapper.safe_get(
+        data, "destination", "direction"
+    ) or line_payload.get("destination")
 
     return RouteStop(
         id=DataMapper.convert_type(station_id, str),
@@ -260,7 +269,8 @@ def map_intermediate_stops(data: dict[str, Any]) -> list[RouteStop]:
     """Map intermediate stops from route leg data."""
     intermediate_raw = DataMapper.safe_get(data, "intermediateStops", "stops") or []
     return [
-        stop for stop in (
+        stop
+        for stop in (
             map_route_stop(item) for item in intermediate_raw if isinstance(item, dict)
         )
         if stop is not None

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -14,11 +13,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.cache import get_cache_service
-from app.api.v1.endpoints.mvg.shared.utils import get_client
-from app.main import create_app
-from app.services.cache import CacheService
-from app.services.mvg_client import (
+from app.services.cache import get_cache_service  # noqa: E402
+from app.api.v1.endpoints.mvg.shared.utils import get_client  # noqa: E402
+from app.main import create_app  # noqa: E402
+from app.services.cache import CacheService  # noqa: E402
+from app.services.mvg_client import (  # noqa: E402
     Departure,
     MVGServiceError,
     RouteLeg,
@@ -37,7 +36,11 @@ class FakeValkey:
 
     def _prune(self) -> None:
         now = time.monotonic()
-        expired = [key for key, (_, expires_at) in self._store.items() if expires_at is not None and expires_at <= now]
+        expired = [
+            key
+            for key, (_, expires_at) in self._store.items()
+            if expires_at is not None and expires_at <= now
+        ]
         for key in expired:
             self._store.pop(key, None)
 
@@ -201,11 +204,17 @@ class FakeMVGClient:
 
         # Check for failures in the requested transport types
         if transport_types:
-            transport_type_names = {t.name if hasattr(t, 'name') else str(t) for t in transport_types}
+            transport_type_names = {
+                t.name if hasattr(t, "name") else str(t) for t in transport_types
+            }
             for transport_name in transport_type_names:
                 if transport_name.upper() in self.fail_departures_for:
-                    raise MVGServiceError(f"departures unavailable for {transport_name}")
-            filtered_departures = [d for d in all_departures if d.transport_type in transport_type_names]
+                    raise MVGServiceError(
+                        f"departures unavailable for {transport_name}"
+                    )
+            filtered_departures = [
+                d for d in all_departures if d.transport_type in transport_type_names
+            ]
         else:
             filtered_departures = all_departures
 
@@ -240,7 +249,10 @@ class FakeMVGClient:
         query_lower = query.lower()
         matches: list[Station] = []
         for station in stations:
-            if query_lower in station.name.lower() or query_lower in station.place.lower():
+            if (
+                query_lower in station.name.lower()
+                or query_lower in station.place.lower()
+            ):
                 matches.append(station)
                 if len(matches) >= limit:
                     break
@@ -338,7 +350,9 @@ def fake_mvg_client() -> FakeMVGClient:
 
 
 @pytest.fixture()
-def api_client(cache_service: CacheService, fake_mvg_client: FakeMVGClient) -> Iterator[TestClient]:
+def api_client(
+    cache_service: CacheService, fake_mvg_client: FakeMVGClient
+) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_cache_service] = lambda: cache_service
     app.dependency_overrides[get_client] = lambda: fake_mvg_client
