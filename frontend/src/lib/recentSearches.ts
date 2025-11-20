@@ -20,9 +20,7 @@ export function getRecentSearches(): RecentSearch[] {
     if (!stored) return []
 
     const searches = JSON.parse(stored) as RecentSearch[]
-    return searches
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, MAX_RECENT_SEARCHES)
+    return searches.sort((a, b) => b.timestamp - a.timestamp).slice(0, MAX_RECENT_SEARCHES)
   } catch {
     return []
   }

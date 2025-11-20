@@ -1,4 +1,3 @@
-
 interface StationSearchSkeletonProps {
   count?: number
 }

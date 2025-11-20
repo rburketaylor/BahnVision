@@ -45,7 +45,7 @@ export default function InsightsPage() {
         avgResponseTime: 0,
         totalRequests: 0,
         errorRate: 0,
-        cacheEvents: {}
+        cacheEvents: {},
       }
 
       const lines = metricsText.split('\n')
@@ -115,8 +115,9 @@ export default function InsightsPage() {
       title: 'System Status',
       value: health?.data?.status === 'ok' ? 'Healthy' : 'Issues',
       icon: health?.data?.status === 'ok' ? '🟢' : '🔴',
-      description: health?.data?.status === 'ok' ? 'All systems operational' : 'Some systems may be degraded',
-      trend: 'stable'
+      description:
+        health?.data?.status === 'ok' ? 'All systems operational' : 'Some systems may be degraded',
+      trend: 'stable',
     },
     {
       title: 'Cache Hit Rate',
@@ -124,14 +125,19 @@ export default function InsightsPage() {
       unit: '%',
       icon: '💾',
       description: 'Percentage of cache hits vs misses',
-      trend: (metrics?.cacheHitRate || 0) > 70 ? 'up' : (metrics?.cacheHitRate || 0) < 50 ? 'down' : 'stable'
+      trend:
+        (metrics?.cacheHitRate || 0) > 70
+          ? 'up'
+          : (metrics?.cacheHitRate || 0) < 50
+            ? 'down'
+            : 'stable',
     },
     {
       title: 'API Requests',
       value: (metrics?.totalRequests || 0).toLocaleString(),
       icon: '📊',
       description: 'Total requests processed',
-      trend: 'up'
+      trend: 'up',
     },
     {
       title: 'Response Time',
@@ -139,7 +145,7 @@ export default function InsightsPage() {
       unit: 'ms',
       icon: '⚡',
       description: 'Average API response time',
-      trend: (metrics?.avgResponseTime || 0) < 750 ? 'up' : 'down'
+      trend: (metrics?.avgResponseTime || 0) < 750 ? 'up' : 'down',
     },
     {
       title: 'Uptime',
@@ -147,30 +153,36 @@ export default function InsightsPage() {
       unit: 'hours',
       icon: '⏱️',
       description: 'System uptime',
-      trend: 'stable'
+      trend: 'stable',
     },
     {
       title: 'Version',
       value: health?.data?.version || 'Unknown',
       icon: '🏷️',
       description: 'Application version',
-      trend: 'stable'
-    }
+      trend: 'stable',
+    },
   ]
 
   const getTrendColor = (trend?: 'up' | 'down' | 'stable') => {
     switch (trend) {
-      case 'up': return 'text-green-600'
-      case 'down': return 'text-red-600'
-      default: return 'text-gray-600'
+      case 'up':
+        return 'text-green-600'
+      case 'down':
+        return 'text-red-600'
+      default:
+        return 'text-gray-600'
     }
   }
 
   const getTrendIcon = (trend?: 'up' | 'down' | 'stable') => {
     switch (trend) {
-      case 'up': return '↑'
-      case 'down': return '↓'
-      default: return '→'
+      case 'up':
+        return '↑'
+      case 'down':
+        return '↓'
+      default:
+        return '→'
     }
   }
 
@@ -187,7 +199,9 @@ export default function InsightsPage() {
             <span className="text-2xl">🚨</span>
             <div>
               <h3 className="font-semibold">Failed to load system health</h3>
-              <p className="text-sm mt-1">{typeof healthError === 'string' ? healthError : 'Unknown error occurred'}</p>
+              <p className="text-sm mt-1">
+                {typeof healthError === 'string' ? healthError : 'Unknown error occurred'}
+              </p>
             </div>
           </div>
         </div>
@@ -228,9 +242,7 @@ export default function InsightsPage() {
                   Refreshing...
                 </>
               ) : (
-                <>
-                  🔄 Refresh
-                </>
+                <>🔄 Refresh</>
               )}
             </button>
           </div>
@@ -240,7 +252,10 @@ export default function InsightsPage() {
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {metricCards.map((card, index) => (
-          <div key={index} className="bg-card rounded-lg border border-border p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div
+            key={index}
+            className="bg-card rounded-lg border border-border p-6 shadow-sm hover:shadow-md transition-shadow"
+          >
             <div className="flex items-start justify-between mb-4">
               <div className="text-2xl">{card.icon}</div>
               {card.trend && (
@@ -260,13 +275,9 @@ export default function InsightsPage() {
                     card.value
                   )}
                 </span>
-                {card.unit && (
-                  <span className="text-sm text-gray-500">{card.unit}</span>
-                )}
+                {card.unit && <span className="text-sm text-gray-500">{card.unit}</span>}
               </div>
-              {card.description && (
-                <p className="text-xs text-gray-400 mt-1">{card.description}</p>
-              )}
+              {card.description && <p className="text-xs text-gray-400 mt-1">{card.description}</p>}
             </div>
           </div>
         ))}
@@ -296,8 +307,11 @@ export default function InsightsPage() {
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
                   className={`h-2 rounded-full transition-all duration-500 ${
-                    metrics.cacheHitRate > 70 ? 'bg-green-500' :
-                    metrics.cacheHitRate > 50 ? 'bg-yellow-500' : 'bg-red-500'
+                    metrics.cacheHitRate > 70
+                      ? 'bg-green-500'
+                      : metrics.cacheHitRate > 50
+                        ? 'bg-yellow-500'
+                        : 'bg-red-500'
                   }`}
                   style={{ width: `${metrics.cacheHitRate}%` }}
                 ></div>
@@ -305,12 +319,14 @@ export default function InsightsPage() {
 
               <div className="space-y-2 pt-4 border-t border-border">
                 <h4 className="text-sm font-medium text-foreground">Cache Events</h4>
-                {Object.entries(metrics.cacheEvents).slice(0, 6).map(([key, value]) => (
-                  <div key={key} className="flex justify-between text-sm">
-                    <span className="text-gray-500">{key.replace(/_/g, ' ')}</span>
-                    <span className="font-medium text-foreground">{value.toLocaleString()}</span>
-                  </div>
-                ))}
+                {Object.entries(metrics.cacheEvents)
+                  .slice(0, 6)
+                  .map(([key, value]) => (
+                    <div key={key} className="flex justify-between text-sm">
+                      <span className="text-gray-500">{key.replace(/_/g, ' ')}</span>
+                      <span className="font-medium text-foreground">{value.toLocaleString()}</span>
+                    </div>
+                  ))}
               </div>
             </div>
           ) : metricsError ? (
@@ -339,11 +355,13 @@ export default function InsightsPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-500">Status</span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  health?.data?.status === 'ok'
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                    : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-                }`}>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    health?.data?.status === 'ok'
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                  }`}
+                >
                   {health?.data?.status === 'ok' ? '🟢 Healthy' : '🔴 Issues'}
                 </span>
               </div>
@@ -359,7 +377,9 @@ export default function InsightsPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-500">Uptime</span>
                   <span className="text-sm text-foreground">
-                    {Math.floor(health?.data?.uptime_seconds / 86400)}d {Math.floor((health?.data?.uptime_seconds % 86400) / 3600)}h {Math.floor((health?.data?.uptime_seconds % 3600) / 60)}m
+                    {Math.floor(health?.data?.uptime_seconds / 86400)}d{' '}
+                    {Math.floor((health?.data?.uptime_seconds % 86400) / 3600)}h{' '}
+                    {Math.floor((health?.data?.uptime_seconds % 3600) / 60)}m
                   </span>
                 </div>
               )}

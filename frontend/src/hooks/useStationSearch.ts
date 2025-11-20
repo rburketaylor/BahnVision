@@ -30,7 +30,7 @@ export function useStationSearch(params: StationSearchParams, enabled = true) {
       // Allow 2 retries for search queries (total of 3 attempts) to handle temporary issues
       return failureCount < 2
     },
-    retryDelay: (attemptIndex) => {
+    retryDelay: attemptIndex => {
       // Progressive delay: 1s, 2s
       return Math.min(1000 * (attemptIndex + 1), 3000)
     },

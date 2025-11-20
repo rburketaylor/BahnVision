@@ -3,12 +3,26 @@
  * Improved autocomplete component with recent searches and better UX
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ChangeEvent } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ChangeEvent,
+} from 'react'
 import { useStationSearch } from '../hooks/useStationSearch'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Station } from '../types/api'
 import { ApiError } from '../services/api'
-import { getRecentSearches, addRecentSearch, clearRecentSearches, formatRecentSearchTime, type RecentSearch } from '../lib/recentSearches'
+import {
+  getRecentSearches,
+  addRecentSearch,
+  clearRecentSearches,
+  formatRecentSearchTime,
+  type RecentSearch,
+} from '../lib/recentSearches'
 
 // Highlighting function
 function highlightMatch(text: string, query: string) {
@@ -76,20 +90,23 @@ export function StationSearchEnhanced({
   const recentSearches = getRecentSearches()
   const showRecent = showRecentSearches && !isEnabled && recentSearches.length > 0 && isOpen
 
-  const {
-    data,
-    isFetching,
-    isLoading,
-    error,
-    refetch,
-  } = useStationSearch({ query: debouncedQuery, limit }, isEnabled)
+  const { data, isFetching, isLoading, error, refetch } = useStationSearch(
+    { query: debouncedQuery, limit },
+    isEnabled
+  )
 
   const results = useMemo(() => data?.data.results ?? [], [data])
   const apiError = error instanceof ApiError ? error : null
   const hasResults = results.length > 0
-  const showNoResults = isEnabled && !hasResults && !isLoading && !isFetching && (!apiError || apiError.statusCode === 404)
+  const showNoResults =
+    isEnabled &&
+    !hasResults &&
+    !isLoading &&
+    !isFetching &&
+    (!apiError || apiError.statusCode === 404)
   const showError = Boolean(apiError && apiError.statusCode !== 404)
-  const isDropdownVisible = isOpen && (showRecent || hasResults || showNoResults || showError || isFetching)
+  const isDropdownVisible =
+    isOpen && (showRecent || hasResults || showNoResults || showError || isFetching)
   const isInitialLoading = isLoading || (isFetching && !hasResults)
 
   // Timeout detection
@@ -235,7 +252,9 @@ export function StationSearchEnhanced({
           aria-haspopup="listbox"
           aria-autocomplete="list"
           aria-controls={listboxId}
-          aria-activedescendant={activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
+          aria-activedescendant={
+            activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
+          }
         />
 
         {/* Search icon */}
@@ -264,7 +283,12 @@ export function StationSearchEnhanced({
             aria-label="Clear search"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         )}
@@ -305,7 +329,9 @@ export function StationSearchEnhanced({
             <div className="px-4 py-6 text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <span className="h-4 w-4 animate-spin rounded-full border border-gray-300 border-t-yellow-500"></span>
-                <span className="text-sm text-yellow-600">This is taking longer than expected...</span>
+                <span className="text-sm text-yellow-600">
+                  This is taking longer than expected...
+                </span>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
@@ -387,9 +413,7 @@ export function StationSearchEnhanced({
                             {isRecent ? station.name : highlightMatch(station.name, trimmedQuery)}
                           </div>
                           {station.id !== station.name && (
-                            <div className="text-sm text-gray-500 truncate">
-                              ID: {station.id}
-                            </div>
+                            <div className="text-sm text-gray-500 truncate">ID: {station.id}</div>
                           )}
                         </div>
                         {isRecent && (

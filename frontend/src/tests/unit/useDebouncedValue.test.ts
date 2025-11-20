@@ -20,12 +20,9 @@ describe('useDebouncedValue', () => {
   })
 
   it('updates the value after the specified delay', () => {
-    const { result, rerender } = renderHook(
-      ({ value, delay }) => useDebouncedValue(value, delay),
-      {
-        initialProps: { value: 'Marien', delay: 300 },
-      }
-    )
+    const { result, rerender } = renderHook(({ value, delay }) => useDebouncedValue(value, delay), {
+      initialProps: { value: 'Marien', delay: 300 },
+    })
 
     rerender({ value: 'Marienp', delay: 300 })
     expect(result.current).toBe('Marien')

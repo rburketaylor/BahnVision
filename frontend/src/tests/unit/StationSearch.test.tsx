@@ -96,7 +96,9 @@ describe('StationSearch', () => {
     await user.type(input, 'Marien')
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
-    expect(await screen.findByRole('option', { name: /unable to load stations/i })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('option', { name: /unable to load stations/i })
+    ).toBeInTheDocument()
     expect(errorHandler).toHaveBeenCalledTimes(1)
 
     server.use(

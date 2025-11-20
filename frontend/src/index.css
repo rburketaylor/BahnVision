@@ -1,13 +1,23 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 body {
   min-height: 100vh;
   background-color: #121212;
-  color: #E0E0E0;
-  font-family: "Inter", "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color: #e0e0e0;
+  font-family:
+    'Inter',
+    'Roboto',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
 }
 
 /* Light mode fallback for before theme is loaded */
@@ -22,11 +32,11 @@ html:not(.dark) body {
 }
 
 .bg-card {
-  background-color: #1E1E1E !important;
+  background-color: #1e1e1e !important;
 }
 
 .text-foreground {
-  color: #E0E0E0 !important;
+  color: #e0e0e0 !important;
 }
 
 .text-gray-400 {
@@ -34,11 +44,11 @@ html:not(.dark) body {
 }
 
 .border-border {
-  border-color: #2C2C2C !important;
+  border-color: #2c2c2c !important;
 }
 
 .bg-input {
-  background-color: #2C2C2C !important;
+  background-color: #2c2c2c !important;
 }
 
 /* Light mode overrides */
@@ -77,7 +87,7 @@ html:not(.dark) ::-webkit-scrollbar-track {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2C2C2C;
+  background: #2c2c2c;
   border-radius: 4px;
 }
 
@@ -124,7 +134,8 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -153,7 +164,8 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 }
 
 @keyframes bounce {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0);
   }
   50% {
@@ -195,26 +207,44 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
   animation: fadeIn 0.3s ease-out backwards;
 }
 
-.stagger-animation > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-animation > *:nth-child(2) { animation-delay: 50ms; }
-.stagger-animation > *:nth-child(3) { animation-delay: 100ms; }
-.stagger-animation > *:nth-child(4) { animation-delay: 150ms; }
-.stagger-animation > *:nth-child(5) { animation-delay: 200ms; }
-.stagger-animation > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-animation > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger-animation > *:nth-child(2) {
+  animation-delay: 50ms;
+}
+.stagger-animation > *:nth-child(3) {
+  animation-delay: 100ms;
+}
+.stagger-animation > *:nth-child(4) {
+  animation-delay: 150ms;
+}
+.stagger-animation > *:nth-child(5) {
+  animation-delay: 200ms;
+}
+.stagger-animation > *:nth-child(6) {
+  animation-delay: 250ms;
+}
 
 /* Smooth hover transitions */
 .hover-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .hover-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 /* Button hover effects */
 .btn-hover-scale {
-  transition: transform 0.15s ease, background-color 0.2s ease;
+  transition:
+    transform 0.15s ease,
+    background-color 0.2s ease;
 }
 
 .btn-hover-scale:hover {
@@ -227,12 +257,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 
 /* Loading shimmer effect */
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    #f3f4f6 25%,
-    #e5e7eb 50%,
-    #f3f4f6 75%
-  );
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -248,7 +273,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 
 /* Focus visible improvements */
 .focus-visible-ring {
-  outline: 2px solid #0065AE;
+  outline: 2px solid #0065ae;
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -293,7 +318,9 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 .page-transition-enter-active {
   opacity: 1;
   transform: translateY(0);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .page-transition-exit {
@@ -304,5 +331,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 .page-transition-exit-active {
   opacity: 0;
   transform: translateY(-10px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }

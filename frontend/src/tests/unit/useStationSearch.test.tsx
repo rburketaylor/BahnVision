@@ -68,7 +68,10 @@ describe('useStationSearch', () => {
     expect(query?.options.gcTime).toBe(600_000)
     expect(query?.options.refetchOnWindowFocus).toBe(false)
 
-    const retryFn = query?.options.retry as (failureCount: number, error: Error & { statusCode?: number }) => boolean
+    const retryFn = query?.options.retry as (
+      failureCount: number,
+      error: Error & { statusCode?: number }
+    ) => boolean
 
     const rateLimitError = Object.assign(new Error('rate limited'), { statusCode: 429 })
     expect(retryFn(0, rateLimitError)).toBe(false)

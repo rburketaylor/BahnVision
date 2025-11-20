@@ -8,7 +8,15 @@ import { useRoutePlanner } from '../hooks/useRoutePlanner'
 import { StationSearchEnhanced } from '../components/StationSearchEnhanced'
 import type { Station, TransportType, RoutePlanParams } from '../types/api'
 
-const ALL_TRANSPORT_TYPES: TransportType[] = ['BAHN', 'SBAHN', 'UBAHN', 'TRAM', 'BUS', 'REGIONAL_BUS', 'SCHIFF']
+const ALL_TRANSPORT_TYPES: TransportType[] = [
+  'BAHN',
+  'SBAHN',
+  'UBAHN',
+  'TRAM',
+  'BUS',
+  'REGIONAL_BUS',
+  'SCHIFF',
+]
 
 const toDateTimeLocalValue = (isoString: string | null) => {
   if (!isoString) return ''
@@ -40,13 +48,20 @@ export default function PlannerPage() {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
 
   // Calculate route parameters
-  const routeParams: RoutePlanParams | undefined = origin && destination ? {
-    origin: origin.id,
-    destination: destination.id,
-    transport_type: selectedTransportTypes.length > 0 ? selectedTransportTypes : undefined,
-    ...(timeType === 'departure' && selectedTime ? { departure_time: fromDateTimeLocalValue(selectedTime) || undefined } : {}),
-    ...(timeType === 'arrival' && selectedTime ? { arrival_time: fromDateTimeLocalValue(selectedTime) || undefined } : {}),
-  } : undefined
+  const routeParams: RoutePlanParams | undefined =
+    origin && destination
+      ? {
+          origin: origin.id,
+          destination: destination.id,
+          transport_type: selectedTransportTypes.length > 0 ? selectedTransportTypes : undefined,
+          ...(timeType === 'departure' && selectedTime
+            ? { departure_time: fromDateTimeLocalValue(selectedTime) || undefined }
+            : {}),
+          ...(timeType === 'arrival' && selectedTime
+            ? { arrival_time: fromDateTimeLocalValue(selectedTime) || undefined }
+            : {}),
+        }
+      : undefined
 
   const { data, isLoading, error, refetch } = useRoutePlanner({
     params: routeParams,
@@ -81,7 +96,9 @@ export default function PlannerPage() {
     <div className="max-w-6xl mx-auto">
       <header className="mb-8">
         <h1 className="text-3xl sm:text-4xl font-bold text-foreground">Route Planner</h1>
-        <p className="text-gray-400 mt-2">Plan your journey across Munich's public transport network</p>
+        <p className="text-gray-400 mt-2">
+          Plan your journey across Munich's public transport network
+        </p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -92,18 +109,14 @@ export default function PlannerPage() {
               {/* Origin and Destination */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
-                    From
-                  </label>
+                  <label className="block text-sm font-medium text-foreground mb-2">From</label>
                   <StationSearchEnhanced
                     onSelect={setOrigin}
                     placeholder="Enter origin station..."
                     showRecentSearches={true}
                   />
                   {origin && (
-                    <div className="mt-2 text-sm text-gray-500">
-                      Selected: {origin.name}
-                    </div>
+                    <div className="mt-2 text-sm text-gray-500">Selected: {origin.name}</div>
                   )}
                 </div>
 
@@ -114,25 +127,31 @@ export default function PlannerPage() {
                     className="p-2 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label="Swap origin and destination"
                   >
-                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                    <svg
+                      className="w-5 h-5 text-gray-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+                      />
                     </svg>
                   </button>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
-                    To
-                  </label>
+                  <label className="block text-sm font-medium text-foreground mb-2">To</label>
                   <StationSearchEnhanced
                     onSelect={setDestination}
                     placeholder="Enter destination station..."
                     showRecentSearches={true}
                   />
                   {destination && (
-                    <div className="mt-2 text-sm text-gray-500">
-                      Selected: {destination.name}
-                    </div>
+                    <div className="mt-2 text-sm text-gray-500">Selected: {destination.name}</div>
                   )}
                 </div>
               </div>
@@ -182,7 +201,7 @@ export default function PlannerPage() {
                     <input
                       type="datetime-local"
                       value={selectedTime || getCurrentDateTimeLocal()}
-                      onChange={(e) => setSelectedTime(e.target.value)}
+                      onChange={e => setSelectedTime(e.target.value)}
                       className="w-full px-4 py-2 border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   </div>
@@ -201,7 +220,12 @@ export default function PlannerPage() {
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
                 </svg>
               </button>
 
@@ -213,7 +237,7 @@ export default function PlannerPage() {
                       Transport Types
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {ALL_TRANSPORT_TYPES.map((type) => (
+                      {ALL_TRANSPORT_TYPES.map(type => (
                         <button
                           key={type}
                           onClick={() => toggleTransportType(type)}
@@ -273,7 +297,10 @@ export default function PlannerPage() {
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-foreground">Route Options</h2>
               {plans.map((plan, index) => (
-                <div key={index} className="bg-card rounded-lg border border-border p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div
+                  key={index}
+                  className="bg-card rounded-lg border border-border p-4 shadow-sm hover:shadow-md transition-shadow"
+                >
                   <div className="space-y-3">
                     {/* Route Header */}
                     <div className="flex items-center justify-between">
@@ -296,18 +323,22 @@ export default function PlannerPage() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Departs:</span>
                           <span className="font-medium">
-                            {new Date(plan.departure.realtime_time || plan.departure.planned_time || '').toLocaleTimeString([], {
+                            {new Date(
+                              plan.departure.realtime_time || plan.departure.planned_time || ''
+                            ).toLocaleTimeString([], {
                               hour: '2-digit',
-                              minute: '2-digit'
+                              minute: '2-digit',
                             })}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Arrives:</span>
                           <span className="font-medium">
-                            {new Date(plan.arrival.realtime_time || plan.arrival.planned_time || '').toLocaleTimeString([], {
+                            {new Date(
+                              plan.arrival.realtime_time || plan.arrival.planned_time || ''
+                            ).toLocaleTimeString([], {
                               hour: '2-digit',
-                              minute: '2-digit'
+                              minute: '2-digit',
                             })}
                           </span>
                         </div>
@@ -316,22 +347,28 @@ export default function PlannerPage() {
 
                     {/* Transport Types Used */}
                     <div className="flex flex-wrap gap-1">
-                      {plan.legs.map((leg, legIndex) => (
-                        leg.transport_type && (
-                          <span
-                            key={legIndex}
-                            className={`px-2 py-1 text-xs font-medium rounded ${
-                              leg.transport_type === 'UBAHN' ? 'bg-ubahn text-white' :
-                              leg.transport_type === 'SBAHN' ? 'bg-sbahn text-white' :
-                              leg.transport_type === 'TRAM' ? 'bg-tram text-white' :
-                              leg.transport_type === 'BUS' || leg.transport_type === 'REGIONAL_BUS' ? 'bg-bus text-white' :
-                              'bg-gray-600 text-white'
-                            }`}
-                          >
-                            {leg.line || leg.transport_type}
-                          </span>
-                        )
-                      ))}
+                      {plan.legs.map(
+                        (leg, legIndex) =>
+                          leg.transport_type && (
+                            <span
+                              key={legIndex}
+                              className={`px-2 py-1 text-xs font-medium rounded ${
+                                leg.transport_type === 'UBAHN'
+                                  ? 'bg-ubahn text-white'
+                                  : leg.transport_type === 'SBAHN'
+                                    ? 'bg-sbahn text-white'
+                                    : leg.transport_type === 'TRAM'
+                                      ? 'bg-tram text-white'
+                                      : leg.transport_type === 'BUS' ||
+                                          leg.transport_type === 'REGIONAL_BUS'
+                                        ? 'bg-bus text-white'
+                                        : 'bg-gray-600 text-white'
+                              }`}
+                            >
+                              {leg.line || leg.transport_type}
+                            </span>
+                          )
+                      )}
                     </div>
                   </div>
                 </div>

@@ -62,18 +62,23 @@ const formatTime = (dateString: string | null | undefined, use24Hour: boolean = 
   })
 }
 
-export function DeparturesBoard({ departures, use24Hour: initialUse24Hour = true }: DeparturesBoardProps) {
+export function DeparturesBoard({
+  departures,
+  use24Hour: initialUse24Hour = true,
+}: DeparturesBoardProps) {
   const [use24Hour, setUse24Hour] = useState(initialUse24Hour)
 
   // Sort departures by effective departure time (realtime if available, otherwise planned)
-  const sortedDepartures = useMemo(() =>
-    [...departures].sort((a, b) => {
-      const timeA = a.realtime_time || a.planned_time
-      const timeB = b.realtime_time || b.planned_time
-      if (!timeA) return 1
-      if (!timeB) return -1
-      return new Date(timeA).getTime() - new Date(timeB).getTime()
-    }), [departures]
+  const sortedDepartures = useMemo(
+    () =>
+      [...departures].sort((a, b) => {
+        const timeA = a.realtime_time || a.planned_time
+        const timeB = b.realtime_time || b.planned_time
+        if (!timeA) return 1
+        if (!timeB) return -1
+        return new Date(timeA).getTime() - new Date(timeB).getTime()
+      }),
+    [departures]
   )
 
   if (sortedDepartures.length === 0) {
@@ -101,27 +106,31 @@ export function DeparturesBoard({ departures, use24Hour: initialUse24Hour = true
         {sortedDepartures.map((departure, index) => {
           const time = formatTime(departure.realtime_time || departure.planned_time, use24Hour)
           const isDelayed = departure.delay_minutes && departure.delay_minutes > 0
-          const transportType = departure.transport_type === 'REGIONAL_BUS' ? 'BUS' : departure.transport_type
+          const transportType =
+            departure.transport_type === 'REGIONAL_BUS' ? 'BUS' : departure.transport_type
 
           return (
             <div key={index} className="group">
               <div
                 className={`
                   flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 border
-                  ${departure.cancelled
-                    ? 'bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800/60 hover:bg-red-50/60 dark:hover:bg-red-900/30'
-                    : isDelayed
-                      ? 'bg-yellow-50/40 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800/60 hover:bg-yellow-50/60 dark:hover:bg-yellow-900/30'
-                      : 'bg-card border-border hover:border-primary/30 hover:shadow-sm'
+                  ${
+                    departure.cancelled
+                      ? 'bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800/60 hover:bg-red-50/60 dark:hover:bg-red-900/30'
+                      : isDelayed
+                        ? 'bg-yellow-50/40 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800/60 hover:bg-yellow-50/60 dark:hover:bg-yellow-900/30'
+                        : 'bg-card border-border hover:border-primary/30 hover:shadow-sm'
                   }
                 `}
               >
                 {/* Transport line and type */}
                 <div className="flex items-center gap-3 min-w-[5rem]">
-                  <div className={`
+                  <div
+                    className={`
                     px-3 py-1.5 rounded-lg text-sm font-bold text-center min-w-[3rem]
                     ${getTransportTypeColor(departure.transport_type)}
-                  `}>
+                  `}
+                  >
                     {departure.line}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
@@ -134,7 +143,6 @@ export function DeparturesBoard({ departures, use24Hour: initialUse24Hour = true
                   {time}
                 </div>
 
-  
                 {/* Destination */}
                 <div className="flex-1 text-base font-medium text-foreground">
                   {departure.destination}

@@ -2,10 +2,7 @@ import type { Config } from 'tailwindcss'
 
 export default {
   darkMode: 'class',
-  content: [
-    './index.html',
-    './src/**/*.{js,ts,jsx,tsx}',
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
@@ -15,10 +12,10 @@ export default {
           dark: '#004677',
           light: '#4C9ACF',
         },
-        ubahn: '#0065AE',  // U-Bahn blue
-        sbahn: '#00AB4E',  // S-Bahn green
-        tram: '#D60F26',   // Tram red
-        bus: '#00558C',    // Bus dark blue
+        ubahn: '#0065AE', // U-Bahn blue
+        sbahn: '#00AB4E', // S-Bahn green
+        tram: '#D60F26', // Tram red
+        bus: '#00558C', // Bus dark blue
 
         // Dark theme palette
         background: '#121212',
@@ -51,15 +48,14 @@ export default {
           DEFAULT: '#0065AE',
           foreground: '#ffffff',
         },
-
-        },
+      },
       fontFamily: {
         sans: ['Inter', 'Roboto', 'system-ui', 'sans-serif'],
       },
       maxWidth: {
         '8xl': '88rem',
         '9xl': '96rem',
-      }
+      },
     },
   },
   plugins: [],

@@ -66,13 +66,9 @@ export function StationSearchResult({
         }}
         onClick={() => onSelect(station)}
       >
-        <div className="font-medium text-foreground">
-          {highlightMatch(station.name, query)}
-        </div>
+        <div className="font-medium text-foreground">{highlightMatch(station.name, query)}</div>
         {station.place !== station.name && (
-          <div className="text-sm text-gray-500">
-            {highlightMatch(station.place, query)}
-          </div>
+          <div className="text-sm text-gray-500">{highlightMatch(station.place, query)}</div>
         )}
       </button>
     </div>

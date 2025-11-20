@@ -36,11 +36,15 @@ export function MainPage() {
           <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-8">
             <div className="p-6 rounded-lg bg-card border border-border">
               <h3 className="text-lg font-semibold text-primary mb-2">Real-time Data</h3>
-              <p className="text-sm text-gray-400">Live departure information with delay indicators</p>
+              <p className="text-sm text-gray-400">
+                Live departure information with delay indicators
+              </p>
             </div>
             <div className="p-6 rounded-lg bg-card border border-border">
               <h3 className="text-lg font-semibold text-primary mb-2">Route Planning</h3>
-              <p className="text-sm text-gray-400">Plan your journey across Munich's transit network</p>
+              <p className="text-sm text-gray-400">
+                Plan your journey across Munich's transit network
+              </p>
             </div>
             <div className="p-6 rounded-lg bg-card border border-border">
               <h3 className="text-lg font-semibold text-primary mb-2">System Insights</h3>
