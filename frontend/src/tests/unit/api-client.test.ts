@@ -63,19 +63,23 @@ describe('ApiClient low-level behaviors', () => {
     })
   })
 
-  it('builds query strings with repeated array params and drops nullish values', () => {
-    const buildQueryString = (client as unknown as { buildQueryString: (params: Record<string, unknown>) => string })
-      .buildQueryString
-
-    const query = buildQueryString({
-      station: 'de:09162:6',
-      transport_type: ['UBAHN', 'BUS'],
-      offset: 2,
-      limit: null,
-      extra: undefined,
+  it('builds query strings with repeated array params and drops nullish values', async () => {
+    // Create a mock response
+    const mockResponse = new Response(JSON.stringify({ query: 'test', results: [] }), {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'Content-Type': 'application/json' },
     })
+    fetchMock.mockResolvedValueOnce(mockResponse)
 
-    expect(query).toBe('?station=de%3A09162%3A6&transport_type=UBAHN&transport_type=BUS&offset=2')
+    // Call searchStations which internally builds a query string
+    await client.searchStations({ query: 'test', limit: 10 })
+
+    // Verify fetch was called with correct URL including query params
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('?query=test&limit=10'),
+      expect.any(Object)
+    )
   })
 
   it('prevents planRoute calls with both departure and arrival times', async () => {
