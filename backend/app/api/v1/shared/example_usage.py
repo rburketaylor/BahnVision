@@ -69,11 +69,13 @@ async def departures(
 # AFTER: Simplified endpoint using shared patterns (~15 lines)
 # ------------------------------------------------------------------
 from fastapi import BackgroundTasks, Depends, Query, Response
-from app.api.v1.shared.caching import CacheManager
+
+from app.api.v1.shared.cache_manager import CacheManager
 from app.api.v1.shared.protocols import DeparturesRefreshProtocol
-from app.services.cache import CacheService
-from app.services.mvg_client import MVGClient, parse_transport_types
 from app.core.config import get_settings
+from app.services.cache import CacheService
+from app.services.mvg_client import MVGClient
+from app.services.mvg_transport import parse_transport_types
 
 
 async def departures_simplified(

@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from app.api.v1.shared.caching import CacheRefreshProtocol, MvgCacheProtocol
+from app.api.v1.shared.cache_protocols import CacheRefreshProtocol, MvgCacheProtocol
 from app.api.v1.shared.station_search_index import CachedStationSearchIndex
 from app.core.config import Settings, get_settings
 from app.persistence.repositories import StationPayload, StationRepository

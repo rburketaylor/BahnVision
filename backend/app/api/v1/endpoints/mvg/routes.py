@@ -11,7 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import route_cache_key
-from app.api.v1.shared.caching import CacheManager
+from app.api.v1.shared.cache_manager import CacheManager
 from app.api.v1.shared.protocols import RouteRefreshProtocol
 from app.core.config import get_settings
 from app.models.mvg import RouteResponse
@@ -21,8 +21,8 @@ from app.services.mvg_client import (
     MVGServiceError,
     RouteNotFoundError,
     TransportType,
-    parse_transport_types,
 )
+from app.services.mvg_transport import parse_transport_types
 from app.api.v1.endpoints.mvg.shared.utils import get_client
 
 router = APIRouter()

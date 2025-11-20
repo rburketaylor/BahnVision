@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import departures_cache_key
-from app.api.v1.shared.caching import execute_cache_refresh
+from app.api.v1.shared.cache_flow import execute_cache_refresh
 from app.api.v1.shared.protocols import (
     DeparturesRefreshProtocol,
     StationListRefreshProtocol,
