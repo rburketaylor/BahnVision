@@ -1,5 +1,7 @@
 # BahnVision Frontend: Unified Implementation Plan
 
+> Status: Planned roadmap. Use this as execution guidance; backend contract details live in `docs/tech-spec.md`.
+
 This document synthesizes all planning artifacts and codebase analysis into a single, actionable plan for developing the BahnVision frontend. It is designed to be executed by a software agent, with clear, sequential phases and testable deliverables.
 
 ## 1. Project Overview & Technical Foundation

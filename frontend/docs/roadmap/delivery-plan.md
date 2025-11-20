@@ -1,5 +1,7 @@
 # BahnVision Frontend Delivery Plan
 
+> Status: Planned roadmap. Use as guidance for future frontend delivery; backend capabilities are detailed in `docs/tech-spec.md`.
+
 ## Status At A Glance
 - Phase 0 foundation is complete: React 19 + TypeScript + Vite project, Tailwind styling, TanStack Query hooks, typed API client, tests, and build tooling are ready to go (see `frontend/docs/architecture/implementation-summary.md`).
 - Backend endpoints for health, station search, departures, route planning, and metrics are live and typed (`frontend/docs/architecture/api-integration.md`).

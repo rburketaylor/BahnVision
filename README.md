@@ -443,7 +443,7 @@ Pre-commit hooks run:
 ## Documentation
 - Project docs hub: `docs/README.md`
 - Backend docs hub: `backend/docs/README.md`
-- Backend tech spec (archived): `backend/docs/archive/tech-spec.md`
+- Backend tech spec: `docs/tech-spec.md`
 - Frontend docs hub: `frontend/docs/README.md`
 
 ## Contributing

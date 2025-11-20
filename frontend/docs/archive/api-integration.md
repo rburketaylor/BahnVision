@@ -14,7 +14,7 @@ All requests hit the FastAPI backend served at `VITE_API_BASE_URL` (default `htt
   ```json
   {"status": "ok"}
   ```
-  > Spec (`backend/docs/architecture/tech-spec.md:103-107`) mentions `version` and `uptime_seconds`; implementation currently returns only `status`. Surface current behavior and track spec gap in roadmap.
+  > Spec (`docs/tech-spec.md`) mentions `version` and `uptime_seconds`; implementation currently returns only `status`. Surface current behavior and track spec gap in roadmap.
 - **Error**: non-200 indicates backend outage; show critical banner.
 
 ## `GET /api/v1/mvg/stations/search`

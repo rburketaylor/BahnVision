@@ -1,5 +1,7 @@
 # BahnVision: AI-Assisted Munich Transit Dashboard
 
+> Status: Historical. Superseded by the canonical spec in `docs/tech-spec.md`.
+
 ## Overview
 
 BahnVision is a full-stack web application that visualizes Munich's S-Bahn and U-Bahn systems in real time, predicts delays using machine learning, and provides AI-generated travel recommendations. It is designed to demonstrate expertise in full-stack, data-driven, and AI-integrated development within a European urban context.

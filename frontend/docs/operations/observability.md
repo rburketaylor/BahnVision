@@ -1,5 +1,11 @@
 # Frontend Observability Plan
 
+> Status: Planned (aspirational). Use this to track desired client telemetry; backend observability and current metrics are documented in `docs/tech-spec.md`.
+
+## Current state vs planned state
+- Current: No client-side telemetry pipeline is wired; debugging relies on backend `X-Cache-Status` headers and developer console logging.
+- Planned: Add Sentry/Web Vitals/analytics instrumentation with request-id correlation to backend metrics as outlined below.
+
 ## Goals
 - Provide visibility into client health that complements backend Prometheus metrics.
 - Detect regressions in cache freshness, API failures, and interaction latency impacting riders.

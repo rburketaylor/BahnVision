@@ -1,5 +1,7 @@
 # Departures Page Improvement Plan
 
+> Status: Planned roadmap. Use this as aspirational guidance; align backend dependencies with `docs/tech-spec.md`.
+
 ## Phase 1: Fix Time & Date Selection UX
 - Replace clunky `datetime-local` input with separate date picker and time selector components
 - Add quick time preset buttons (e.g., "Now", "15 mins", "30 mins", "1 hour", "2 hours")

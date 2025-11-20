@@ -159,7 +159,7 @@ See [docs/operations/testing.md](./docs/operations/testing.md) for the complete 
   - [roadmap/delivery-plan.md](./docs/roadmap/delivery-plan.md) — Detailed workstreams and checklists
   - [roadmap/unified-implementation-plan.md](./docs/roadmap/unified-implementation-plan.md) — Sequential, automation-friendly delivery steps
   - Backend docs hub: `backend/docs/README.md`
-  - Backend technical spec: `backend/docs/architecture/tech-spec.md`
+  - Backend technical spec: `docs/tech-spec.md`
 
 ## Contributing
 

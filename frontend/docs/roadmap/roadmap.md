@@ -1,9 +1,15 @@
 # Frontend Roadmap
 
+> Status: Planned roadmap. Current implementation is in-progress; see `docs/tech-spec.md` for backend capabilities this plan depends on.
+
+## Current state vs planned state
+- Current: Frontend features are partially scaffolded; full MVP flows are not yet live.
+- Planned: Deliver the phases below to reach the Q1 2026 MVP with departures and route planning.
+
 ## Timeline Assumptions
 - Current date: 29 October 2025.
 - Target MVP launch: end of Q1 2026 with core departures + route planning.
-- Backend endpoints already live per `backend/docs/architecture/tech-spec.md`; persistence enhancements slated for MS1-T2.
+- Backend endpoints already live per `docs/tech-spec.md`; persistence enhancements slated for MS1-T2.
 
 ## Phase Breakdown
 

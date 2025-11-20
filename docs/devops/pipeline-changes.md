@@ -29,3 +29,38 @@ If you want, I can update the doc to:
 Align alert names with implemented metrics and add a short TODO list to instrument what’s missing.
 Clarify GitOps vs. direct helm apply, and note managed Postgres.
 Tighten Valkey/Redis terminology and add the expand/contract migration note.
+# Pipeline Changes
+
+> Status: Planned (aspirational). Use this to track desired CI/CD and observability improvements; current implementation details live in `docs/tech-spec.md`.
+
+## Current state vs planned state
+- Current: Cache and MVG client Prometheus metrics are exposed at `/metrics` (see `backend/app/api/metrics.py`); alerts are not yet wired; GitHub Actions and infra choices are still proposals.
+- Planned: Add API latency/error metrics via ASGI middleware, a Valkey circuit-breaker-open counter, and a database connectivity metric; solidify GitOps flow and managed data stores.
+
+## Metrics & Alerts
+- Align alert names with emitted metrics and add TODOs for missing signals:
+  - API request latency/error metrics via middleware (label per route/status).
+  - Database connectivity metric and scrapeable health endpoint.
+  - Circuit-breaker-open metric emitted when opening the breaker (see `backend/app/services/cache.py`).
+- Reference the existing cache/MVG counters and histograms instead of flagging them as missing.
+
+## Terminology/Naming
+- Use “Valkey” consistently; mention Redis only for compatibility (aliases supported via `REDIS_URL`).
+
+## Kubernetes/Infra
+- Prefer managed Postgres (or a StatefulSet with HA) instead of a plain Deployment.
+- If ArgoCD is in scope, clarify GitOps flow: GitHub Actions builds/pushes images and updates a manifests repo; ArgoCD handles cluster sync. Avoid `helm install` directly from Actions.
+
+## Deploy & Migrations
+- For blue/green with DB changes, follow expand/contract migrations with backups and rollback notes (include `alembic` offline `--sql` dry runs in pre-deploy checks).
+
+## Security Scanning
+- Verify CodeQL licensing for private repos; fallbacks include `pip-audit`, `osv-scanner`, and `npm audit` with severity gates.
+
+## Monitoring/Observability
+- Add API-level metrics and error-rate counters to back “API latency” and “error rate” SLAs; consider request middleware or `prometheus-fastapi` instrumentation.
+- Consider cert management in Kubernetes (cert-manager) and document TLS/ingress automation.
+
+## Backups/DR
+- Specify a concrete Postgres backup/PITR strategy (managed service preferred).
+- Clarify expectations for Valkey (treat as cache, not a source of truth).
