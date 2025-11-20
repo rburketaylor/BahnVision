@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
 
 
 class InMemoryFallbackStore:
@@ -52,7 +51,8 @@ class InMemoryFallbackStore:
         current_time = time.monotonic()
         async with self._lock:
             expired_keys = [
-                key for key, (_, expires_at) in self._store.items()
+                key
+                for key, (_, expires_at) in self._store.items()
                 if expires_at is not None and expires_at <= current_time
             ]
             for key in expired_keys:

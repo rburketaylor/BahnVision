@@ -147,7 +147,9 @@ class TransitLine(Base):
     __tablename__ = "transit_lines"
 
     line_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    transport_mode: Mapped[TransportMode] = mapped_column(transport_mode_enum.copy(), nullable=False)
+    transport_mode: Mapped[TransportMode] = mapped_column(
+        transport_mode_enum.copy(), nullable=False
+    )
     operator: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
@@ -204,9 +206,7 @@ class IngestionRun(Base):
         back_populates="ingestion_run",
     )
 
-    __table_args__ = (
-        Index("ix_ingestion_runs_job_started", "job_name", "started_at"),
-    )
+    __table_args__ = (Index("ix_ingestion_runs_job_started", "job_name", "started_at"),)
 
 
 class DepartureObservation(Base):
@@ -235,8 +235,15 @@ class DepartureObservation(Base):
     )
     delay_seconds: Mapped[int | None] = mapped_column(Integer)
     platform: Mapped[str | None] = mapped_column(String(16))
-    transport_mode: Mapped[TransportMode] = mapped_column(transport_mode_enum.copy(), nullable=False)
-    status: Mapped[DepartureStatus] = mapped_column(departure_status_enum.copy(), nullable=False, default=DepartureStatus.UNKNOWN, server_default=DepartureStatus.UNKNOWN.value)
+    transport_mode: Mapped[TransportMode] = mapped_column(
+        transport_mode_enum.copy(), nullable=False
+    )
+    status: Mapped[DepartureStatus] = mapped_column(
+        departure_status_enum.copy(),
+        nullable=False,
+        default=DepartureStatus.UNKNOWN,
+        server_default=DepartureStatus.UNKNOWN.value,
+    )
     cancellation_reason: Mapped[str | None] = mapped_column(Text)
     remarks: Mapped[list[str]] = mapped_column(
         ARRAY(String(255)),
@@ -372,7 +379,9 @@ class WeatherObservation(Base):
         server_default=func.now(),
     )
 
-    station: Mapped[Station | None] = relationship(back_populates="weather_observations")
+    station: Mapped[Station | None] = relationship(
+        back_populates="weather_observations"
+    )
     ingestion_run: Mapped[IngestionRun | None] = relationship(
         back_populates="weather_observations"
     )
@@ -411,7 +420,9 @@ class DepartureWeatherLink(Base):
         server_default="closest",
     )
 
-    departure: Mapped[DepartureObservation] = relationship(back_populates="weather_links")
+    departure: Mapped[DepartureObservation] = relationship(
+        back_populates="weather_links"
+    )
     weather: Mapped[WeatherObservation] = relationship(back_populates="departures")
 
     __table_args__ = (

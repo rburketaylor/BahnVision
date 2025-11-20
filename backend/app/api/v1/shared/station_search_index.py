@@ -5,7 +5,7 @@ This module provides an O(1) lookup index for station searches,
 replacing the inefficient O(n) linear scan approach.
 """
 
-from typing import Annotated, Any, ClassVar
+from typing import Any, ClassVar
 from collections import defaultdict
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -32,8 +32,12 @@ class StationSearchIndex:
     _cache_key: ClassVar[str] = "station_search_index"
 
     # Index storage - organized for fast lookups
-    name_index: dict[str, list[Station]] = field(default_factory=lambda: defaultdict(list))
-    place_index: dict[str, list[Station]] = field(default_factory=lambda: defaultdict(list))
+    name_index: dict[str, list[Station]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
+    place_index: dict[str, list[Station]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
     exact_match_index: dict[str, Station] = field(default_factory=dict)
     stations: list[Station] = field(default_factory=list)
 
@@ -90,7 +94,9 @@ class StationSearchIndex:
         self.last_updated = asyncio.get_event_loop().time()
 
         duration = asyncio.get_event_loop().time() - start_time
-        logger.info(f"Built station search index in {duration:.3f}s with {len(self.name_index)} name terms and {len(self.place_index)} place terms")
+        logger.info(
+            f"Built station search index in {duration:.3f}s with {len(self.name_index)} name terms and {len(self.place_index)} place terms"
+        )
 
     async def search(self, query: str, limit: int = 10) -> list[Station]:
         """
@@ -182,7 +188,7 @@ class StationSearchIndex:
     def _normalize_text(value: str) -> str:
         """Return a lowercase, accent-insensitive representation of text."""
         normalized = unicodedata.normalize("NFKD", value)
-        stripped = ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+        stripped = "".join(ch for ch in normalized if not unicodedata.combining(ch))
         return stripped.lower()
 
     @staticmethod
@@ -220,10 +226,28 @@ class StationSearchIndex:
 
             if score == 0:
                 ratio = max(
-                    SequenceMatcher(None, query_lower, name_lower).ratio() if query_lower else 0,
-                    SequenceMatcher(None, query_lower, place_lower).ratio() if query_lower else 0,
-                    SequenceMatcher(None, normalized_query, normalized_name).ratio() if normalized_query else 0,
-                    SequenceMatcher(None, normalized_query, normalized_place).ratio() if normalized_query else 0,
+                    (
+                        SequenceMatcher(None, query_lower, name_lower).ratio()
+                        if query_lower
+                        else 0
+                    ),
+                    (
+                        SequenceMatcher(None, query_lower, place_lower).ratio()
+                        if query_lower
+                        else 0
+                    ),
+                    (
+                        SequenceMatcher(None, normalized_query, normalized_name).ratio()
+                        if normalized_query
+                        else 0
+                    ),
+                    (
+                        SequenceMatcher(
+                            None, normalized_query, normalized_place
+                        ).ratio()
+                        if normalized_query
+                        else 0
+                    ),
                 )
                 if ratio >= self._FUZZY_MIN_RATIO:
                     score = int(ratio * 100)
@@ -309,7 +333,10 @@ class CachedStationSearchIndex:
         try:
             await self.cache.set_json(
                 StationSearchIndex._cache_key,
-                {"station_count": len(stations), "last_updated": self._local_index.last_updated},
+                {
+                    "station_count": len(stations),
+                    "last_updated": self._local_index.last_updated,
+                },
                 ttl_seconds=self.ttl_seconds,
             )
             logger.info("Cached station search index")

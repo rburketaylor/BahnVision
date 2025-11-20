@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from typing import Any, List
 
 import pytest
@@ -39,7 +38,9 @@ class FakeStationRepository:
         self.records: list[stations_sync.StationPayload] = []
         self._call_counter = 0
 
-    async def upsert_stations(self, payloads: list[stations_sync.StationPayload]) -> list[stations_sync.StationPayload]:
+    async def upsert_stations(
+        self, payloads: list[stations_sync.StationPayload]
+    ) -> list[stations_sync.StationPayload]:
         self._call_counter += 1
         self.calls.append(len(payloads))
         if self.fail_on_call and self._call_counter == self.fail_on_call:
@@ -52,7 +53,15 @@ class FakeStationRepository:
 
     async def get_all_stations(self) -> list[Any]:
         return [
-            type("StationRow", (), {"station_id": payload.station_id, "name": payload.name, "place": payload.place})
+            type(
+                "StationRow",
+                (),
+                {
+                    "station_id": payload.station_id,
+                    "name": payload.name,
+                    "place": payload.place,
+                },
+            )
             for payload in self.records
         ]
 
@@ -64,14 +73,18 @@ def event_loop():
     loop.close()
 
 
-def _patch_session_factory(monkeypatch: pytest.MonkeyPatch, session: FakeSession) -> None:
+def _patch_session_factory(
+    monkeypatch: pytest.MonkeyPatch, session: FakeSession
+) -> None:
     def factory():
         return FakeSessionContext(session)
 
     monkeypatch.setattr(stations_sync, "AsyncSessionFactory", factory)
 
 
-def _patch_repository(monkeypatch: pytest.MonkeyPatch, repo: FakeStationRepository) -> None:
+def _patch_repository(
+    monkeypatch: pytest.MonkeyPatch, repo: FakeStationRepository
+) -> None:
     monkeypatch.setattr(stations_sync, "StationRepository", lambda session: repo)
 
 

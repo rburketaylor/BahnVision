@@ -17,11 +17,19 @@ class TTLConfig:
         self.valkey_cache_ttl = settings.valkey_cache_ttl_seconds
         self.valkey_cache_ttl_not_found = settings.valkey_cache_ttl_not_found_seconds
         self.mvg_departures_cache_ttl = settings.mvg_departures_cache_ttl_seconds
-        self.mvg_departures_cache_stale_ttl = settings.mvg_departures_cache_stale_ttl_seconds
-        self.mvg_station_search_cache_ttl = settings.mvg_station_search_cache_ttl_seconds
-        self.mvg_station_search_cache_stale_ttl = settings.mvg_station_search_cache_stale_ttl_seconds
+        self.mvg_departures_cache_stale_ttl = (
+            settings.mvg_departures_cache_stale_ttl_seconds
+        )
+        self.mvg_station_search_cache_ttl = (
+            settings.mvg_station_search_cache_ttl_seconds
+        )
+        self.mvg_station_search_cache_stale_ttl = (
+            settings.mvg_station_search_cache_stale_ttl_seconds
+        )
         self.mvg_station_list_cache_ttl = settings.mvg_station_list_cache_ttl_seconds
-        self.mvg_station_list_cache_stale_ttl = settings.mvg_station_list_cache_stale_ttl_seconds
+        self.mvg_station_list_cache_stale_ttl = (
+            settings.mvg_station_list_cache_stale_ttl_seconds
+        )
         self.mvg_route_cache_ttl = settings.mvg_route_cache_ttl_seconds
         self.mvg_route_cache_stale_ttl = settings.mvg_route_cache_stale_ttl_seconds
 
@@ -37,7 +45,9 @@ class TTLConfig:
         """Validate that all TTL values are non-negative."""
         for attr_name, value in self.__dict__.items():
             if "ttl" in attr_name and isinstance(value, (int, float)) and value < 0:
-                raise ValueError(f"TTL value for {attr_name} cannot be negative: {value}")
+                raise ValueError(
+                    f"TTL value for {attr_name} cannot be negative: {value}"
+                )
 
     def get_effective_ttl(self, ttl_seconds: int | None) -> int | None:
         """Get the effective TTL, using default if none provided."""

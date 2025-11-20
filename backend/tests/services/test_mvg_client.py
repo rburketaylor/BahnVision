@@ -165,7 +165,9 @@ async def test_get_departures_without_filters(monkeypatch):
 
     captured: dict[str, Any] = {}
 
-    def fake_fetch(station_id: str, limit: int, offset: int, transport_types: list[Any] | None):
+    def fake_fetch(
+        station_id: str, limit: int, offset: int, transport_types: list[Any] | None
+    ):
         captured["args"] = (station_id, limit, offset, transport_types)
         return [
             {
@@ -183,13 +185,17 @@ async def test_get_departures_without_filters(monkeypatch):
     monkeypatch.setattr(MVGClient, "_fetch_departures", staticmethod(fake_fetch))
 
     client = MVGClient()
-    result_station, departures = await client.get_departures("Marienplatz", limit=5, offset=1)
+    result_station, departures = await client.get_departures(
+        "Marienplatz", limit=5, offset=1
+    )
 
     assert result_station == station
     assert captured["args"] == ("station-1", 5, 1, None)
     assert len(departures) == 1
     assert departures[0].line == "U3"
-    assert departures[0].realtime_time == datetime.fromtimestamp(1_700_000_060, tz=timezone.utc)
+    assert departures[0].realtime_time == datetime.fromtimestamp(
+        1_700_000_060, tz=timezone.utc
+    )
 
 
 @pytest.mark.asyncio
@@ -197,7 +203,9 @@ async def test_get_departures_with_filters_merges_and_limits(monkeypatch):
     """Fan-out per transport merges results, sorts, limits, and records metrics."""
     station = Station("station-1", "Marienplatz", "München", 48.1, 11.5)
 
-    async def fake_get_station(self, query: str) -> Station:  # pragma: no cover - signature clarity
+    async def fake_get_station(
+        self, query: str
+    ) -> Station:  # pragma: no cover - signature clarity
         return station
 
     monkeypatch.setattr(MVGClient, "get_station", fake_get_station)
@@ -225,7 +233,9 @@ async def test_get_departures_with_filters_merges_and_limits(monkeypatch):
         ],
     }
 
-    def fake_fetch(station_id: str, limit: int, offset: int, transport_types: list[Any] | None):
+    def fake_fetch(
+        station_id: str, limit: int, offset: int, transport_types: list[Any] | None
+    ):
         transport_name = transport_types[0].name if transport_types else "ALL"
         return payloads[transport_name]
 
@@ -266,7 +276,9 @@ async def test_get_departures_failure_propagates(monkeypatch):
 
     monkeypatch.setattr(MVGClient, "get_station", fake_get_station)
 
-    def fake_fetch(station_id: str, limit: int, offset: int, transport_types: list[Any] | None):
+    def fake_fetch(
+        station_id: str, limit: int, offset: int, transport_types: list[Any] | None
+    ):
         transport_name = transport_types[0].name
         if transport_name == "UBAHN":
             raise MvgApiError("Request timed out")
@@ -295,7 +307,9 @@ async def test_get_departures_failure_propagates(monkeypatch):
     bus = DummyTransport(name="BUS")
 
     with pytest.raises(MVGServiceError):
-        await client.get_departures("Marienplatz", limit=5, transport_types=[ubahn, bus])
+        await client.get_departures(
+            "Marienplatz", limit=5, transport_types=[ubahn, bus]
+        )
 
     assert metrics == [("departures", "UBAHN", "timeout")]
 

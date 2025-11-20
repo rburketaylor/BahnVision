@@ -8,7 +8,15 @@ security, performance, and observability.
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import route_cache_key
 from app.api.v1.shared.cache_manager import CacheManager
@@ -20,7 +28,6 @@ from app.services.mvg_client import (
     MVGClient,
     MVGServiceError,
     RouteNotFoundError,
-    TransportType,
 )
 from app.services.mvg_transport import parse_transport_types
 from app.api.v1.endpoints.mvg.shared.utils import get_client

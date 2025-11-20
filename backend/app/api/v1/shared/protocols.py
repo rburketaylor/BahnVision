@@ -5,7 +5,6 @@ MVG endpoint type, demonstrating how to use the shared caching patterns.
 """
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from app.api.v1.shared.cache_protocols import CacheRefreshProtocol, MvgCacheProtocol
@@ -155,7 +154,11 @@ class StationCatalog:
 class DeparturesRefreshProtocol(CacheRefreshProtocol[DeparturesResponse]):
     """Cache refresh protocol for departures endpoint."""
 
-    def __init__(self, client: MVGClient, filter_transport_types: list[TransportType] | None = None):
+    def __init__(
+        self,
+        client: MVGClient,
+        filter_transport_types: list[TransportType] | None = None,
+    ):
         """
         Initialize protocol with optional transport type filtering.
 

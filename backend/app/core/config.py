@@ -296,9 +296,7 @@ class Settings(BaseSettings):
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
-    def parse_cors_origins(
-        cls, value: Any
-    ) -> Iterable[str]:
+    def parse_cors_origins(cls, value: Any) -> Iterable[str]:
         """Allow comma-separated strings for CORS origins."""
         if isinstance(value, str):
             if not value:

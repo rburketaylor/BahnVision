@@ -10,7 +10,11 @@ from app.api.metrics import router as metrics_router
 from app.api.routes import api_router
 from app.core.config import get_settings
 from app.core.database import engine
-from app.core.telemetry import configure_opentelemetry, instrument_fastapi, instrument_httpx
+from app.core.telemetry import (
+    configure_opentelemetry,
+    instrument_fastapi,
+    instrument_httpx,
+)
 
 logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-Id"

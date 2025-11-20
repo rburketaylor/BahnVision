@@ -12,7 +12,11 @@ from pydantic import BaseModel
 from app.core.config import Settings
 from app.core.metrics import observe_cache_refresh, record_cache_event
 from app.services.cache import CacheService
-from app.services.mvg_errors import MVGServiceError, RouteNotFoundError, StationNotFoundError
+from app.services.mvg_errors import (
+    MVGServiceError,
+    RouteNotFoundError,
+    StationNotFoundError,
+)
 
 from .cache_protocols import CacheRefreshProtocol, CacheResult
 
@@ -76,7 +80,10 @@ async def handle_cache_errors(
         record_cache_event(cache_name, "lock_timeout")
         if allow_stale_fallback:
             stale_payload = await cache.get_stale_json(cache_key)
-            if stale_payload is not None and stale_payload.get("__status") != "not_found":
+            if (
+                stale_payload is not None
+                and stale_payload.get("__status") != "not_found"
+            ):
                 record_cache_event(cache_name, "stale_return")
                 return CacheResult(
                     data=model_class.model_validate(stale_payload),
@@ -96,7 +103,10 @@ async def handle_cache_errors(
     if isinstance(exc, MVGServiceError):
         if allow_stale_fallback:
             stale_payload = await cache.get_stale_json(cache_key)
-            if stale_payload is not None and stale_payload.get("__status") != "not_found":
+            if (
+                stale_payload is not None
+                and stale_payload.get("__status") != "not_found"
+            ):
                 record_cache_event(cache_name, "stale_return")
                 return CacheResult(
                     data=model_class.model_validate(stale_payload),
@@ -146,7 +156,9 @@ async def execute_cache_refresh(
                 cache_key,
                 {"__status": "not_found", "detail": detail},
                 ttl_seconds=settings.valkey_cache_ttl_not_found_seconds,
-                stale_ttl_seconds=getattr(settings, f"{protocol.cache_name()}_cache_stale_ttl_seconds", 300),
+                stale_ttl_seconds=getattr(
+                    settings, f"{protocol.cache_name()}_cache_stale_ttl_seconds", 300
+                ),
             )
             record_cache_event(protocol.cache_name(), "refresh_not_found")
             raise
@@ -169,7 +181,9 @@ async def execute_background_refresh(
 ) -> None:
     """Background task wrapper for cache refresh with error handling."""
     try:
-        await execute_cache_refresh(protocol, cache, cache_key, settings, **fetch_kwargs)
+        await execute_cache_refresh(
+            protocol, cache, cache_key, settings, **fetch_kwargs
+        )
     except (StationNotFoundError, RouteNotFoundError):
         record_cache_event(protocol.cache_name(), "background_not_found")
     except MVGServiceError:
@@ -183,7 +197,9 @@ async def execute_background_refresh(
         record_cache_event(protocol.cache_name(), "background_lock_timeout")
     except Exception:  # pragma: no cover - defensive logging
         record_cache_event(protocol.cache_name(), "background_unexpected_error")
-        logger.exception("Unexpected error while refreshing %s cache.", protocol.cache_name())
+        logger.exception(
+            "Unexpected error while refreshing %s cache.", protocol.cache_name()
+        )
 
 
 __all__ = [

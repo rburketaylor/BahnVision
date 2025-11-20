@@ -45,7 +45,9 @@ class CircuitBreaker:
                 self.close()
                 return result
             except Exception as exc:  # pragma: no cover - defensive logging
-                logger.warning("Cache circuit breaker opened for %s", func.__name__, exc_info=exc)
+                logger.warning(
+                    "Cache circuit breaker opened for %s", func.__name__, exc_info=exc
+                )
                 self.open()
                 return None
 
@@ -58,7 +60,9 @@ class CircuitBreaker:
                 self.close()
                 return result
             except Exception as exc:  # pragma: no cover - defensive logging
-                logger.warning("Cache circuit breaker opened for %s", func.__name__, exc_info=exc)
+                logger.warning(
+                    "Cache circuit breaker opened for %s", func.__name__, exc_info=exc
+                )
                 self.open()
                 return None
 

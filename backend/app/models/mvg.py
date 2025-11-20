@@ -128,7 +128,10 @@ class RouteLeg(BaseModel):
             duration_minutes=dto.duration_minutes,
             distance_meters=dto.distance_meters,
             intermediate_stops=[
-                stop for stop in (RouteStop.from_dto(item) for item in dto.intermediate_stops)
+                stop
+                for stop in (
+                    RouteStop.from_dto(item) for item in dto.intermediate_stops
+                )
                 if stop is not None
             ],
         )

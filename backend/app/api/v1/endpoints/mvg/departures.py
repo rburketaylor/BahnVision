@@ -8,7 +8,15 @@ by leveraging shared caching patterns and utilities.
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import departures_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import ensure_aware_utc, get_client

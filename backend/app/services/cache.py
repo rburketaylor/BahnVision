@@ -174,19 +174,25 @@ class SimplifiedCacheService:
             key, ttl_seconds, wait_timeout, retry_delay
         ) as acquired:
             if not acquired:
-                raise TimeoutError(f"Timed out while acquiring cache lock for key '{key}'.")
+                raise TimeoutError(
+                    f"Timed out while acquiring cache lock for key '{key}'."
+                )
             yield
 
     async def _get_from_valkey(self, key: str) -> str | None:
         """Get value from Valkey with circuit breaker protection."""
+
         @self._circuit_breaker.protect
         async def _get() -> str | None:
             return await self._client.get(key)
 
         return await _get()
 
-    async def _set_to_valkey(self, key: str, value: str, ttl_seconds: int | None) -> bool:
+    async def _set_to_valkey(
+        self, key: str, value: str, ttl_seconds: int | None
+    ) -> bool:
         """Set value in Valkey with circuit breaker protection."""
+
         @self._circuit_breaker.protect
         async def _set() -> bool:
             if ttl_seconds and ttl_seconds > 0:

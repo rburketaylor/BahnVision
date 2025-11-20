@@ -95,7 +95,9 @@ class CacheWarmupJob:
             # (the in-memory index will still be rebuilt inside the API process,
             # but this ensures MVG data is already stored in Valkey + Postgres).
             try:
-                from app.api.v1.shared.station_search_index import CachedStationSearchIndex
+                from app.api.v1.shared.station_search_index import (
+                    CachedStationSearchIndex,
+                )
 
                 index = CachedStationSearchIndex(self.cache)
                 await index.get_index(response.stations)
@@ -109,7 +111,9 @@ class CacheWarmupJob:
             return 0
 
         warmed = 0
-        protocol = DeparturesRefreshProtocol(client=self.client, filter_transport_types=None)
+        protocol = DeparturesRefreshProtocol(
+            client=self.client, filter_transport_types=None
+        )
         for station in self.settings.cache_warmup_departure_stations:
             cache_key = departures_cache_key(
                 station=station,

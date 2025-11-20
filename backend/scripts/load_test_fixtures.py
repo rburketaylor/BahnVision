@@ -76,7 +76,9 @@ async def load_fixtures():
                 "notes": "Test fixture data",
             }
             result = await conn.execute(
-                IngestionRun.__table__.insert().values(ingestion_data).returning(IngestionRun.id)
+                IngestionRun.__table__.insert()
+                .values(ingestion_data)
+                .returning(IngestionRun.id)
             )
             ingestion_id = result.scalar_one()
             print(f"✓ Inserted test ingestion run: {ingestion_id}")
@@ -96,7 +98,9 @@ async def load_fixtures():
                 "source": "mvg",
                 "created_at": datetime.now(timezone.utc),
             }
-            await conn.execute(DepartureObservation.__table__.insert().values(departure_data))
+            await conn.execute(
+                DepartureObservation.__table__.insert().values(departure_data)
+            )
             print("✓ Inserted test departure observation")
 
             print("\n✅ All test fixtures loaded successfully!")

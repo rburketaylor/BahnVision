@@ -10,9 +10,18 @@ from typing import Any
 from mvg import MvgApi, MvgApiError, TransportType
 
 from app.core.metrics import observe_mvg_request, record_mvg_transport_request
-from app.services.mvg_dto import Departure, RouteLeg, RoutePlan, RouteStop, Station
-from app.services.mvg_errors import MVGServiceError, RouteNotFoundError, StationNotFoundError
-from app.services.mvg_mapping import extract_routes, map_departure, map_route_plan, map_station
+from app.services.mvg_dto import Departure, RoutePlan, Station
+from app.services.mvg_errors import (
+    MVGServiceError,
+    RouteNotFoundError,
+    StationNotFoundError,
+)
+from app.services.mvg_mapping import (
+    extract_routes,
+    map_departure,
+    map_route_plan,
+    map_station,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +44,7 @@ class MVGClient:
         if self._cache_service and self._search_index is None:
             # Import here to avoid circular import
             from app.api.v1.shared.station_search_index import CachedStationSearchIndex
+
             self._search_index = CachedStationSearchIndex(self._cache_service)
         return self._search_index
 
@@ -48,7 +58,9 @@ class MVGClient:
             raise MVGServiceError("Failed to reach MVG station endpoint.") from exc
 
         if not raw_station:
-            observe_mvg_request("station_lookup", "not_found", time.perf_counter() - start)
+            observe_mvg_request(
+                "station_lookup", "not_found", time.perf_counter() - start
+            )
             raise StationNotFoundError(f"Station not found for query '{query}'.")
 
         observe_mvg_request("station_lookup", "success", time.perf_counter() - start)
@@ -84,24 +96,39 @@ class MVGClient:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         departures = []
         for i, result in enumerate(results):
-            transport_type = transport_types_list[i] if i < len(transport_types_list) else "unknown"
-            transport_type_name = getattr(transport_type, 'name', str(transport_type))
+            transport_type = (
+                transport_types_list[i] if i < len(transport_types_list) else "unknown"
+            )
+            transport_type_name = getattr(transport_type, "name", str(transport_type))
 
             if isinstance(result, Exception):
                 # Record failure metric
                 if isinstance(result, MvgApiError):
                     error_msg = str(result).lower()
-                    if any(indicator in error_msg for indicator in ["400", "bad request", "client error"]):
-                        record_mvg_transport_request("departures", transport_type_name, "bad_request")
+                    if any(
+                        indicator in error_msg
+                        for indicator in ["400", "bad request", "client error"]
+                    ):
+                        record_mvg_transport_request(
+                            "departures", transport_type_name, "bad_request"
+                        )
                         reason = "bad request"
-                    elif any(indicator in error_msg for indicator in ["timeout", "timed out"]):
-                        record_mvg_transport_request("departures", transport_type_name, "timeout")
+                    elif any(
+                        indicator in error_msg for indicator in ["timeout", "timed out"]
+                    ):
+                        record_mvg_transport_request(
+                            "departures", transport_type_name, "timeout"
+                        )
                         reason = "timeout"
                     else:
-                        record_mvg_transport_request("departures", transport_type_name, "error")
+                        record_mvg_transport_request(
+                            "departures", transport_type_name, "error"
+                        )
                         reason = "MVG API error"
                 else:
-                    record_mvg_transport_request("departures", transport_type_name, "error")
+                    record_mvg_transport_request(
+                        "departures", transport_type_name, "error"
+                    )
                     reason = "unexpected error"
 
                 logger.warning(
@@ -109,13 +136,17 @@ class MVGClient:
                     station_query,
                     transport_type_name,
                     reason,
-                    str(result)
+                    str(result),
                 )
                 # Fail-fast: raise error immediately for any transport type failure
-                raise MVGServiceError(f"Failed to fetch departures for transport type {transport_type_name}: {reason}") from result
+                raise MVGServiceError(
+                    f"Failed to fetch departures for transport type {transport_type_name}: {reason}"
+                ) from result
             elif isinstance(result, list):
                 # Record success metric
-                record_mvg_transport_request("departures", transport_type_name, "success")
+                record_mvg_transport_request(
+                    "departures", transport_type_name, "success"
+                )
                 departures.extend([map_departure(item) for item in result])
             else:
                 # This shouldn't happen, but handle it gracefully
@@ -124,9 +155,11 @@ class MVGClient:
                     "Unexpected result type for station %s, transport type %s: %s",
                     station_query,
                     transport_type_name,
-                    type(result).__name__
+                    type(result).__name__,
                 )
-                raise MVGServiceError(f"Unexpected result type for transport type {transport_type_name}")
+                raise MVGServiceError(
+                    f"Unexpected result type for transport type {transport_type_name}"
+                )
 
         departures.sort(key=lambda d: (d.planned_time is None, d.planned_time))
         return station, departures[:limit]
@@ -141,7 +174,9 @@ class MVGClient:
             raise MVGServiceError("Failed to fetch MVG station list.") from exc
 
         if not raw_stations:
-            observe_mvg_request("station_list", "not_found", time.perf_counter() - start)
+            observe_mvg_request(
+                "station_list", "not_found", time.perf_counter() - start
+            )
             return []
 
         observe_mvg_request("station_list", "success", time.perf_counter() - start)
@@ -161,14 +196,19 @@ class MVGClient:
                 index = await search_index.get_index(stations)
                 return await index.search(query, limit)
             except Exception as e:
-                logger.warning(f"Failed to use optimized station search index, falling back to linear search: {e}")
+                logger.warning(
+                    f"Failed to use optimized station search index, falling back to linear search: {e}"
+                )
 
         # Fallback to the original linear approach (but still cached via get_all_stations)
         stations = await self.get_all_stations()
         query_lower = query.lower()
         matches: list[Station] = []
         for station in stations:
-            if query_lower in station.name.lower() or query_lower in station.place.lower():
+            if (
+                query_lower in station.name.lower()
+                or query_lower in station.place.lower()
+            ):
                 matches.append(station)
                 if len(matches) >= limit:
                     break
@@ -198,7 +238,9 @@ class MVGClient:
             )
         except MvgApiError as exc:
             observe_mvg_request("route_lookup", "error", time.perf_counter() - start)
-            raise MVGServiceError("Failed to retrieve route information from MVG.") from exc
+            raise MVGServiceError(
+                "Failed to retrieve route information from MVG."
+            ) from exc
 
         duration = time.perf_counter() - start
         routes_payload = extract_routes(raw_routes)
@@ -221,12 +263,17 @@ class MVGClient:
     ) -> list[dict[str, Any]]:
         client = MvgApi(station_id)
         try:
-            return client.departures(limit=limit, offset=offset, transport_types=transport_types)
+            return client.departures(
+                limit=limit, offset=offset, transport_types=transport_types
+            )
         except MvgApiError as exc:
             error_msg = str(exc).lower()
 
             # Check for HTTP 400 errors more robustly
-            is_400_error = any(indicator in error_msg for indicator in ["400", "bad request", "client error"])
+            is_400_error = any(
+                indicator in error_msg
+                for indicator in ["400", "bad request", "client error"]
+            )
 
             if is_400_error:
                 logger.debug("Bad API call for departures: %s", exc)

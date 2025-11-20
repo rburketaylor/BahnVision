@@ -13,7 +13,11 @@ from app.api.v1.shared.cache_flow import (
     handle_cache_lookup,
 )
 from app.api.v1.shared.cache_manager import CacheManager
-from app.api.v1.shared.cache_protocols import CacheRefreshProtocol, CacheResult, MvgCacheProtocol
+from app.api.v1.shared.cache_protocols import (
+    CacheRefreshProtocol,
+    CacheResult,
+    MvgCacheProtocol,
+)
 
 __all__ = [
     "CacheManager",

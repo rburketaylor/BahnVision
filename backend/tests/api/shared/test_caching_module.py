@@ -104,7 +104,9 @@ class DummyProtocol(CacheRefreshProtocol[SampleModel]):
             cache_key,
             data.model_dump(),
             ttl_seconds=getattr(settings, f"{self.cache_name()}_cache_ttl_seconds", 60),
-            stale_ttl_seconds=getattr(settings, f"{self.cache_name()}_cache_stale_ttl_seconds", 120),
+            stale_ttl_seconds=getattr(
+                settings, f"{self.cache_name()}_cache_stale_ttl_seconds", 120
+            ),
         )
 
     def cache_name(self) -> str:
@@ -202,7 +204,9 @@ async def test_handle_cache_lookup_not_found_marker_raises(fake_cache, cache_eve
 
 
 @pytest.mark.asyncio
-async def test_handle_cache_lookup_returns_stale_and_schedules_refresh(fake_cache, cache_events):
+async def test_handle_cache_lookup_returns_stale_and_schedules_refresh(
+    fake_cache, cache_events
+):
     fake_cache.stale_values["cache-key"] = {"value": 3}
     response = Response()
     background = BackgroundTasks()
@@ -252,7 +256,9 @@ async def test_handle_cache_errors_timeout_returns_stale(fake_cache, cache_event
 
 
 @pytest.mark.asyncio
-async def test_handle_cache_errors_timeout_without_stale_raises(fake_cache, cache_events):
+async def test_handle_cache_errors_timeout_without_stale_raises(
+    fake_cache, cache_events
+):
     with pytest.raises(HTTPException) as exc_info:
         await handle_cache_errors(
             cache=fake_cache,
@@ -302,7 +308,9 @@ async def test_handle_cache_errors_not_found_raises(fake_cache, cache_events):
 
 
 @pytest.mark.asyncio
-async def test_execute_cache_refresh_uses_cached_payload(fake_cache, dummy_settings, cache_events):
+async def test_execute_cache_refresh_uses_cached_payload(
+    fake_cache, dummy_settings, cache_events
+):
     fake_cache.values["cache-key"] = {"value": 11}
     protocol = DummyProtocol()
 
@@ -319,7 +327,9 @@ async def test_execute_cache_refresh_uses_cached_payload(fake_cache, dummy_setti
 
 
 @pytest.mark.asyncio
-async def test_execute_cache_refresh_records_not_found_marker(fake_cache, dummy_settings, cache_events):
+async def test_execute_cache_refresh_records_not_found_marker(
+    fake_cache, dummy_settings, cache_events
+):
     protocol = DummyProtocol()
     protocol.fetch_exception = StationNotFoundError("no station")
 
@@ -331,8 +341,14 @@ async def test_execute_cache_refresh_records_not_found_marker(fake_cache, dummy_
             settings=dummy_settings,
         )
 
-    assert fake_cache.set_calls[-1]["value"] == {"__status": "not_found", "detail": "no station"}
-    assert fake_cache.set_calls[-1]["ttl_seconds"] == dummy_settings.valkey_cache_ttl_not_found_seconds
+    assert fake_cache.set_calls[-1]["value"] == {
+        "__status": "not_found",
+        "detail": "no station",
+    }
+    assert (
+        fake_cache.set_calls[-1]["ttl_seconds"]
+        == dummy_settings.valkey_cache_ttl_not_found_seconds
+    )
     assert cache_events[-1] == ("mvg_departures", "refresh_not_found")
 
 
@@ -362,7 +378,9 @@ async def test_execute_cache_refresh_stores_data_and_records_metrics(
 
 
 @pytest.mark.asyncio
-async def test_execute_cache_refresh_propagates_mvg_errors(fake_cache, dummy_settings, cache_events):
+async def test_execute_cache_refresh_propagates_mvg_errors(
+    fake_cache, dummy_settings, cache_events
+):
     protocol = DummyProtocol()
     protocol.fetch_exception = MVGServiceError("boom")
 
@@ -386,7 +404,9 @@ async def test_cache_manager_refresh_then_hit(
 ):
     protocol = DummyProtocol()
     protocol.fetch_result = SampleModel(value=9)
-    manager = CacheManager(protocol=protocol, cache=fake_cache, cache_name="mvg_departures")
+    manager = CacheManager(
+        protocol=protocol, cache=fake_cache, cache_name="mvg_departures"
+    )
 
     response = Response()
     background = BackgroundTasks()
@@ -423,7 +443,9 @@ async def test_cache_manager_returns_stale_when_refresh_fails(
     monkeypatch,
 ):
     protocol = DummyProtocol()
-    manager = CacheManager(protocol=protocol, cache=fake_cache, cache_name="mvg_departures")
+    manager = CacheManager(
+        protocol=protocol, cache=fake_cache, cache_name="mvg_departures"
+    )
     fake_cache.stale_values["cache-key"] = {"value": 4}
     fake_cache.stale_read_results = [None]
 
