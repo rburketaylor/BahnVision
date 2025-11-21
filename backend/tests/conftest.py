@@ -17,9 +17,9 @@ from app.services.cache import get_cache_service  # noqa: E402
 from app.api.v1.endpoints.mvg.shared.utils import get_client  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.services.cache import CacheService  # noqa: E402
-from app.services.mvg_client import (  # noqa: E402
+from app.services.mvg_client import MVGServiceError  # noqa: E402
+from app.services.mvg_dto import (  # noqa: E402
     Departure,
-    MVGServiceError,
     RouteLeg,
     RoutePlan,
     RouteStop,

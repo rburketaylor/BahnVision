@@ -10,7 +10,7 @@ from typing import Any
 from mvg import MvgApi, MvgApiError, TransportType
 
 from app.core.metrics import observe_mvg_request, record_mvg_transport_request
-from app.services.mvg_dto import Departure, RoutePlan, Station
+from app.services.mvg_dto import Departure, RouteLeg, RoutePlan, RouteStop, Station
 from app.services.mvg_errors import (
     MVGServiceError,
     RouteNotFoundError,
@@ -24,6 +24,29 @@ from app.services.mvg_mapping import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Re-export DTOs and exceptions for backward compatibility
+__all__ = [
+    "MVGClient",
+    "get_client",
+    # DTOs
+    "Station",
+    "Departure",
+    "RoutePlan",
+    "RouteLeg",
+    "RouteStop",
+    # Exceptions
+    "MVGServiceError",
+    "StationNotFoundError",
+    "RouteNotFoundError",
+    # External
+    "MvgApiError",
+    "TransportType",
+]
+
+# Re-export MvgApiError for convenience
+from mvg import MvgApiError  # noqa: E402, F401
+from mvg import TransportType  # noqa: E402, F401
 
 
 class MVGClient:

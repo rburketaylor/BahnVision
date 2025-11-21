@@ -18,12 +18,14 @@ from app.services.mvg_mapping import (
 from app.services.mvg_client import (
     MVGClient,
     MVGServiceError,
+    MvgApiError,
+    StationNotFoundError,
+)
+from app.services.mvg_dto import (
     RouteLeg,
     RoutePlan,
     RouteStop,
     Station,
-    StationNotFoundError,
-    MvgApiError,
 )
 
 

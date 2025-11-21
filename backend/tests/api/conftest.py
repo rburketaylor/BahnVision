@@ -13,14 +13,16 @@ from app.persistence.dependencies import get_station_repository
 from app.persistence.repositories import StationPayload
 from app.services.cache import CacheService
 from app.services.mvg_client import (
-    Departure,
     MVGServiceError,
+    RouteNotFoundError,
+    StationNotFoundError,
+)
+from app.services.mvg_dto import (
+    Departure,
     RouteLeg,
     RoutePlan,
-    RouteNotFoundError,
     RouteStop,
     Station,
-    StationNotFoundError,
 )
 
 

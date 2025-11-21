@@ -6,12 +6,12 @@ from typing import Iterable
 from pydantic import BaseModel, Field
 
 from app.services.mvg_client import Departure as DepartureDTO
-from app.services.mvg_client import (
+from app.services.mvg_client import Station as StationDTO
+from app.services.mvg_dto import (
     RouteLeg as RouteLegDTO,
     RoutePlan as RoutePlanDTO,
     RouteStop as RouteStopDTO,
 )
-from app.services.mvg_client import Station as StationDTO
 
 
 class Station(BaseModel):
