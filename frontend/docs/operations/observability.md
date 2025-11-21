@@ -43,3 +43,41 @@
 ## Future Enhancements
 - Integrate real user monitoring (RUM) dashboards in Grafana by exporting metrics to Prometheus via `prometheus-query` bridge.
 - Add synthetic monitoring (Checkly) hitting key flows hourly with expected cache headers.
+
+## Example Log Structures
+
+**API Error Event**
+```json
+{
+  "event": "api_error",
+  "timestamp": 1716200000000,
+  "url": "/api/v1/mvg/departures?station_id=de:09162:6",
+  "status": 503,
+  "request_id": "req-12345",
+  "error_code": "upstream_timeout",
+  "browser": "Chrome 124.0.0"
+}
+```
+
+**Performance Metric (Web Vitals)**
+```json
+{
+  "metric": "LCP",
+  "value": 1200,
+  "rating": "good",
+  "navigation_type": "navigate",
+  "page": "/stations/de:09162:6"
+}
+```
+
+## Planned Dashboard Queries
+
+**Frontend Error Rate (Sentry/Prometheus Bridge)**
+```promql
+sum(rate(frontend_errors_total[5m])) by (type)
+```
+
+**Client-Side Latency (P75)**
+```promql
+histogram_quantile(0.75, sum(rate(frontend_http_request_duration_seconds_bucket[5m])) by (le, route))
+```

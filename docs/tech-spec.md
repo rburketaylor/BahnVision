@@ -122,19 +122,100 @@ Valkey stores serialized Pydantic responses (JSON) using TTL + stale TTL pairs f
 
 ## 11. Observability & Operations
 
-- **Metrics:**  
-  - `bahnvision_cache_events_total{cache,event}` (hit, miss, stale_return, refresh_*).  
-  - `bahnvision_cache_refresh_seconds{cache}` histogram.  
-  - `bahnvision_mvg_requests_total{endpoint,result}` and `bahnvision_mvg_request_seconds{endpoint}` histograms.  
-  - `bahnvision_api_request_duration_seconds{route}` and `bahnvision_api_exceptions_total{route,type}`.  
-  - Planned: `bahnvision_weather_ingest_duration_seconds`.
-- **Logging:** Structured JSON (logger config TBD) with `request_id`, `station_id`, `cache_status`, `mvg_status`, latency, and error classification.
-- **Alerting:**  
-  1. Cache hit ratio <70% over 5 min.  
-  2. MVG request failure rate >5/min or `result=timeout`.  
-  3. `/health` latency >1 s or error rate >1%.  
-  4. Circuit breaker engaged >2 min sustained.
-- **Tracing (future):** Evaluate OTLP exporter once upstream stable.
+### 11.1 Current Observability
+
+**Metrics (Prometheus)**
+Exposed at `/metrics` via `app.api.metrics`.
+- **Cache Performance:**
+  - `bahnvision_cache_events_total{cache,event}`: Counters for `hit`, `miss`, `stale_return`, `refresh_success`, `refresh_error`.
+  - `bahnvision_cache_refresh_seconds{cache}`: Histogram of background refresh duration.
+- **MVG Client:**
+  - `bahnvision_mvg_requests_total{endpoint,result}`: Counters for upstream calls (results: `success`, `http_error`, `timeout`, `parse_error`).
+  - `bahnvision_mvg_request_seconds{endpoint}`: Latency histogram for MVG calls.
+- **API Health:**
+  - `bahnvision_api_request_duration_seconds{route}`: Latency histogram for BahnVision endpoints.
+  - `bahnvision_api_exceptions_total{route,type}`: Counters for unhandled exceptions.
+
+**Logging**
+Structured JSON logs are emitted to stdout. Key fields for correlation:
+- `request_id`: Unique ID per request (propagated to frontend via header).
+- `station_id`: Context for station-related errors.
+- `cache_status`: `hit`, `miss`, `stale`, `stale-refresh`.
+- `mvg_status`: Upstream HTTP status or error code.
+
+### 11.2 Planned Observability (Phase 2)
+
+- **Weather Ingestion:** `bahnvision_weather_ingest_duration_seconds`.
+- **Tracing:** OTLP exporter integration once upstream platform supports it.
+- **Frontend Correlation:** Ingesting client-side metrics to correlate user-perceived latency with backend processing time.
+
+### 11.3 Common Dashboards & PromQL
+
+**Cache Hit Ratio (5m window)**
+```promql
+sum(rate(bahnvision_cache_events_total{event="hit"}[5m])) 
+/ 
+sum(rate(bahnvision_cache_events_total[5m]))
+```
+
+**MVG P95 Latency**
+```promql
+histogram_quantile(0.95, sum(rate(bahnvision_mvg_request_seconds_bucket[5m])) by (le, endpoint))
+```
+
+**API Error Rate**
+```promql
+sum(rate(bahnvision_api_exceptions_total[5m])) by (route)
+```
+
+### 11.4 Log Examples
+
+**Successful Cache Hit**
+```json
+{
+  "level": "info",
+  "timestamp": "2024-05-20T10:00:01Z",
+  "request_id": "req-123",
+  "event": "api_request_handled",
+  "route": "/api/v1/mvg/departures",
+  "cache_status": "hit",
+  "latency_ms": 12,
+  "status_code": 200
+}
+```
+
+**Upstream Failure with Stale Fallback**
+```json
+{
+  "level": "warning",
+  "timestamp": "2024-05-20T10:05:00Z",
+  "request_id": "req-456",
+  "event": "upstream_error_handled",
+  "endpoint": "mvg_departures",
+  "error": "TimeoutError",
+  "fallback_action": "served_stale",
+  "cache_age_seconds": 125
+}
+```
+
+**Circuit Breaker Open**
+```json
+{
+  "level": "error",
+  "timestamp": "2024-05-20T10:10:00Z",
+  "event": "circuit_breaker_state_change",
+  "service": "valkey",
+  "new_state": "open",
+  "reason": "failure_threshold_exceeded"
+}
+```
+
+### 11.5 Alerting Rules
+
+1. **Cache Efficiency:** Hit ratio < 70% for > 5 min.
+2. **MVG Health:** Request failure rate > 5/min OR `result=timeout` spikes.
+3. **System Health:** `/health` latency > 1s OR error rate > 1%.
+4. **Resilience:** Circuit breaker engaged > 2 min sustained.
 
 ## 12. Testing & Quality Strategy
 
