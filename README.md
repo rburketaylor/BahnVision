@@ -48,10 +48,11 @@ bahnvision_cache_refresh_seconds{cache}     # Refresh latency histogram
 # MVG API integration
 bahnvision_mvg_requests_total{endpoint,result}  # Request outcomes
 bahnvision_mvg_request_seconds{endpoint}        # MVG latency histogram
+# Transport-type breakdown
+bahnvision_mvg_transport_requests_total{endpoint,transport_type,result}
 
 # Application metrics (planned)
-bahnvision_api_request_duration_seconds{route}
-bahnvision_api_exceptions_total{route,type}
+# API-level latency/error metrics are not yet emitted; add ASGI middleware before alerting on them.
 ```
 
 #### Response Headers
@@ -442,9 +443,9 @@ Pre-commit hooks run:
 
 ## Documentation
 - Project docs hub: `docs/README.md`
-- Backend docs hub: `backend/docs/README.md`
-- Backend tech spec: `docs/tech-spec.md`
-- Frontend docs hub: `frontend/docs/README.md`
+- Canonical tech spec: `docs/tech-spec.md`
+- Backend docs hub: `backend/docs/README.md` (links back to the tech spec; archive lives here)
+- Frontend docs hub: `frontend/docs/README.md` (links back to the tech spec and current frontend plans)
 
 ## Contributing
 - Conventional Commits (e.g., `feat:`, `fix:`, `docs:`)

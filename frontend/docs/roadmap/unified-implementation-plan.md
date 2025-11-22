@@ -1,6 +1,6 @@
 # BahnVision Frontend: Unified Implementation Plan
 
-> Status: Planned roadmap. Use this as execution guidance; backend contract details live in `docs/tech-spec.md`.
+> Status: In progress. Core flows (station search, departures board, planner, insights) exist; use this plan to close remaining gaps (maps, observability, analytics) and validate current implementations. Backend contract details live in `docs/tech-spec.md`.
 
 This document synthesizes all planning artifacts and codebase analysis into a single, actionable plan for developing the BahnVision frontend. It is designed to be executed by a software agent, with clear, sequential phases and testable deliverables.
 
@@ -30,39 +30,12 @@ This phase involved bootstrapping the repository with the correct tools and conf
 
 ### Phase 1: Core Feature Implementation (MVP)
 
-This phase focuses on building the essential user-facing features for the Minimum Viable Product.
-
-**Actionable Steps:**
-
-1.  **Implement System Health Widget:**
-    *   Create a `useHealth()` custom hook to poll the `GET /api/v1/health` endpoint.
-    *   Build a UI component to display the status (e.g., a green/amber/red dot) and uptime.
-    *   Place this component in the main `Layout.tsx`.
-
-2.  **Build the Station Search Component:**
-    *   Create a `useStationSearch()` hook that debounces user input and calls `GET /api/v1/mvg/stations/search`.
-    *   Develop a reusable search input component with autocomplete/typeahead functionality.
-    *   Display station name, place, and transport icons in the results.
-    *   Ensure full keyboard accessibility.
-
-3.  **Develop the Departures Page (`/departures`):**
-    *   Create a `useDepartures()` hook to fetch data from `GET /api/v1/mvg/departures`.
-    *   Implement a `DeparturesBoard` component to display the data in a table format (Line, Destination, Platform, Time, Delay).
-    *   Add filtering controls (transport type chips, limit slider).
-    *   Display `X-Cache-Status` as a visual badge.
-    *   Implement a manual refresh button and configure auto-refresh via TanStack Query.
-
-4.  **Develop the Route Planner Page (`/planner`):**
-    *   Reuse the Station Search component for origin and destination inputs.
-    *   Create a `useRoutePlanner()` hook for `GET /api/v1/mvg/routes/plan`.
-    *   Add optional datetime pickers for departure/arrival times.
-    *   Build an `ItineraryCard` component to display route plans, including transfers and duration.
-    *   Integrate a `react-leaflet` map to visualize the selected route legs.
-
-5.  **Implement Loading & Error States:**
-    *   Create skeleton loader components for the departures board and itinerary cards.
-    *   Implement clear error messages for API failures (e.g., "No routes found," "Upstream service unavailable").
-    *   Use toast notifications for non-critical errors.
+This phase delivered the essential user-facing features. Current coverage:
+- Health widget hook and usage in insights page exist (uptime/version still planned on backend).
+- Station search component and hook are implemented with autocomplete.
+- Departures page with filters, cache badge, and auto/manual refresh is live.
+- Route planner page with origin/destination selection, optional times, and transport filters is live; map overlay is planned.
+- Loading and error states exist; toast/error boundary work can be expanded.
 
 ### Phase 2: Observability & Testing
 

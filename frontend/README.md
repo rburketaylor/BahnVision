@@ -65,9 +65,9 @@ See `docs/runtime-configuration.md` for cross-project configuration details.
 - **Routing:** React Router 7
 - **State Management:** TanStack Query 5 (server state) + Zustand 5 (UI state)
 - **Styling:** Tailwind CSS 4 + Headless UI 2
-- **Maps:** React-Leaflet 5 + Leaflet 1.9
+- **Maps:** React-Leaflet 5 + Leaflet 1.9 (planned usage; components not yet live)
 - **Testing:** Vitest 4 + React Testing Library + Playwright + MSW 2
-- **Error Tracking:** Sentry 10
+- **Error Tracking:** Sentry 10 (planned; SDK not yet wired)
 
 ## Project Structure
 

@@ -1,10 +1,10 @@
 # Frontend Roadmap
 
-> Status: Planned roadmap. Current implementation is in-progress; see `docs/tech-spec.md` for backend capabilities this plan depends on.
+> Status: In progress. Core pages (landing, departures, planner, insights) are implemented; map overlays, richer observability, and analytics remain planned. See `docs/tech-spec.md` for backend capabilities.
 
 ## Current state vs planned state
-- Current: Frontend features are partially scaffolded; full MVP flows are not yet live.
-- Planned: Deliver the phases below to reach the Q1 2026 MVP with departures and route planning.
+- Current: Departures, station search, and planner flows work against the backend; no maps, limited analytics/observability, and minimal polish.
+- Planned: Deliver the phases below to reach the Q1 2026 MVP with departures and route planning plus maps and analyst tooling.
 
 ## Timeline Assumptions
 - Current date: 29 October 2025.
