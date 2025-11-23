@@ -5,7 +5,15 @@ import { DeparturesBoard } from '../components/DeparturesBoard'
 import type { TransportType } from '../types/api'
 
 // SEV temporarily removed due to MVG API 400 errors - may need station-specific handling
-const ALL_TRANSPORT_TYPES: TransportType[] = ['BAHN', 'SBAHN', 'UBAHN', 'TRAM', 'BUS', 'REGIONAL_BUS', 'SCHIFF']
+const ALL_TRANSPORT_TYPES: TransportType[] = [
+  'BAHN',
+  'SBAHN',
+  'UBAHN',
+  'TRAM',
+  'BUS',
+  'REGIONAL_BUS',
+  'SCHIFF',
+]
 const DEFAULT_PAGE_SIZE = 20
 const DEFAULT_PAGE_STEP_MINUTES = 30
 
@@ -80,13 +88,19 @@ export function DeparturesPage() {
   }, [searchParams])
 
   // Initialize pagination state from URL params
-  const paginationState: PaginationState = useMemo(() => ({
-    pageIndex: parseInt(searchParams.get('page') || '0', 10),
-    pageSize: parseInt(searchParams.get('limit') || DEFAULT_PAGE_SIZE.toString(), 10),
-    pageStepMinutes: parseInt(searchParams.get('step') || DEFAULT_PAGE_STEP_MINUTES.toString(), 10),
-    fromTime: searchParams.get('from'),
-    live: searchParams.get('live') !== 'false' && searchParams.get('from') === null,
-  }), [searchParams])
+  const paginationState: PaginationState = useMemo(
+    () => ({
+      pageIndex: parseInt(searchParams.get('page') || '0', 10),
+      pageSize: parseInt(searchParams.get('limit') || DEFAULT_PAGE_SIZE.toString(), 10),
+      pageStepMinutes: parseInt(
+        searchParams.get('step') || DEFAULT_PAGE_STEP_MINUTES.toString(),
+        10
+      ),
+      fromTime: searchParams.get('from'),
+      live: searchParams.get('live') !== 'false' && searchParams.get('from') === null,
+    }),
+    [searchParams]
+  )
 
   // Debounced transport types for API calls (prevents cascading requests)
   const sortedDebouncedTransportTypes = useMemo(() => {
@@ -142,8 +156,8 @@ export function DeparturesPage() {
       setIsFilterUpdating(true)
 
       // Dynamic debounce delay based on complexity
-      const debounceDelay = selectedTransportTypes.length > 4 ? 800 :
-                           selectedTransportTypes.length > 2 ? 500 : 300
+      const debounceDelay =
+        selectedTransportTypes.length > 4 ? 800 : selectedTransportTypes.length > 2 ? 500 : 300
 
       // Set new timeout
       debounceTimeoutRef.current = setTimeout(() => {
@@ -181,7 +195,8 @@ export function DeparturesPage() {
     } = {
       station: stationId!,
       limit: paginationState.pageSize,
-      transport_type: sortedDebouncedTransportTypes.length > 0 ? sortedDebouncedTransportTypes : undefined,
+      transport_type:
+        sortedDebouncedTransportTypes.length > 0 ? sortedDebouncedTransportTypes : undefined,
     }
 
     if (paginationState.fromTime) {
@@ -193,16 +208,19 @@ export function DeparturesPage() {
     return baseParams
   }, [stationId, paginationState, sortedDebouncedTransportTypes])
 
-  const { data: apiResponse, isLoading, error } = useDepartures(
-    departuresParams,
-    { enabled: !!stationId, live: paginationState.live }
-  )
+  const {
+    data: apiResponse,
+    isLoading,
+    error,
+  } = useDepartures(departuresParams, { enabled: !!stationId, live: paginationState.live })
 
   const { station, departures } = apiResponse?.data || {}
 
   const toggleTransportType = (transportType: TransportType) => {
-    setSelectedTransportTypes((prev) =>
-      prev.includes(transportType) ? prev.filter((t) => t !== transportType) : [...prev, transportType]
+    setSelectedTransportTypes(prev =>
+      prev.includes(transportType)
+        ? prev.filter(t => t !== transportType)
+        : [...prev, transportType]
     )
   }
 
@@ -295,16 +313,19 @@ export function DeparturesPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                paginationState.live
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-              }`}>
+              <div
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  paginationState.live
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                }`}
+              >
                 {paginationState.live ? '🟢 Live' : '⏸️ Manual'}
               </div>
               {selectedTransportTypes.length > 0 && (
                 <div className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
-                  {selectedTransportTypes.length} filter{selectedTransportTypes.length !== 1 ? 's' : ''}
+                  {selectedTransportTypes.length} filter
+                  {selectedTransportTypes.length !== 1 ? 's' : ''}
                 </div>
               )}
             </div>
@@ -332,7 +353,7 @@ export function DeparturesPage() {
               <div>
                 <h4 className="text-sm font-medium text-foreground mb-2">Transport Types</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
-                  {ALL_TRANSPORT_TYPES.map((type) => (
+                  {ALL_TRANSPORT_TYPES.map(type => (
                     <button
                       key={type}
                       onClick={() => toggleTransportType(type)}
@@ -398,7 +419,7 @@ export function DeparturesPage() {
                 <label className="block text-xs font-medium text-foreground mb-1">Results</label>
                 <select
                   value={paginationState.pageSize}
-                  onChange={(e) => updatePaginationState({ pageSize: parseInt(e.target.value, 10) })}
+                  onChange={e => updatePaginationState({ pageSize: parseInt(e.target.value, 10) })}
                   className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
                 >
                   <option value={10}>10</option>
@@ -413,7 +434,9 @@ export function DeparturesPage() {
                 <label className="block text-xs font-medium text-foreground mb-1">Step</label>
                 <select
                   value={paginationState.pageStepMinutes}
-                  onChange={(e) => updatePaginationState({ pageStepMinutes: parseInt(e.target.value, 10) })}
+                  onChange={e =>
+                    updatePaginationState({ pageStepMinutes: parseInt(e.target.value, 10) })
+                  }
                   className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
                 >
                   <option value={15}>15m</option>
@@ -428,7 +451,7 @@ export function DeparturesPage() {
                 <input
                   type="datetime-local"
                   value={toDateTimeLocalValue(paginationState.fromTime)}
-                  onChange={(e) => {
+                  onChange={e => {
                     if (e.target.value) {
                       const nextIso = fromDateTimeLocalValue(e.target.value)
                       if (!nextIso) return

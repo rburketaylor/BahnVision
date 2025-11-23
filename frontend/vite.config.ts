@@ -21,11 +21,13 @@ export default defineConfig({
           // Map related libraries (large, rarely used)
           'map-vendor': ['leaflet', 'react-leaflet'],
           // Error tracking
-          'monitoring': ['@sentry/react'],
+          monitoring: ['@sentry/react'],
         },
         // Optimize chunk naming for better caching
-        chunkFileNames: (chunkInfo) => {
-          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').pop() : 'chunk'
+        chunkFileNames: chunkInfo => {
+          const facadeModuleId = chunkInfo.facadeModuleId
+            ? chunkInfo.facadeModuleId.split('/').pop()
+            : 'chunk'
           return `assets/${facadeModuleId}-[hash].js`
         },
       },

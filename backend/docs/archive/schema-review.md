@@ -1,5 +1,7 @@
 # Schema Review - MS1-T1
 
+> Status: Historical. Superseded by the canonical spec in `docs/tech-spec.md`.
+
 **Date:** 2025-10-28 (updated 2025-10-29)
 **Reviewer:** Claude Code
 **Purpose:** Compare implemented SQLAlchemy models against tech-spec.md requirements, document decisions for migration implementation, and record follow-up adjustments.

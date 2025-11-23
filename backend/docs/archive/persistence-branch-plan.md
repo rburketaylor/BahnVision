@@ -1,5 +1,7 @@
 # Persistence Branch Plan
 
+> Status: Historical. Superseded by the canonical spec in `docs/tech-spec.md`.
+
 This plan outlines the work for integrating the existing async SQLAlchemy models and repositories into API flows with safe latency, tracked migrations, and test coverage.
 
 ## Branch
@@ -43,4 +45,3 @@ This plan outlines the work for integrating the existing async SQLAlchemy models
 - Create branch: `git checkout -b feat/persistence-integration`
 - Local migrate: `cd backend && alembic upgrade head`
 - Rollback smoke: `alembic downgrade -1 && alembic upgrade head`
-

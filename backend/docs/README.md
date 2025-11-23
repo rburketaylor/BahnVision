@@ -1,11 +1,9 @@
 # BahnVision Docs Overview
 
-This directory centralises project documentation so engineering, product, and ops references stay aligned.
+This directory centralises backend documentation. Start with the canonical tech spec in `docs/tech-spec.md`.
 
-- `architecture/` – technical specifications, schema reviews, and diagrams describing the FastAPI backend.
-- `product/` – product requirements, personas, and scope/vision material for the BahnVision experience.
-- `operations/` – (reserved) deployment guides, alerting playbooks, and runbooks as they are produced.
-- `archive/` – historical documents kept for context (e.g. the original AI-first design vision and legacy TODO lists).
- - `roadmap/` – milestones, task tracking, and branch plans.
+- `archive/` — historical backend docs (design doc, persistence branch plan, legacy tech spec). Use for context only.
+
+No live architecture/product/operations subfolders live here today; add new backend-specific docs alongside this README and cross-link from `docs/tech-spec.md` when created.
 
 Each subdirectory should own its README or index as content grows; cross-link updates belong in PR descriptions when docs move.

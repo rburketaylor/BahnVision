@@ -17,11 +17,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import our models and get the metadata
-from app.core.database import Base
-from app.persistence import models  # noqa: F401 - Import to register models
+from app.core.database import Base  # noqa: E402
+from app.persistence import models  # noqa: F401, E402 - Import to register models
 
 # Import settings to get database URL
-from app.core.config import get_settings
+from app.core.config import get_settings  # noqa: E402
 
 settings = get_settings()
 

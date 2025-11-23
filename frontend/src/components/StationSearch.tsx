@@ -3,7 +3,15 @@
  * Accessible autocomplete component for MVG stations.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ChangeEvent } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ChangeEvent,
+} from 'react'
 import { useStationSearch } from '../hooks/useStationSearch'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Station } from '../types/api'
@@ -43,19 +51,20 @@ export function StationSearch({
   const debouncedQuery = useDebouncedValue(trimmedQuery, debounceMs)
   const isEnabled = debouncedQuery.length > 0
 
-  const {
-    data,
-    isFetching,
-    isLoading,
-    error,
-    refetch,
-  } = useStationSearch({ query: debouncedQuery, limit }, isEnabled)
+  const { data, isFetching, isLoading, error, refetch } = useStationSearch(
+    { query: debouncedQuery, limit },
+    isEnabled
+  )
 
   const results = useMemo(() => data?.data.results ?? [], [data])
   const apiError = error instanceof ApiError ? error : null
   const hasResults = results.length > 0
   const showNoResults =
-    isEnabled && !hasResults && !isLoading && !isFetching && (!apiError || apiError.statusCode === 404)
+    isEnabled &&
+    !hasResults &&
+    !isLoading &&
+    !isFetching &&
+    (!apiError || apiError.statusCode === 404)
   const showError = Boolean(apiError && apiError.statusCode !== 404)
   const isDropdownVisible = isOpen && (hasResults || showNoResults || showError || isFetching)
   const isInitialLoading = isLoading || (isFetching && !hasResults)
@@ -199,22 +208,22 @@ export function StationSearch({
               : undefined
           }
           className={`w-full rounded-lg border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 transition-all ${
-              showEnhancedLoading
-                ? 'border-blue-300 bg-blue-50 text-gray-900 focus:border-blue-500 focus:ring-blue-500/20'
-                : 'border-gray-300 bg-white text-gray-900 focus:border-primary focus:ring-primary/40'
-            }`}
+            showEnhancedLoading
+              ? 'border-blue-300 bg-blue-50 text-gray-900 focus:border-blue-500 focus:ring-blue-500/20'
+              : 'border-gray-300 bg-white text-gray-900 focus:border-primary focus:ring-primary/40'
+          }`}
         />
         {showEnhancedLoading && (
           <div className="absolute inset-y-0 right-3 flex items-center">
             <div className="flex items-center gap-2 pr-2">
-              <span className="text-xs text-blue-600 font-medium animate-pulse">
-                Searching...
-              </span>
-              <div className={`h-5 w-5 animate-spin rounded-full border-2 ${
-                hasBeenLoadingTooLong
-                  ? 'border-orange-300 border-t-orange-600'
-                  : 'border-blue-300 border-t-blue-600'
-              }`} />
+              <span className="text-xs text-blue-600 font-medium animate-pulse">Searching...</span>
+              <div
+                className={`h-5 w-5 animate-spin rounded-full border-2 ${
+                  hasBeenLoadingTooLong
+                    ? 'border-orange-300 border-t-orange-600'
+                    : 'border-blue-300 border-t-blue-600'
+                }`}
+              />
             </div>
           </div>
         )}
@@ -240,7 +249,8 @@ export function StationSearch({
           )}
 
           {/* Regular results */}
-          {!showEnhancedLoading && hasResults &&
+          {!showEnhancedLoading &&
+            hasResults &&
             results.map((station, index) => (
               <StationSearchResult
                 key={station.id}
@@ -265,10 +275,12 @@ export function StationSearch({
               {isTimeoutError ? (
                 <>
                   <div className="mb-2">
-                    <strong>Search timed out.</strong> The station search is taking longer than expected.
+                    <strong>Search timed out.</strong> The station search is taking longer than
+                    expected.
                   </div>
                   <div className="mb-2 p-2 bg-yellow-50 rounded border border-yellow-200 text-xs">
-                    <strong>This sometimes happens on first searches</strong> when the backend is loading data from external services. Please try again.
+                    <strong>This sometimes happens on first searches</strong> when the backend is
+                    loading data from external services. Please try again.
                   </div>
                   <button
                     type="button"
@@ -281,7 +293,8 @@ export function StationSearch({
               ) : (
                 <>
                   <div className="mb-2">
-                    <strong>Unable to load stations.</strong> Please check your connection and try again.
+                    <strong>Unable to load stations.</strong> Please check your connection and try
+                    again.
                   </div>
                   <button
                     type="button"

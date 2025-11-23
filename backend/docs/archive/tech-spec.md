@@ -1,5 +1,7 @@
 # BahnVision Backend Technical Specification
 
+> Status: Historical. Superseded by the canonical spec in `docs/tech-spec.md`.
+
 ## Overview
 - Deliver a production-ready FastAPI backend that serves MVG departures, station search, route planning, health, and Prometheus metrics with predictable latency and high cache efficiency.
 - Persist departures, stations, weather context, and ingestion metadata so historical insights and Phase 2 predictive work can start without rework.

@@ -37,7 +37,9 @@ export function ThemeProvider({ children, defaultTheme = 'system' }: ThemeProvid
   useEffect(() => {
     const resolveTheme = () => {
       if (theme === 'system') {
-        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
         return systemTheme
       }
       return theme
@@ -97,6 +99,7 @@ export function ThemeProvider({ children, defaultTheme = 'system' }: ThemeProvid
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
   const context = useContext(ThemeContext)
   if (context === undefined) {

@@ -9,9 +9,14 @@ from app.core.config import Settings
 
 
 def test_cors_parsing_accepts_comma_separated():
-    settings = Settings(CORS_ALLOW_ORIGINS="https://app.example.com, http://localhost:9000")
+    settings = Settings(
+        CORS_ALLOW_ORIGINS="https://app.example.com, http://localhost:9000"
+    )
 
-    assert settings.cors_allow_origins == ["https://app.example.com", "http://localhost:9000"]
+    assert settings.cors_allow_origins == [
+        "https://app.example.com",
+        "http://localhost:9000",
+    ]
 
 
 def test_cors_parsing_rejects_wildcard():

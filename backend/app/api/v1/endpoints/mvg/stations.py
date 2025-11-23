@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import station_search_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import get_client
-from app.api.v1.shared.caching import CacheManager
+from app.api.v1.shared.cache_manager import CacheManager
 from app.api.v1.shared.protocols import (
     StationListRefreshProtocol,
     StationSearchRefreshProtocol,

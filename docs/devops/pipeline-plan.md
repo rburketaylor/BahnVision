@@ -362,7 +362,7 @@ Secrets: HashiCorp Vault, Kubernetes Secrets
 
 ## References
 
-- [Backend Technical Specification](../../backend/docs/architecture/tech-spec.md)
+- [Backend Technical Specification](../tech-spec.md)
 - [Product Requirements Document](../../backend/docs/product/prd.md)
 - [Current GitHub Actions Workflows](../../.github/workflows/)
 - [Project Configuration](../../CLAUDE.md)

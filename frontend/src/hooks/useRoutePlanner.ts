@@ -15,13 +15,7 @@ interface UseRoutePlannerParams {
 export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParams = {}) {
   const queryClient = useQueryClient()
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    error,
-    refetch,
-  } = useQuery({
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ['route-plan', params],
     queryFn: () => {
       if (!params) {
@@ -33,7 +27,12 @@ export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParam
     staleTime: 1000 * 60 * 2, // 2 minutes
     retry: (failureCount, error) => {
       // Don't retry on validation errors (4xx)
-      if ('statusCode' in error && typeof error.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 500) {
+      if (
+        'statusCode' in error &&
+        typeof error.statusCode === 'number' &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500
+      ) {
         return false
       }
       return failureCount < 2

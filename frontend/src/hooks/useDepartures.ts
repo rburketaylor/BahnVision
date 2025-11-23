@@ -24,16 +24,14 @@ export function useDepartures(params: DeparturesParams, options: UseDeparturesOp
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     // Auto-refresh configuration based on live mode
-    ...(
-      live
-        ? {
-            refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds in live mode
-            staleTime: 30 * 1000,       // Consider data stale after 30 seconds
-          }
-        : {
-            refetchInterval: false,     // No auto-refresh in manual mode
-            staleTime: 0,               // Consider data immediately stale for manual refreshes
-          }
-    ),
+    ...(live
+      ? {
+          refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds in live mode
+          staleTime: 30 * 1000, // Consider data stale after 30 seconds
+        }
+      : {
+          refetchInterval: false, // No auto-refresh in manual mode
+          staleTime: 0, // Consider data immediately stale for manual refreshes
+        }),
   })
 }

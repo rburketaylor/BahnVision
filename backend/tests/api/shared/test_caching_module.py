@@ -8,15 +8,16 @@ import pytest
 from fastapi import BackgroundTasks, HTTPException, Response
 from pydantic import BaseModel
 
-import app.api.v1.shared.caching as caching
-from app.api.v1.shared.caching import (
-    CacheManager,
-    CacheRefreshProtocol,
+import app.api.v1.shared.cache_flow as cache_flow
+import app.api.v1.shared.cache_manager as cache_manager_module
+from app.api.v1.shared.cache_flow import (
     execute_cache_refresh,
     handle_cache_errors,
     handle_cache_lookup,
 )
-from app.services.mvg_client import MVGServiceError, StationNotFoundError
+from app.api.v1.shared.cache_manager import CacheManager
+from app.api.v1.shared.cache_protocols import CacheRefreshProtocol
+from app.services.mvg_errors import MVGServiceError, StationNotFoundError
 
 
 class SampleModel(BaseModel):
@@ -103,7 +104,9 @@ class DummyProtocol(CacheRefreshProtocol[SampleModel]):
             cache_key,
             data.model_dump(),
             ttl_seconds=getattr(settings, f"{self.cache_name()}_cache_ttl_seconds", 60),
-            stale_ttl_seconds=getattr(settings, f"{self.cache_name()}_cache_stale_ttl_seconds", 120),
+            stale_ttl_seconds=getattr(
+                settings, f"{self.cache_name()}_cache_stale_ttl_seconds", 120
+            ),
         )
 
     def cache_name(self) -> str:
@@ -139,7 +142,7 @@ def cache_events(monkeypatch):
     def fake_record(cache_name: str, event: str) -> None:
         events.append((cache_name, event))
 
-    monkeypatch.setattr(caching, "record_cache_event", fake_record)
+    monkeypatch.setattr(cache_flow, "record_cache_event", fake_record)
     return events
 
 
@@ -150,7 +153,7 @@ def refresh_observations(monkeypatch):
     def fake_observe(cache_name: str, duration: float) -> None:
         calls.append((cache_name, duration))
 
-    monkeypatch.setattr(caching, "observe_cache_refresh", fake_observe)
+    monkeypatch.setattr(cache_flow, "observe_cache_refresh", fake_observe)
     return calls
 
 
@@ -201,7 +204,9 @@ async def test_handle_cache_lookup_not_found_marker_raises(fake_cache, cache_eve
 
 
 @pytest.mark.asyncio
-async def test_handle_cache_lookup_returns_stale_and_schedules_refresh(fake_cache, cache_events):
+async def test_handle_cache_lookup_returns_stale_and_schedules_refresh(
+    fake_cache, cache_events
+):
     fake_cache.stale_values["cache-key"] = {"value": 3}
     response = Response()
     background = BackgroundTasks()
@@ -251,7 +256,9 @@ async def test_handle_cache_errors_timeout_returns_stale(fake_cache, cache_event
 
 
 @pytest.mark.asyncio
-async def test_handle_cache_errors_timeout_without_stale_raises(fake_cache, cache_events):
+async def test_handle_cache_errors_timeout_without_stale_raises(
+    fake_cache, cache_events
+):
     with pytest.raises(HTTPException) as exc_info:
         await handle_cache_errors(
             cache=fake_cache,
@@ -301,7 +308,9 @@ async def test_handle_cache_errors_not_found_raises(fake_cache, cache_events):
 
 
 @pytest.mark.asyncio
-async def test_execute_cache_refresh_uses_cached_payload(fake_cache, dummy_settings, cache_events):
+async def test_execute_cache_refresh_uses_cached_payload(
+    fake_cache, dummy_settings, cache_events
+):
     fake_cache.values["cache-key"] = {"value": 11}
     protocol = DummyProtocol()
 
@@ -318,7 +327,9 @@ async def test_execute_cache_refresh_uses_cached_payload(fake_cache, dummy_setti
 
 
 @pytest.mark.asyncio
-async def test_execute_cache_refresh_records_not_found_marker(fake_cache, dummy_settings, cache_events):
+async def test_execute_cache_refresh_records_not_found_marker(
+    fake_cache, dummy_settings, cache_events
+):
     protocol = DummyProtocol()
     protocol.fetch_exception = StationNotFoundError("no station")
 
@@ -330,8 +341,14 @@ async def test_execute_cache_refresh_records_not_found_marker(fake_cache, dummy_
             settings=dummy_settings,
         )
 
-    assert fake_cache.set_calls[-1]["value"] == {"__status": "not_found", "detail": "no station"}
-    assert fake_cache.set_calls[-1]["ttl_seconds"] == dummy_settings.valkey_cache_ttl_not_found_seconds
+    assert fake_cache.set_calls[-1]["value"] == {
+        "__status": "not_found",
+        "detail": "no station",
+    }
+    assert (
+        fake_cache.set_calls[-1]["ttl_seconds"]
+        == dummy_settings.valkey_cache_ttl_not_found_seconds
+    )
     assert cache_events[-1] == ("mvg_departures", "refresh_not_found")
 
 
@@ -361,7 +378,9 @@ async def test_execute_cache_refresh_stores_data_and_records_metrics(
 
 
 @pytest.mark.asyncio
-async def test_execute_cache_refresh_propagates_mvg_errors(fake_cache, dummy_settings, cache_events):
+async def test_execute_cache_refresh_propagates_mvg_errors(
+    fake_cache, dummy_settings, cache_events
+):
     protocol = DummyProtocol()
     protocol.fetch_exception = MVGServiceError("boom")
 
@@ -385,7 +404,9 @@ async def test_cache_manager_refresh_then_hit(
 ):
     protocol = DummyProtocol()
     protocol.fetch_result = SampleModel(value=9)
-    manager = CacheManager(protocol=protocol, cache=fake_cache, cache_name="mvg_departures")
+    manager = CacheManager(
+        protocol=protocol, cache=fake_cache, cache_name="mvg_departures"
+    )
 
     response = Response()
     background = BackgroundTasks()
@@ -422,14 +443,16 @@ async def test_cache_manager_returns_stale_when_refresh_fails(
     monkeypatch,
 ):
     protocol = DummyProtocol()
-    manager = CacheManager(protocol=protocol, cache=fake_cache, cache_name="mvg_departures")
+    manager = CacheManager(
+        protocol=protocol, cache=fake_cache, cache_name="mvg_departures"
+    )
     fake_cache.stale_values["cache-key"] = {"value": 4}
     fake_cache.stale_read_results = [None]
 
     async def failing_refresh(**kwargs: Any):
         raise MVGServiceError("unavailable")
 
-    monkeypatch.setattr(caching, "execute_cache_refresh", failing_refresh)
+    monkeypatch.setattr(cache_manager_module, "execute_cache_refresh", failing_refresh)
 
     response = Response()
     background = BackgroundTasks()

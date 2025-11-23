@@ -1,4 +1,6 @@
 # Product Requirements Document (PRD)
+
+> Status: Historical. Superseded by the canonical spec in `docs/tech-spec.md`.
 ## 1. Problem & Goals
 - Munich riders and visitors lack a single real-time view of MVG departures, delay risk, and alternate routes; the BahnVision vision targets this gap.
 - The backend already brokers MVG departures, station search, route planning, and metrics, but reliability must be productized to power the dashboard frontend.

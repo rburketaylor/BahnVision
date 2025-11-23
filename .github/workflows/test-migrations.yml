@@ -25,13 +25,13 @@ jobs:
           POSTGRES_USER: bahnvision
           POSTGRES_PASSWORD: bahnvision
           POSTGRES_DB: bahnvision
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
       - name: Checkout code
@@ -72,23 +72,23 @@ jobs:
           POSTGRES_USER: bahnvision
           POSTGRES_PASSWORD: bahnvision
           POSTGRES_DB: bahnvision
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 5432:5432
 
       valkey:
         image: valkey/valkey:latest
+        ports:
+          - 6379:6379
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 6379:6379
 
     steps:
       - name: Checkout code

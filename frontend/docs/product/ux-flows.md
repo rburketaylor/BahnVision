@@ -4,6 +4,8 @@
 - **Daily commuter**: quickly checks departures and alternate routes on mobile.
 - **Operations analyst**: desktop user monitoring cache freshness, metrics, and disruptions.
 
+> Note: Current UI covers station search, departures, planner, and insights. Map overlays and advanced analytics mentioned below are planned but not yet implemented.
+
 ## Core Journeys
 
 ### 1. Station Search → Departures Board
@@ -33,14 +35,14 @@
     |-- optional times --> datetime pickers (mutually exclusive)
     '-- transport filters --> multi-select chips
 
-Submit --> call tanstack mutation --> render itineraries list + map overlay
+Submit --> call tanstack mutation --> render itineraries list (map overlay planned)
 ```
 - API: `GET /api/v1/mvg/routes/plan` with origin/destination + either `departure_time` or `arrival_time`.
 - Error states: show inline error if both times set; 404 with copy “No MVG routes available…”; propagate backend detail string.
 - Display: vertical itinerary cards with summary (duration, transfers) and collapsible leg details; highlight legs on map.
 
 ### 4. System Health & Metrics Peek
-- Sidebar badge uses `GET /api/v1/health` on load and every 60 s; green/amber/red indicator with uptime.
+- Sidebar badge uses `GET /api/v1/health` on load and every 60 s; green/amber/red indicator with uptime (uptime/version pending backend support).
 - Analyst view links to `/metrics` download to feed Grafana; provide instructions to copy endpoint for Prometheus scrape (no direct visualization yet).
 
 ### 5. Weather Overlay (Phase 2 placeholder)
