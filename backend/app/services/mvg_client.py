@@ -44,9 +44,7 @@ __all__ = [
     "TransportType",
 ]
 
-# Re-export MvgApiError for convenience
-from mvg import MvgApiError  # noqa: E402, F401
-from mvg import TransportType  # noqa: E402, F401
+# Re-export MvgApiError for convenience - already imported above
 
 
 class MVGClient:

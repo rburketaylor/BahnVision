@@ -66,7 +66,8 @@ class OpenTelemetryConfig:
 def _create_redis_alias(env_name: str) -> AliasChoices:
     """Create AliasChoices for Valkey/Redis compatibility."""
     redis_alias = env_name.replace("VALKEY_", "REDIS_")
-    return AliasChoices(env_name, redis_alias)
+    # Prefer the Redis alias so legacy REDIS_* env vars override VALKEY_* defaults
+    return AliasChoices(redis_alias, env_name)
 
 
 def _create_field_with_default(

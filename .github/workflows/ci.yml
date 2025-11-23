@@ -243,6 +243,7 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Upload test results
+      if: ${{ !contains(env.ACT, 'true') }}
       uses: actions/upload-artifact@v4
       with:
         name: backend-test-results
