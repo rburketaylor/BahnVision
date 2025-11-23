@@ -1,11 +1,14 @@
 # BahnVision Frontend Delivery Plan
 
+> Status: In progress. Core flows (station search, departures, planner, insights) are shipped; this plan tracks remaining work to polish the MVP and add observability.
+
 ## Status At A Glance
-- Phase 0 foundation is complete: React 19 + TypeScript + Vite project, Tailwind styling, TanStack Query hooks, typed API client, tests, and build tooling are ready to go (see `frontend/docs/architecture/implementation-summary.md`).
-- Backend endpoints for health, station search, departures, route planning, and metrics are live and typed (`frontend/docs/architecture/api-integration.md`).
+- Phase 0 foundation is complete: React 19 + TypeScript + Vite, Tailwind styling, TanStack Query hooks, typed API client, and build tooling are in the repo.
+- Backend endpoints for health, station search, departures, route planning, and metrics are live and typed.
+- Core UI exists for station search → departures, planner, and insights; map overlays, analytics, and richer polish are pending.
 - Goal: ship the MVP (station search, departures, planner, health widget) by end of Q1 2026.
 
-Open setup item: confirm the `QueryClientProvider` wraps the app in `src/main.tsx`. Add it before implementing UI so hooks share caching behaviour.
+Open setup item: none — `QueryClientProvider` already wraps the app in `src/main.tsx`.
 
 ## Phase 1 – MVP Workstreams
 Everything below is scoped so a single engineer or automation agent can pick up a card and deliver it independently. Flows reference deeper context across the `frontend/docs/` tree.

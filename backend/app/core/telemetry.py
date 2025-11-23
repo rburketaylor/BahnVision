@@ -43,11 +43,13 @@ def configure_opentelemetry(
         set_global_textmap(B3MultiFormat())
 
         # Create resource with service metadata
-        resource = Resource.create({
-            "service.name": service_name,
-            "service.version": service_version,
-            "service.namespace": "bahnvision",
-        })
+        resource = Resource.create(
+            {
+                "service.name": service_name,
+                "service.version": service_version,
+                "service.namespace": "bahnvision",
+            }
+        )
 
         # Configure tracer provider
         tracer_provider = TracerProvider(resource=resource)

@@ -65,9 +65,9 @@ See `docs/runtime-configuration.md` for cross-project configuration details.
 - **Routing:** React Router 7
 - **State Management:** TanStack Query 5 (server state) + Zustand 5 (UI state)
 - **Styling:** Tailwind CSS 4 + Headless UI 2
-- **Maps:** React-Leaflet 5 + Leaflet 1.9
+- **Maps:** React-Leaflet 5 + Leaflet 1.9 (planned usage; components not yet live)
 - **Testing:** Vitest 4 + React Testing Library + Playwright + MSW 2
-- **Error Tracking:** Sentry 10
+- **Error Tracking:** Sentry 10 (planned; SDK not yet wired)
 
 ## Project Structure
 
@@ -112,12 +112,12 @@ docker run -p 3000:80 \
 The frontend consumes REST endpoints from the BahnVision backend:
 
 - `GET /api/v1/health` — System health status
-- `GET /api/v1/mvg/stations/search?q={query}` — Station autocomplete
+- `GET /api/v1/mvg/stations/search?query={query}` — Station autocomplete
 - `GET /api/v1/mvg/departures?station={id}` — Live departures board
 - `GET /api/v1/mvg/routes/plan?origin={id}&destination={id}` — Route planning
 - `GET /metrics` — Prometheus metrics (for analysts)
 
-See [docs/architecture/api-integration.md](./docs/architecture/api-integration.md) for complete API documentation.
+See [docs/archive/api-integration.md](./docs/archive/api-integration.md) for complete API documentation.
 
 ## Testing Strategy
 
@@ -147,11 +147,11 @@ See [docs/operations/testing.md](./docs/operations/testing.md) for the complete 
 
 ## Documentation
 
-- **[docs/architecture/implementation-summary.md](./docs/architecture/implementation-summary.md)** — Complete Phase 0 implementation details
+- **[docs/archive/implementation-summary.md](./docs/archive/implementation-summary.md)** — Complete Phase 0 implementation details
 - **[docs/](./docs/)** — Organised documentation hub:
-  - [architecture/overview.md](./docs/architecture/overview.md) — Tech stack and architectural patterns
-  - [architecture/api-integration.md](./docs/architecture/api-integration.md) — REST API contract details
-  - [architecture/adr.md](./docs/architecture/adr.md) — Architecture Decision Records
+  - [archive/overview.md](./docs/archive/overview.md) — Tech stack and architectural patterns
+  - [archive/api-integration.md](./docs/archive/api-integration.md) — REST API contract details
+  - [archive/adr.md](./docs/archive/adr.md) — Architecture Decision Records
   - [product/ux-flows.md](./docs/product/ux-flows.md) — User journeys and UI states
   - [operations/testing.md](./docs/operations/testing.md) — Testing strategy and tools
   - [operations/observability.md](./docs/operations/observability.md) — Telemetry and error tracking
@@ -159,7 +159,7 @@ See [docs/operations/testing.md](./docs/operations/testing.md) for the complete 
   - [roadmap/delivery-plan.md](./docs/roadmap/delivery-plan.md) — Detailed workstreams and checklists
   - [roadmap/unified-implementation-plan.md](./docs/roadmap/unified-implementation-plan.md) — Sequential, automation-friendly delivery steps
   - Backend docs hub: `backend/docs/README.md`
-  - Backend technical spec: `backend/docs/architecture/tech-spec.md`
+  - Backend technical spec: `docs/tech-spec.md`
 
 ## Contributing
 

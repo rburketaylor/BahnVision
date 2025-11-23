@@ -59,7 +59,9 @@ async def db_session():
     await engine.dispose()
 
 
-def _build_station_payload(idx: int, *, name: str | None = None, place: str = "Munich") -> StationPayload:
+def _build_station_payload(
+    idx: int, *, name: str | None = None, place: str = "Munich"
+) -> StationPayload:
     return StationPayload(
         station_id=f"de:09162:{idx}",
         name=name or f"Station {idx}",

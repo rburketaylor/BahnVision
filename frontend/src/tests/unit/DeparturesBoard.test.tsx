@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, it, expect } from 'vitest'
 import { DeparturesBoard } from '../../components/DeparturesBoard'
 import type { Departure } from '../../types/api'
 
@@ -21,12 +22,6 @@ const buildDeparture = (overrides: Partial<Departure>): Departure => ({
   ...baseDeparture,
   ...overrides,
 })
-
-const getRowIndex = (label: string) => {
-  const row = screen.getByText(label).closest('tr')
-  const tbody = row?.parentElement
-  return row && tbody ? Array.from(tbody.children).indexOf(row) : -1
-}
 
 describe('DeparturesBoard', () => {
   it('orders departures by effective realtime/planned timestamps', () => {
@@ -53,44 +48,30 @@ describe('DeparturesBoard', () => {
 
     render(<DeparturesBoard departures={departures} />)
 
-    expect(getRowIndex('Early Planned')).toBeLessThan(getRowIndex('Earlier Real'))
-    expect(getRowIndex('Earlier Real')).toBeLessThan(getRowIndex('Later Train'))
+    const destinationsInOrder = screen
+      .getAllByText(/Later Train|Early Planned|Earlier Real/)
+      .map(element => element.textContent)
+
+    expect(destinationsInOrder).toEqual(['Early Planned', 'Earlier Real', 'Later Train'])
   })
 
-  it('renders hour-group headers derived from the first departure in each slot', () => {
-    const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(function (this: Date) {
-      return `Group-${this.getHours().toString().padStart(2, '0')}`
-    })
-
+  it('toggles between 24h and 12h display', async () => {
+    const user = userEvent.setup()
     const departures: Departure[] = [
       buildDeparture({
-        destination: 'Morning Tram',
-        planned_time: '2024-01-01T09:05:00Z',
-        realtime_time: '2024-01-01T09:10:00Z',
-      }),
-      buildDeparture({
-        destination: 'Late Morning Bus',
-        planned_time: '2024-01-01T11:15:00Z',
-        realtime_time: '2024-01-01T11:05:00Z',
+        destination: 'Afternoon Train',
+        planned_time: '2024-01-01T13:00:00Z',
+        realtime_time: '2024-01-01T13:00:00Z',
       }),
     ]
 
-    render(<DeparturesBoard departures={departures} />)
+    render(<DeparturesBoard departures={departures} use24Hour={true} />)
 
-    const headers = screen.getAllByText(/^Group-/)
-    const expectedOrder = departures
-      .reduce<string[]>((acc, departure) => {
-        const date = new Date(departure.realtime_time || departure.planned_time || '')
-        const key = `Group-${date.getHours().toString().padStart(2, '0')}`
-        if (!acc.includes(key)) {
-          acc.push(key)
-        }
-        return acc
-      }, [])
+    const toggleButton = screen.getByText('24').closest('button')
+    expect(toggleButton).toBeInTheDocument()
 
-    expect(headers.map(cell => cell.textContent)).toEqual(expectedOrder)
-
-    spy.mockRestore()
+    await user.click(toggleButton!)
+    expect(screen.getByText('12')).toBeInTheDocument()
   })
 
   it('highlights cancelled departures with the warning background', () => {
@@ -106,14 +87,13 @@ describe('DeparturesBoard', () => {
 
     render(<DeparturesBoard departures={departures} />)
 
-    const cancelledRow = screen.getByText('Cancelled Service').closest('tr')
-    expect(cancelledRow?.className).toContain('bg-red-900/50')
+    const cancelledCard = screen.getByText('Cancelled Service').closest('[class*="bg-"]')
+    expect(cancelledCard?.className).toContain('bg-red-')
   })
 
   it('shows empty-state message when no departures are available', () => {
     render(<DeparturesBoard departures={[]} />)
-    expect(
-      screen.getByText('No departures found for the selected time and filters.')
-    ).toBeInTheDocument()
+    expect(screen.getByText('No departures found')).toBeInTheDocument()
+    expect(screen.getByText('Try adjusting your filters or time range')).toBeInTheDocument()
   })
 })

@@ -17,8 +17,7 @@ export const config: Config = {
   sentryDsn: import.meta.env.VITE_SENTRY_DSN,
   enableDebugLogs: import.meta.env.VITE_ENABLE_DEBUG_LOGS === 'true',
   mapTileUrl:
-    import.meta.env.VITE_MAP_TILE_URL ||
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    import.meta.env.VITE_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   mapAttribution:
     import.meta.env.VITE_MAP_ATTRIBUTION ||
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',

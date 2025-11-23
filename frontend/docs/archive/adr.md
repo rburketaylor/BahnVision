@@ -4,7 +4,7 @@
 - **Date**: 29 October 2025
 
 ## Context
-- Backend delivers REST endpoints under `/api/v1` with caching semantics and Prometheus metrics (`backend/docs/architecture/tech-spec.md`).
+- Backend delivers REST endpoints under `/api/v1` with caching semantics and Prometheus metrics (`docs/tech-spec.md`).
 - The product roadmap requires a responsive web client with map visualization (React/Leaflet noted in backend architecture section).
 - Team wants rapid iteration, strong TypeScript support, and alignment with existing DevOps tooling (Docker Compose, GitHub Actions).
 

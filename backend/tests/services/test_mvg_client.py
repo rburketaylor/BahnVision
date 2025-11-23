@@ -9,15 +9,23 @@ from typing import Any
 import pytest
 
 import app.services.mvg_client as mvg_client_module
+from app.services.mvg_mapping import (
+    extract_routes,
+    map_route_leg,
+    map_route_plan,
+    map_route_stop,
+)
 from app.services.mvg_client import (
     MVGClient,
     MVGServiceError,
+    MvgApiError,
+    StationNotFoundError,
+)
+from app.services.mvg_dto import (
     RouteLeg,
     RoutePlan,
     RouteStop,
     Station,
-    StationNotFoundError,
-    MvgApiError,
 )
 
 
@@ -159,7 +167,9 @@ async def test_get_departures_without_filters(monkeypatch):
 
     captured: dict[str, Any] = {}
 
-    def fake_fetch(station_id: str, limit: int, offset: int, transport_types: list[Any] | None):
+    def fake_fetch(
+        station_id: str, limit: int, offset: int, transport_types: list[Any] | None
+    ):
         captured["args"] = (station_id, limit, offset, transport_types)
         return [
             {
@@ -177,13 +187,17 @@ async def test_get_departures_without_filters(monkeypatch):
     monkeypatch.setattr(MVGClient, "_fetch_departures", staticmethod(fake_fetch))
 
     client = MVGClient()
-    result_station, departures = await client.get_departures("Marienplatz", limit=5, offset=1)
+    result_station, departures = await client.get_departures(
+        "Marienplatz", limit=5, offset=1
+    )
 
     assert result_station == station
     assert captured["args"] == ("station-1", 5, 1, None)
     assert len(departures) == 1
     assert departures[0].line == "U3"
-    assert departures[0].realtime_time == datetime.fromtimestamp(1_700_000_060, tz=timezone.utc)
+    assert departures[0].realtime_time == datetime.fromtimestamp(
+        1_700_000_060, tz=timezone.utc
+    )
 
 
 @pytest.mark.asyncio
@@ -191,7 +205,9 @@ async def test_get_departures_with_filters_merges_and_limits(monkeypatch):
     """Fan-out per transport merges results, sorts, limits, and records metrics."""
     station = Station("station-1", "Marienplatz", "München", 48.1, 11.5)
 
-    async def fake_get_station(self, query: str) -> Station:  # pragma: no cover - signature clarity
+    async def fake_get_station(
+        self, query: str
+    ) -> Station:  # pragma: no cover - signature clarity
         return station
 
     monkeypatch.setattr(MVGClient, "get_station", fake_get_station)
@@ -219,7 +235,9 @@ async def test_get_departures_with_filters_merges_and_limits(monkeypatch):
         ],
     }
 
-    def fake_fetch(station_id: str, limit: int, offset: int, transport_types: list[Any] | None):
+    def fake_fetch(
+        station_id: str, limit: int, offset: int, transport_types: list[Any] | None
+    ):
         transport_name = transport_types[0].name if transport_types else "ALL"
         return payloads[transport_name]
 
@@ -260,7 +278,9 @@ async def test_get_departures_failure_propagates(monkeypatch):
 
     monkeypatch.setattr(MVGClient, "get_station", fake_get_station)
 
-    def fake_fetch(station_id: str, limit: int, offset: int, transport_types: list[Any] | None):
+    def fake_fetch(
+        station_id: str, limit: int, offset: int, transport_types: list[Any] | None
+    ):
         transport_name = transport_types[0].name
         if transport_name == "UBAHN":
             raise MvgApiError("Request timed out")
@@ -289,7 +309,9 @@ async def test_get_departures_failure_propagates(monkeypatch):
     bus = DummyTransport(name="BUS")
 
     with pytest.raises(MVGServiceError):
-        await client.get_departures("Marienplatz", limit=5, transport_types=[ubahn, bus])
+        await client.get_departures(
+            "Marienplatz", limit=5, transport_types=[ubahn, bus]
+        )
 
     assert metrics == [("departures", "UBAHN", "timeout")]
 
@@ -309,14 +331,14 @@ def test_extract_routes_handles_multiple_payload_shapes():
         ]
     }
 
-    assert MVGClient._extract_routes(list_payload) == [{"id": "route-1"}]
-    assert MVGClient._extract_routes(dict_payload) == [{"id": "route-2"}]
-    assert MVGClient._extract_routes({"routes": [{"id": "route-3"}]}) == [{"id": "route-3"}]
-    assert MVGClient._extract_routes(None) == []
+    assert extract_routes(list_payload) == [{"id": "route-1"}]
+    assert extract_routes(dict_payload) == [{"id": "route-2"}]
+    assert extract_routes({"routes": [{"id": "route-3"}]}) == [{"id": "route-3"}]
+    assert extract_routes(None) == []
 
 
 def test_map_route_stop_handles_nested_station_fields():
-    """_map_route_stop maps nested station/line metadata and tolerates partial payloads."""
+    """map_route_stop maps nested station/line metadata and tolerates partial payloads."""
     raw_stop = {
         "station": {
             "id": "de:09162:5",
@@ -332,7 +354,7 @@ def test_map_route_stop_handles_nested_station_fields():
         "messages": ["Delayed"],
         "delayInMinutes": 2,
     }
-    stop = MVGClient._map_route_stop(raw_stop)
+    stop = map_route_stop(raw_stop)
     assert isinstance(stop, RouteStop)
     assert stop.id == "de:09162:5"
     assert stop.name == "Marienplatz"
@@ -349,12 +371,12 @@ def test_map_route_stop_handles_nested_station_fields():
         "place": "Munich",
         "plannedTime": 1_700_000_500,
     }
-    assert MVGClient._map_route_stop(minimal_stop) is not None
-    assert MVGClient._map_route_stop(None) is None
+    assert map_route_stop(minimal_stop) is not None
+    assert map_route_stop(None) is None
 
 
 def test_map_route_leg_maps_transport_metadata():
-    """_map_route_leg builds RouteLeg with direction, duration, and intermediate stops."""
+    """map_route_leg builds RouteLeg with direction, duration, and intermediate stops."""
     raw_leg = {
         "origin": {
             "stationId": "start",
@@ -380,7 +402,7 @@ def test_map_route_leg_maps_transport_metadata():
         ],
     }
 
-    leg = MVGClient._map_route_leg(raw_leg)
+    leg = map_route_leg(raw_leg)
     assert isinstance(leg, RouteLeg)
     assert leg.transport_type == "UBAHN"
     assert leg.line == "U3"
@@ -388,11 +410,11 @@ def test_map_route_leg_maps_transport_metadata():
     assert leg.duration_minutes == 5
     assert len(leg.intermediate_stops) == 1
 
-    assert MVGClient._map_route_leg({}) is None
+    assert map_route_leg({}) is None
 
 
 def test_map_route_plan_maps_duration_transfers_and_legs():
-    """_map_route_plan converts duration/transfers and nests mapped legs."""
+    """map_route_plan converts duration/transfers and nests mapped legs."""
     raw_plan = {
         "duration": {"minutes": 25},
         "changes": "2",
@@ -416,7 +438,7 @@ def test_map_route_plan_maps_duration_transfers_and_legs():
         ],
     }
 
-    plan = MVGClient._map_route_plan(raw_plan)
+    plan = map_route_plan(raw_plan)
     assert isinstance(plan, RoutePlan)
     assert plan.duration_minutes == 25
     assert plan.transfers == 2

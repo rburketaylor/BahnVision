@@ -3,9 +3,6 @@ Test cache service functionality including circuit breaker, single-flight locks,
 """
 
 import asyncio
-import json
-import time
-from typing import Any
 
 import pytest
 
@@ -39,7 +36,9 @@ class TestCacheService:
         test_value = {"stale": "data"}
 
         # Set with stale TTL
-        await cache_service.set_json(test_key, test_value, ttl_seconds=60, stale_ttl_seconds=300)
+        await cache_service.set_json(
+            test_key, test_value, ttl_seconds=60, stale_ttl_seconds=300
+        )
 
         # Verify fresh data
         fresh_result = await cache_service.get_json(test_key)
@@ -105,7 +104,9 @@ class TestCacheService:
 
         # Test single-flight context manager
         try:
-            async with cache_service.single_flight(test_key, ttl_seconds=5, wait_timeout=1.0, retry_delay=0.1):
+            async with cache_service.single_flight(
+                test_key, ttl_seconds=5, wait_timeout=1.0, retry_delay=0.1
+            ):
                 # Simulate some work
                 await asyncio.sleep(0.01)
                 # This should not raise an exception
@@ -120,7 +121,9 @@ class TestCacheService:
         test_value = {"delete": "test"}
 
         # Set up test data
-        await cache_service.set_json(test_key, test_value, ttl_seconds=60, stale_ttl_seconds=300)
+        await cache_service.set_json(
+            test_key, test_value, ttl_seconds=60, stale_ttl_seconds=300
+        )
 
         # Verify it exists
         result = await cache_service.get_json(test_key)
@@ -132,7 +135,9 @@ class TestCacheService:
         assert result is None, "Deletion without stale removal failed"
 
         # Set up again
-        await cache_service.set_json(test_key, test_value, ttl_seconds=60, stale_ttl_seconds=300)
+        await cache_service.set_json(
+            test_key, test_value, ttl_seconds=60, stale_ttl_seconds=300
+        )
 
         # Test deletion with stale removal
         await cache_service.delete(test_key, remove_stale=True)

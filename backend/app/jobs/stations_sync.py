@@ -5,7 +5,6 @@ This module provides a scheduled job that fetches all stations from the MVG API
 and stores them in the local database for fast, reliable access.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -44,11 +43,7 @@ class StationsSyncJob:
         logger.info("Starting MVG stations sync job")
         start_time = datetime.now(timezone.utc)
 
-        stats = {
-            "total": 0,
-            "upserted": 0,
-            "errors": 0
-        }
+        stats = {"total": 0, "upserted": 0, "errors": 0}
 
         try:
             # Fetch all stations from MVG API
@@ -71,7 +66,7 @@ class StationsSyncJob:
                     latitude=station.latitude,
                     longitude=station.longitude,
                     transport_modes=[],  # MVG stations don't include transport modes in basic response
-                    timezone="Europe/Berlin"  # Munich timezone
+                    timezone="Europe/Berlin",  # Munich timezone
                 )
                 for station in stations
             ]
@@ -81,14 +76,18 @@ class StationsSyncJob:
                 station_repo = StationRepository(session)
 
                 for i in range(0, len(station_payloads), self.batch_size):
-                    batch = station_payloads[i:i + self.batch_size]
+                    batch = station_payloads[i : i + self.batch_size]
 
                     try:
                         upserted_batch = await station_repo.upsert_stations(batch)
                         stats["upserted"] += len(upserted_batch)
-                        logger.info(f"Processed batch {i//self.batch_size + 1}: upserted {len(upserted_batch)} stations")
+                        logger.info(
+                            f"Processed batch {i//self.batch_size + 1}: upserted {len(upserted_batch)} stations"
+                        )
                     except Exception as e:
-                        logger.error(f"Error processing batch {i//self.batch_size + 1}: {e}")
+                        logger.error(
+                            f"Error processing batch {i//self.batch_size + 1}: {e}"
+                        )
                         stats["errors"] += 1
                         # Continue with next batch rather than failing completely
 
@@ -130,7 +129,7 @@ class StationsSyncJob:
                         }
                         for station in sample_stations[:sample_size]
                     ],
-                    "last_checked": datetime.now(timezone.utc).isoformat()
+                    "last_checked": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
             logger.error(f"Error getting sync status: {e}")
@@ -138,7 +137,7 @@ class StationsSyncJob:
                 "total_stations": 0,
                 "sample_stations": [],
                 "last_checked": datetime.now(timezone.utc).isoformat(),
-                "error": str(e)
+                "error": str(e),
             }
 
 

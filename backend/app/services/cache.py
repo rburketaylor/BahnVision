@@ -4,163 +4,15 @@ import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from functools import lru_cache, wraps
-from typing import Any, AsyncIterator, Callable, TypeVar
+from functools import lru_cache
+from typing import Any, AsyncIterator
 
 import valkey.asyncio as valkey
 
 from app.core.config import get_settings
-
-T = TypeVar("T")
-
-
-@dataclass
-class TTLConfig:
-    """Centralized TTL configuration with validation."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-
-        # Cache TTLs
-        self.valkey_cache_ttl = settings.valkey_cache_ttl_seconds
-        self.valkey_cache_ttl_not_found = settings.valkey_cache_ttl_not_found_seconds
-        self.mvg_departures_cache_ttl = settings.mvg_departures_cache_ttl_seconds
-        self.mvg_departures_cache_stale_ttl = settings.mvg_departures_cache_stale_ttl_seconds
-        self.mvg_station_search_cache_ttl = settings.mvg_station_search_cache_ttl_seconds
-        self.mvg_station_search_cache_stale_ttl = settings.mvg_station_search_cache_stale_ttl_seconds
-        self.mvg_station_list_cache_ttl = settings.mvg_station_list_cache_ttl_seconds
-        self.mvg_station_list_cache_stale_ttl = settings.mvg_station_list_cache_stale_ttl_seconds
-        self.mvg_route_cache_ttl = settings.mvg_route_cache_ttl_seconds
-        self.mvg_route_cache_stale_ttl = settings.mvg_route_cache_stale_ttl_seconds
-
-        # Single flight configuration
-        self.singleflight_lock_ttl = settings.cache_singleflight_lock_ttl_seconds
-        self.singleflight_lock_wait = settings.cache_singleflight_lock_wait_seconds
-        self.singleflight_retry_delay = settings.cache_singleflight_retry_delay_seconds
-
-        # Circuit breaker configuration
-        self.circuit_breaker_timeout = settings.cache_circuit_breaker_timeout_seconds
-
-        # Validate all TTL values
-        self._validate_ttls()
-
-    def _validate_ttls(self) -> None:
-        """Validate that all TTL values are non-negative."""
-        for attr_name, value in self.__dict__.items():
-            if 'ttl' in attr_name and isinstance(value, (int, float)):
-                if value < 0:
-                    raise ValueError(f"TTL value for {attr_name} cannot be negative: {value}")
-
-    def get_effective_ttl(self, ttl_seconds: int | None) -> int | None:
-        """Get the effective TTL, using default if none provided."""
-        if ttl_seconds is not None:
-            return ttl_seconds if ttl_seconds > 0 else None
-        return self.valkey_cache_ttl if self.valkey_cache_ttl > 0 else None
-
-    def get_effective_stale_ttl(self, stale_ttl_seconds: int | None) -> int | None:
-        """Get the effective stale TTL, using default if none provided."""
-        if stale_ttl_seconds is not None:
-            return stale_ttl_seconds if stale_ttl_seconds > 0 else None
-        return None  # No default stale TTL
-
-
-class CircuitBreaker:
-    """Circuit breaker decorator pattern."""
-
-    def __init__(self, config: TTLConfig) -> None:
-        self._config = config
-        self._open_until = 0.0
-
-    def is_open(self) -> bool:
-        """Check if the circuit breaker is currently open."""
-        return time.monotonic() < self._open_until
-
-    def open(self) -> None:
-        """Open the circuit breaker for the configured timeout."""
-        self._open_until = time.monotonic() + self._config.circuit_breaker_timeout
-
-    def close(self) -> None:
-        """Close the circuit breaker immediately."""
-        self._open_until = 0.0
-
-    def protect(self, func: Callable[T, Any]) -> Callable[T, Any]:
-        """Decorator to protect a function from circuit breaker failures."""
-        @wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            if self.is_open():
-                return None
-            try:
-                result = await func(*args, **kwargs)
-                self.close()
-                return result
-            except Exception:
-                self.open()
-                return None
-
-        @wraps(func)
-        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            if self.is_open():
-                return None
-            try:
-                result = func(*args, **kwargs)
-                self.close()
-                return result
-            except Exception:
-                self.open()
-                return None
-
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
-
-class InMemoryFallbackStore:
-    """Thread-safe in-memory fallback cache with automatic cleanup."""
-
-    def __init__(self) -> None:
-        self._store: dict[str, tuple[str, float | None]] = {}
-        self._lock = asyncio.Lock()
-
-    async def set(self, key: str, value: str, ttl_seconds: int | None) -> None:
-        """Store a value with optional TTL."""
-        expires_at = None
-        if ttl_seconds and ttl_seconds > 0:
-            expires_at = time.monotonic() + ttl_seconds
-
-        async with self._lock:
-            self._store[key] = (value, expires_at)
-
-    async def get(self, key: str) -> str | None:
-        """Retrieve a value, returning None if expired or not found."""
-        async with self._lock:
-            entry = self._store.get(key)
-            if entry is None:
-                return None
-
-            value, expires_at = entry
-
-            # Check if expired
-            if expires_at is not None and expires_at <= time.monotonic():
-                # Clean up expired entry
-                del self._store[key]
-                return None
-
-            return value
-
-    async def delete(self, key: str) -> None:
-        """Delete a value from the store."""
-        async with self._lock:
-            self._store.pop(key, None)
-
-    async def cleanup_expired(self) -> None:
-        """Remove all expired entries from the store."""
-        current_time = time.monotonic()
-        async with self._lock:
-            expired_keys = [
-                key for key, (_, expires_at) in self._store.items()
-                if expires_at is not None and expires_at <= current_time
-            ]
-            for key in expired_keys:
-                del self._store[key]
+from app.services.cache_circuit_breaker import CircuitBreaker
+from app.services.cache_fallback_store import InMemoryFallbackStore
+from app.services.cache_ttl_config import TTLConfig
 
 
 class SingleFlightLock:
@@ -271,7 +123,7 @@ class SimplifiedCacheService:
         effective_stale_ttl = self._config.get_effective_stale_ttl(stale_ttl_seconds)
 
         # Try to store in primary cache
-        wrote_to_valkey = await self._set_to_valkey(key, encoded, effective_ttl)
+        await self._set_to_valkey(key, encoded, effective_ttl)
         if effective_stale_ttl is not None:
             await self._set_to_valkey(stale_key, encoded, effective_stale_ttl)
 
@@ -279,6 +131,8 @@ class SimplifiedCacheService:
         await self._fallback_store.set(key, encoded, effective_ttl)
         if effective_stale_ttl is not None:
             await self._fallback_store.set(stale_key, encoded, effective_stale_ttl)
+        # Opportunistic cleanup to prevent unbounded growth
+        await self._fallback_store.cleanup_expired()
 
     async def delete(self, key: str, *, remove_stale: bool = False) -> None:
         """Remove a cache entry, optionally clearing the stale backup."""
@@ -298,6 +152,8 @@ class SimplifiedCacheService:
         await self._fallback_store.delete(key)
         if remove_stale:
             await self._fallback_store.delete(stale_key)
+        # Opportunistic cleanup to prevent unbounded growth
+        await self._fallback_store.cleanup_expired()
 
     @asynccontextmanager
     async def single_flight(
@@ -318,19 +174,25 @@ class SimplifiedCacheService:
             key, ttl_seconds, wait_timeout, retry_delay
         ) as acquired:
             if not acquired:
-                raise TimeoutError(f"Timed out while acquiring cache lock for key '{key}'.")
+                raise TimeoutError(
+                    f"Timed out while acquiring cache lock for key '{key}'."
+                )
             yield
 
     async def _get_from_valkey(self, key: str) -> str | None:
         """Get value from Valkey with circuit breaker protection."""
+
         @self._circuit_breaker.protect
         async def _get() -> str | None:
             return await self._client.get(key)
 
         return await _get()
 
-    async def _set_to_valkey(self, key: str, value: str, ttl_seconds: int | None) -> bool:
+    async def _set_to_valkey(
+        self, key: str, value: str, ttl_seconds: int | None
+    ) -> bool:
         """Set value in Valkey with circuit breaker protection."""
+
         @self._circuit_breaker.protect
         async def _set() -> bool:
             if ttl_seconds and ttl_seconds > 0:

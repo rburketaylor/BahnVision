@@ -50,8 +50,8 @@ echo
 echo "3. Metrics: Prometheus-compatible metrics endpoint"
 curl -s http://localhost:8000/metrics | head -20
 echo "   - Cache performance metrics"
-echo "   - API request metrics"
-echo "   - Database query metrics"
+echo "   - MVG client latency and outcome metrics"
+echo "   - Transport-type breakdown counters"
 echo
 
 read -p "Press Enter to continue to monitoring demo..."
@@ -77,6 +77,7 @@ echo "   Key metrics to explore:"
 echo "   - bahnvision_cache_events_total"
 echo "   - bahnvision_mvg_request_seconds_bucket"
 echo "   - bahnvision_mvg_requests_total"
+echo "   - bahnvision_mvg_transport_requests_total"
 echo
 
 echo "Example PromQL queries:"
@@ -94,7 +95,7 @@ open http://localhost:3001
 echo "   Login credentials: admin / admin"
 echo
 echo "   Available dashboards:"
-echo "   - BahnVision Overview: Cache hit ratios, API latency"
+echo "   - BahnVision Overview: Cache hit ratios, MVG latency"
 echo "   - System metrics: Resource utilization"
 echo "   - Custom panels: Real-time performance monitoring"
 echo
@@ -124,6 +125,8 @@ Show how OpenTelemetry tracing provides end-to-end visibility.
 echo "🔍 Distributed Tracing Demo"
 echo "==========================="
 
+echo "Note: Tracing is enabled only when OTEL is configured (use docker-compose.demo.yml which sets OTEL_ENABLED=true and Jaeger)."
+echo
 echo "1. Jaeger: Distributed tracing platform"
 echo "   Opening Jaeger UI..."
 open http://localhost:16686
@@ -137,7 +140,7 @@ echo
 # 2. Generate some traced requests
 echo "2. Generating traced requests..."
 echo "   Each request will be traced through the system:"
-echo "   - HTTP request → FastAPI → Service layer → Cache/DB"
+echo "   - HTTP request → FastAPI → Service layer → Cache/DB (when tracing is enabled)"
 echo
 
 for i in {1..5}; do
@@ -175,8 +178,8 @@ echo "🛡️  Resilience Testing Demo"
 echo "=========================="
 
 echo "This demo shows how BahnVision gracefully handles failures:"
-echo "   - Cache failures with stale data fallback"
-echo "   - Database connection issues with circuit breakers"
+echo "   - Cache failures with stale data fallback and Valkey circuit breaker"
+echo "   - Database latency impact (no circuit breaker today)"
 echo "   - Network latency and bandwidth limitations"
 echo
 
@@ -201,9 +204,7 @@ echo "   Simulating complete Valkey cache failure..."
 echo "   Testing API with cache unavailable:"
 time curl -s "http://localhost:8000/api/v1/departures?station=Hauptbahnhof&limit=5" > /dev/null
 
-echo "   ✅ Service continues with direct MVG API calls"
-echo "   ✅ Circuit breaker prevents cascading failures"
-echo "   ✅ Graceful degradation maintained"
+echo "   Expected: Service continues with direct MVG API calls; cache circuit breaker prevents cascading failures."
 echo
 
 read -p "Press Enter to simulate PostgreSQL latency..."
@@ -218,9 +219,7 @@ echo "   Adding 2-second latency to PostgreSQL connections..."
 echo "   Testing API with database latency:"
 time curl -s "http://localhost:8000/api/v1/stations/search?query=Sendlinger" > /dev/null
 
-echo "   ✅ Cache still provides fast responses"
-echo "   ✅ Database queries complete despite latency"
-echo "   ✅ User experience remains acceptable"
+echo "   Observe: Cache may still serve warm keys; DB queries may slow down when cold."
 echo
 
 read -p "Press Enter to simulate bandwidth limitations..."
@@ -235,9 +234,7 @@ echo "   Limiting network bandwidth to 1KB/s..."
 echo "   Testing API with limited bandwidth:"
 time curl -s "http://localhost:8000/api/v1/departures?station=Hauptbahnhof&limit=10" > /dev/null
 
-echo "   ✅ Requests complete despite bandwidth limits"
-echo "   ✅ Timeout handling prevents hanging connections"
-echo "   ✅ System recovers gracefully"
+echo "   Observe: Requests should complete with higher latency; verify timeout handling and recovery."
 echo
 
 # 5. Recovery demonstration

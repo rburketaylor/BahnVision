@@ -8,16 +8,25 @@ by leveraging shared caching patterns and utilities.
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import departures_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import ensure_aware_utc, get_client
-from app.api.v1.shared.caching import CacheManager
+from app.api.v1.shared.cache_manager import CacheManager
 from app.api.v1.shared.protocols import DeparturesRefreshProtocol
 from app.core.config import get_settings
 from app.models.mvg import DeparturesResponse
 from app.services.cache import CacheService, get_cache_service
-from app.services.mvg_client import MVGClient, parse_transport_types
+from app.services.mvg_client import MVGClient
+from app.services.mvg_transport import parse_transport_types
 
 router = APIRouter()
 

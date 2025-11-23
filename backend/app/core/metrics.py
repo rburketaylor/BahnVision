@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from prometheus_client import Counter, Histogram
 
 CACHE_EVENTS = Counter(
@@ -46,6 +45,10 @@ def observe_mvg_request(endpoint: str, result: str, duration_seconds: float) -> 
     MVG_REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration_seconds)
 
 
-def record_mvg_transport_request(endpoint: str, transport_type: str, result: str) -> None:
+def record_mvg_transport_request(
+    endpoint: str, transport_type: str, result: str
+) -> None:
     """Record MVG request result per transport type."""
-    MVG_TRANSPORT_REQUESTS.labels(endpoint=endpoint, transport_type=transport_type, result=result).inc()
+    MVG_TRANSPORT_REQUESTS.labels(
+        endpoint=endpoint, transport_type=transport_type, result=result
+    ).inc()
