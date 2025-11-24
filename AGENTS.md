@@ -10,7 +10,9 @@
 ## Build, Test, and Development Commands
 - Backend local dev: `python -m venv .venv && source .venv/bin/activate && pip install -r backend/requirements.txt` then `uvicorn app.main:app --reload --app-dir backend`.
 - Frontend local dev: `npm install` then `npm run dev` (Vite at `:5173`).
+- Local Node toolchain (Node 24.11.1) lives at `./.node/node-v24.11.1-linux-x64/bin`; prepend it when running frontend commands if `npm`/`node` is missing, e.g. `PATH=".node/node-v24.11.1-linux-x64/bin:$PATH" npm run test`.
 - Docker stack: `docker compose up --build` (starts cache warmup, backend on `:8000`, frontend on `:3000`).
+- Local Python virtualenv lives in `.venv`; activate with `source .venv/bin/activate` before backend commands, or run directly with `PATH=".venv/bin:$PATH"` on one-offs (e.g. `PATH=".venv/bin:$PATH" python -m pytest backend/tests`).
 - Backend tests: `pytest backend/tests`.
 - Frontend tests: `npm run test` (Vitest), `npm run test:coverage` for coverage, `npm run test:e2e` for Playwright.
 
