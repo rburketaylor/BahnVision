@@ -27,6 +27,7 @@ describe('StationSearch', () => {
 
   afterEach(() => {
     server.resetHandlers()
+    localStorage.clear()
   })
 
   afterAll(() => server.close())
@@ -74,7 +75,9 @@ describe('StationSearch', () => {
     await user.type(input, 'Unknown station')
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
-    expect(await screen.findByRole('option', { name: /no stations found/i })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('option', { name: /no stations found matching "Unknown station"/i })
+    ).toBeInTheDocument()
   })
 
   it('surfaces API errors and allows retry', async () => {
@@ -96,9 +99,7 @@ describe('StationSearch', () => {
     await user.type(input, 'Marien')
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
-    expect(
-      await screen.findByRole('option', { name: /unable to load stations/i })
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/api request failed/i)).toBeInTheDocument()
     expect(errorHandler).toHaveBeenCalledTimes(1)
 
     server.use(
@@ -132,5 +133,37 @@ describe('StationSearch', () => {
 
     const optionButton = within(firstOption).getByRole('button', { name: /marien\s?platz/i })
     expect(optionButton).toBeInTheDocument()
+  })
+
+  it('clears recent searches from storage and UI', async () => {
+    const user = userEvent.setup()
+
+    localStorage.setItem(
+      'bahnvision-recent-searches',
+      JSON.stringify([
+        {
+          id: 'de:09162:6',
+          name: 'Marienplatz',
+          place: 'München',
+          latitude: 48.137079,
+          longitude: 11.575447,
+          timestamp: Date.now() - 1_000,
+        },
+      ])
+    )
+
+    renderWithProviders(<StationSearch />)
+
+    const input = screen.getByRole('combobox', { name: /station search/i })
+    await user.click(input)
+
+    expect(await screen.findByText(/recent searches/i)).toBeInTheDocument()
+    expect(screen.getByText(/marienplatz/i)).toBeInTheDocument()
+
+    const clearButton = screen.getByRole('button', { name: /clear all/i })
+    await user.click(clearButton)
+
+    await waitFor(() => expect(localStorage.getItem('bahnvision-recent-searches')).toBeNull())
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 })

@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import { useRoutePlanner } from '../hooks/useRoutePlanner'
-import { StationSearchEnhanced } from '../components/StationSearchEnhanced'
+import { StationSearch } from '../components/StationSearch'
 import type { Station, TransportType, RoutePlanParams } from '../types/api'
 
 const ALL_TRANSPORT_TYPES: TransportType[] = [
@@ -110,7 +110,7 @@ export default function PlannerPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">From</label>
-                  <StationSearchEnhanced
+                  <StationSearch
                     onSelect={setOrigin}
                     placeholder="Enter origin station..."
                     showRecentSearches={true}
@@ -145,7 +145,7 @@ export default function PlannerPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">To</label>
-                  <StationSearchEnhanced
+                  <StationSearch
                     onSelect={setDestination}
                     placeholder="Enter destination station..."
                     showRecentSearches={true}
