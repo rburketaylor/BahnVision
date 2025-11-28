@@ -1,7 +1,7 @@
-"""Cache refresh protocol implementations for MVG endpoints.
+"""MVG endpoint protocol implementations.
 
-This module provides concrete implementations of CacheRefreshProtocol for each
-MVG endpoint type, demonstrating how to use the shared caching patterns.
+Provides concrete CacheRefreshProtocol implementations for departures,
+station search, station list, and route planning endpoints.
 """
 
 import logging
@@ -295,7 +295,7 @@ class StationSearchRefreshProtocol(MvgCacheProtocol[StationSearchResponse]):
 
 
 class StationListRefreshProtocol(MvgCacheProtocol[StationListResponse]):
-    """Simplified cache refresh protocol for station list endpoint."""
+    """Cache refresh protocol for station list endpoint."""
 
     def __init__(
         self,

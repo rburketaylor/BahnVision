@@ -1,8 +1,7 @@
 """
 Departures endpoint for MVG API.
 
-This module provides the /departures endpoint with dramatically simplified code
-by leveraging shared caching patterns and utilities.
+Provides real-time departure information with caching and stale fallback.
 """
 
 from datetime import datetime, timezone
@@ -21,7 +20,7 @@ from fastapi import (
 from app.api.v1.endpoints.mvg.shared.cache_keys import departures_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import ensure_aware_utc, get_client
 from app.api.v1.shared.cache_manager import CacheManager
-from app.api.v1.shared.protocols import DeparturesRefreshProtocol
+from app.api.v1.shared.mvg_protocols import DeparturesRefreshProtocol
 from app.core.config import get_settings
 from app.models.mvg import DeparturesResponse
 from app.services.cache import CacheService, get_cache_service

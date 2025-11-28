@@ -48,7 +48,7 @@ __all__ = [
 
 
 class MVGClient:
-    """Simplified wrapper around the mvg package with cleaner data mapping."""
+    """Async wrapper for MVG API with caching support."""
 
     def __init__(self, cache_service: Any | None = None):
         """

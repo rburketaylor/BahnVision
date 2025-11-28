@@ -9,7 +9,7 @@ from app.services.mvg_dto import Departure, RouteLeg, RoutePlan, RouteStop, Stat
 
 
 class DataMapper:
-    """Simplified data extraction and transformation utility."""
+    """Data extraction and transformation utility for MVG payloads."""
 
     @staticmethod
     def safe_get(data: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
