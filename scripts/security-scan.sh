@@ -158,7 +158,7 @@ scan_infrastructure() {
     # Check Kubernetes manifests for security issues
     print_security "Scanning Kubernetes manifests..."
     if command -v kube-score &> /dev/null; then
-        kube-score score k8s/*.yaml --output-format ci > kube-score-report.txt 2>/dev/null || true
+        kube-score score examples/k8s/*.yaml --output-format ci > kube-score-report.txt 2>/dev/null || true
     else
         print_warning "kube-score not found, skipping Kubernetes security scanning"
     fi

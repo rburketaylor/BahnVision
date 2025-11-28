@@ -52,10 +52,10 @@ Deliverables
   - Redis Commander for Valkey inspection.
   - Toxiproxy proxies for Postgres and Valkey (pre-wired for chaos scenarios).
   - Jaeger all-in-one for tracing UI (enabled in Phase 2).
-- Monitoring config under `monitoring/`:
-  - `monitoring/prometheus.yml` scraping backend metrics.
-  - `monitoring/grafana/provisioning/datasources/prometheus.yaml`.
-  - `monitoring/grafana/dashboards/*.json` visualising cache/MVG metrics.
+- Monitoring config under `examples/monitoring/`:
+  - `examples/monitoring/prometheus.yml` scraping backend metrics.
+  - `examples/monitoring/grafana/provisioning/datasources/prometheus.yaml`.
+  - `examples/monitoring/grafana/dashboards/*.json` visualising cache/MVG metrics.
 
 Notes & pitfalls
 - Compose ignores `deploy.resources`; resource limits are demonstrated later in Kubernetes, not locally.
@@ -80,7 +80,7 @@ Deliverables
 ## Phase 3 — Failure & resilience drills (Week 3)
 
 Deliverables
-- `toxiproxy/toxiproxy.json` defining Postgres + Valkey proxies.
+- `examples/toxiproxy/toxiproxy.json` defining Postgres + Valkey proxies.
 - `scripts/chaos-scenarios.sh` with latency, failure, outage, and bandwidth scenarios.
 - Demo scripts (`docs/demo-guide.md`) showing how to:
   - Invoke chaos scripts.
@@ -97,10 +97,10 @@ Optional extensions
 Focus: show EKS-style deployment without bloating the default demo.
 
 Deliverables (opt-in)
-- `k8s/kind-config.yaml` with ingress port mappings.
+- `examples/k8s/kind-config.yaml` with ingress port mappings.
 - `scripts/setup-kind.sh` to create a kind cluster, install ingress-nginx, deploy ArgoCD, and apply manifests.
-- K8s manifests under `k8s/` covering backend/frontend Deployments and StatefulSets for Postgres/Valkey.
-- `k8s/argocd/*.yaml` applications pointing at this repo (update `repoURL` to your fork).
+- K8s manifests under `examples/k8s/` covering backend/frontend Deployments and StatefulSets for Postgres/Valkey.
+- `examples/k8s/argocd/*.yaml` applications pointing at this repo (update `repoURL` to your fork).
 
 Notes
 - Frontend containers should be built with `VITE_API_BASE_URL=/api` for cluster usage; document the build flag.
