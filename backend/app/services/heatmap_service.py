@@ -42,6 +42,10 @@ DEFAULT_TIME_RANGE: TimeRangePreset = "24h"
 DEFAULT_BUCKET_WIDTH_MINUTES = 60
 MAX_DATA_POINTS = 10000
 
+# Data density control
+MIN_CANCELLATION_RATE = 0.01  # 1% minimum
+MIN_DEPARTURES = 10  # Minimum departures to be significant
+
 # Transport type name mapping for display
 TRANSPORT_TYPE_NAMES: dict[str, str] = {
     "UBAHN": "U-Bahn",
@@ -131,6 +135,8 @@ class HeatmapService:
         time_range: TimeRangePreset | None = None,
         transport_modes: str | None = None,
         bucket_width_minutes: int = DEFAULT_BUCKET_WIDTH_MINUTES,
+        zoom_level: int = 10,
+        max_points: int | None = None,
     ) -> HeatmapResponse:
         """Generate cancellation heatmap data.
 
@@ -138,6 +144,8 @@ class HeatmapService:
             time_range: Time range preset (1h, 6h, 24h, 7d, 30d)
             transport_modes: Comma-separated transport types to include
             bucket_width_minutes: Time bucket width for aggregation
+            zoom_level: Map zoom level for density control
+            max_points: Maximum number of data points to return
 
         Returns:
             HeatmapResponse with station data points and summary statistics
@@ -173,19 +181,35 @@ class HeatmapService:
                 ),
             )
 
+        # Set max points based on zoom level if not provided
+        if max_points is None:
+            if zoom_level < 10:
+                max_points = 100
+            elif zoom_level < 12:
+                max_points = 500
+            else:
+                max_points = min(2000, MAX_DATA_POINTS)
+        else:
+            max_points = min(max_points, MAX_DATA_POINTS)
+
         # Aggregate cancellation data for each station
         data_points = await self._aggregate_station_data(
             stations, transport_types, from_time, to_time
         )
 
-        # Filter to stations with data
-        data_points = [dp for dp in data_points if dp.total_departures > 0]
+        # Filter to stations with significant data
+        data_points = [
+            dp for dp in data_points
+            if dp.total_departures >= MIN_DEPARTURES
+            and dp.cancellation_rate >= MIN_CANCELLATION_RATE
+        ]
 
-        # Limit data points
-        if len(data_points) > MAX_DATA_POINTS:
-            # Sort by cancellation count descending to keep most relevant
-            data_points.sort(key=lambda x: x.cancelled_count, reverse=True)
-            data_points = data_points[:MAX_DATA_POINTS]
+        # Sort by impact (cancellation rate * departures) and limit
+        data_points.sort(
+            key=lambda x: x.cancellation_rate * x.total_departures,
+            reverse=True
+        )
+        data_points = data_points[:max_points]
 
         # Calculate summary
         summary = self._calculate_summary(data_points)

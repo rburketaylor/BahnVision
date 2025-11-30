@@ -57,6 +57,22 @@ async def get_cancellation_heatmap(
             description="Time bucket width in minutes for aggregation. Default: 60.",
         ),
     ] = 60,
+    zoom: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=18,
+            description="Map zoom level for density control. Default: 10.",
+        ),
+    ] = 10,
+    max_points: Annotated[
+        int | None,
+        Query(
+            ge=10,
+            le=5000,
+            description="Maximum number of data points to return. Default: based on zoom.",
+        ),
+    ] = None,
     client: MVGClient = Depends(get_client),
     cache: CacheService = Depends(get_cache_service),
 ) -> HeatmapResponse:
@@ -77,7 +93,7 @@ async def get_cancellation_heatmap(
     settings = get_settings()
 
     # Generate cache key
-    cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}"
+    cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}:{zoom}:{max_points or 'default'}"
 
     # Try to get from cache
     cached_data = await cache.get_json(cache_key)
@@ -91,6 +107,8 @@ async def get_cancellation_heatmap(
         time_range=time_range,
         transport_modes=transport_modes,
         bucket_width_minutes=bucket_width,
+        zoom_level=zoom,
+        max_points=max_points,
     )
 
     # Cache the result
