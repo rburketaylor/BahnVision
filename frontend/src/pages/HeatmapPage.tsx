@@ -18,11 +18,13 @@ export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
   const [selectedStation, setSelectedStation] = useState<string | null>(null)
+  const [zoom, setZoom] = useState<number>(12) // Default zoom
 
   const { data, isLoading, error, refetch } = useHeatmap(
     {
       time_range: timeRange,
       transport_modes: transportModes.length > 0 ? transportModes : undefined,
+      zoom,
     },
     { autoRefresh: true }
   )
@@ -94,6 +96,7 @@ export default function HeatmapPage() {
               isLoading={isLoading}
               selectedStation={selectedStation}
               onStationSelect={setSelectedStation}
+              onZoomChange={setZoom}
             />
           </div>
 

@@ -98,6 +98,8 @@ class MvgApiClient {
     const apiParams: Record<string, unknown> = {
       time_range: params.time_range,
       bucket_width: params.bucket_width,
+      zoom: params.zoom,
+      max_points: params.max_points,
     }
 
     if (params.transport_modes && params.transport_modes.length > 0) {

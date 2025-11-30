@@ -4,12 +4,42 @@
  */
 
 import { useEffect, useRef, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 import type { HeatmapDataPoint } from '../../types/heatmap'
-import { MUNICH_CENTER, DEFAULT_ZOOM, DEFAULT_HEATMAP_CONFIG } from '../../types/heatmap'
+import { MUNICH_CENTER, DEFAULT_ZOOM } from '../../types/heatmap'
+
+// Map tile layer configurations
+const MAP_LAYERS = {
+  // CartoDB Voyager - clean map with good visibility of streets and areas
+  cartoVoyager: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  // CartoDB Positron - light theme, good for overlays
+  cartoPositron: {
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  // OpenStreetMap standard
+  osm: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  // ÖPNVKarte - German public transport map
+  opnvkarte: {
+    url: 'https://tileserver.memomaps.de/tilegen/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://memomaps.de/">memomaps.de</a>',
+  },
+  // OpenRailwayMap overlay - shows rail infrastructure
+  // Note: OpenRailwayMap does NOT support {s} subdomains
+  openRailwayMap: {
+    url: 'https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>',
+  },
+}
 
 // Import leaflet.heat - it adds L.heatLayer
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -48,6 +78,31 @@ interface CancellationHeatmapProps {
   isLoading?: boolean
   selectedStation?: string | null
   onStationSelect?: (stationId: string | null) => void
+  onZoomChange?: (zoom: number) => void
+}
+
+// Custom hook to track zoom changes
+function ZoomTracker({ onZoomChange }: { onZoomChange?: (zoom: number) => void }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!map || !onZoomChange) return
+
+    const handleZoom = () => {
+      onZoomChange(map.getZoom())
+    }
+
+    // Report initial zoom
+    onZoomChange(map.getZoom())
+
+    map.on('zoomend', handleZoom)
+
+    return () => {
+      map.off('zoomend', handleZoom)
+    }
+  }, [map, onZoomChange])
+
+  return null
 }
 
 // Custom hook to manage the heat layer
@@ -55,36 +110,68 @@ function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
   const map = useMap()
   const heatLayerRef = useRef<L.Layer | null>(null)
 
+  // Dynamic heat layer configuration based on zoom
+  const getHeatLayerOptions = (zoom: number) => {
+    const radius = zoom < 10 ? 30 : zoom < 12 ? 20 : 15
+    const blur = zoom < 10 ? 20 : zoom < 12 ? 15 : 10
+
+    return {
+      radius,
+      blur,
+      maxZoom: 17,
+      max: 1.0,
+      gradient: {
+        0.0: 'rgba(0, 255, 0, 0)',
+        0.2: 'rgba(0, 255, 0, 0.5)',
+        0.4: 'yellow',
+        0.6: 'orange',
+        0.8: 'red',
+        1.0: 'darkred',
+      },
+    }
+  }
+
   useEffect(() => {
     if (!map) return
 
-    // Remove existing heat layer
-    if (heatLayerRef.current) {
-      map.removeLayer(heatLayerRef.current)
-      heatLayerRef.current = null
+    const createHeatLayer = () => {
+      // Remove existing heat layer
+      if (heatLayerRef.current) {
+        map.removeLayer(heatLayerRef.current)
+        heatLayerRef.current = null
+      }
+
+      if (dataPoints.length === 0) return
+
+      // Get current zoom for configuration
+      const zoom = map.getZoom()
+      const options = getHeatLayerOptions(zoom)
+
+      // Convert data points to heat layer format: [lat, lng, intensity]
+      const heatData: [number, number, number][] = dataPoints.map(point => [
+        point.latitude,
+        point.longitude,
+        // Scale intensity: cancellation rate (0-1) scaled for visualization
+        // Adjust scaling based on zoom level
+        Math.min(point.cancellation_rate * (zoom < 12 ? 10 : 8), 1),
+      ])
+
+      // Create heat layer with dynamic configuration
+      heatLayerRef.current = L.heatLayer(heatData, options).addTo(map)
     }
 
-    if (dataPoints.length === 0) return
+    // Initial creation
+    createHeatLayer()
 
-    // Convert data points to heat layer format: [lat, lng, intensity]
-    const heatData: [number, number, number][] = dataPoints.map(point => [
-      point.latitude,
-      point.longitude,
-      // Scale intensity: cancellation rate (0-1) scaled for visualization
-      // Multiply by 10 to make differences more visible
-      Math.min(point.cancellation_rate * 10, 1),
-    ])
+    // Update on zoom changes
+    const handleZoom = () => {
+      createHeatLayer()
+    }
 
-    // Create heat layer with gradient configuration
-    heatLayerRef.current = L.heatLayer(heatData, {
-      radius: DEFAULT_HEATMAP_CONFIG.radius,
-      blur: DEFAULT_HEATMAP_CONFIG.blur,
-      maxZoom: DEFAULT_HEATMAP_CONFIG.maxZoom,
-      max: DEFAULT_HEATMAP_CONFIG.max,
-      gradient: DEFAULT_HEATMAP_CONFIG.gradient,
-    }).addTo(map)
+    map.on('zoomend', handleZoom)
 
     return () => {
+      map.off('zoomend', handleZoom)
       if (heatLayerRef.current) {
         map.removeLayer(heatLayerRef.current)
         heatLayerRef.current = null
@@ -205,30 +292,47 @@ export function CancellationHeatmap({
   isLoading = false,
   selectedStation,
   onStationSelect,
+  onZoomChange,
 }: CancellationHeatmapProps) {
-  if (isLoading) {
-    return (
-      <div className="w-full h-full min-h-[400px] bg-muted rounded-lg flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Loading heatmap data...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="w-full h-full min-h-[400px] rounded-lg overflow-hidden border border-border">
+    <div className="w-full h-full min-h-[400px] rounded-lg overflow-hidden border border-border relative">
+      {/* Loading overlay - shown while keeping the map rendered */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-background/50 z-[1000] flex items-center justify-center">
+          <div className="text-center bg-card p-4 rounded-lg shadow-lg">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading heatmap data...</p>
+          </div>
+        </div>
+      )}
       <MapContainer
         center={MUNICH_CENTER}
         zoom={DEFAULT_ZOOM}
-        className="w-full h-full min-h-[400px]"
+        className="absolute inset-0"
+        style={{ width: '100%', height: '100%' }}
         scrollWheelZoom={true}
       >
+        {/* Default base layer - always visible initially */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={MAP_LAYERS.cartoPositron.attribution}
+          url={MAP_LAYERS.cartoPositron.url}
+          maxZoom={19}
         />
+
+        {/* Layer control for switching map styles */}
+        <LayersControl position="topright">
+          {/* Overlay layers - can be toggled independently */}
+          <LayersControl.Overlay checked name="Railway Infrastructure">
+            <TileLayer
+              attribution={MAP_LAYERS.openRailwayMap.attribution}
+              url={MAP_LAYERS.openRailwayMap.url}
+              maxZoom={18}
+              opacity={0.7}
+            />
+          </LayersControl.Overlay>
+        </LayersControl>
+
+        <ZoomTracker onZoomChange={onZoomChange} />
 
         <HeatLayer dataPoints={dataPoints} />
 

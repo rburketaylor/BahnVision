@@ -54,6 +54,8 @@ export interface HeatmapParams {
   time_range?: TimeRangePreset
   transport_modes?: TransportType[]
   bucket_width?: number
+  zoom?: number
+  max_points?: number
 }
 
 /** Heatmap configuration for Leaflet heat layer */
