@@ -13,6 +13,7 @@ import type {
   RouteLeg,
   RouteStop,
 } from '../../types/api'
+import type { HeatmapResponse } from '../../types/heatmap'
 
 const BASE_URL = 'http://localhost:8000'
 
@@ -159,5 +160,60 @@ export const handlers = [
     }
 
     return HttpResponse.json(response)
+  }),
+
+  // Heatmap cancellations endpoint
+  http.get(`${BASE_URL}/api/v1/heatmap/cancellations`, () => {
+    const now = new Date()
+    const from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+
+    const response: HeatmapResponse = {
+      time_range: {
+        from: from.toISOString(),
+        to: now.toISOString(),
+      },
+      data_points: [
+        {
+          station_id: 'de:09162:6',
+          station_name: 'Marienplatz',
+          latitude: 48.137079,
+          longitude: 11.575447,
+          total_departures: 1250,
+          cancelled_count: 45,
+          cancellation_rate: 0.036,
+          by_transport: {
+            UBAHN: { total: 500, cancelled: 20 },
+            SBAHN: { total: 750, cancelled: 25 },
+          },
+        },
+        {
+          station_id: 'de:09162:1',
+          station_name: 'Hauptbahnhof',
+          latitude: 48.140,
+          longitude: 11.558,
+          total_departures: 2000,
+          cancelled_count: 80,
+          cancellation_rate: 0.04,
+          by_transport: {
+            UBAHN: { total: 800, cancelled: 32 },
+            SBAHN: { total: 1200, cancelled: 48 },
+          },
+        },
+      ],
+      summary: {
+        total_stations: 2,
+        total_departures: 3250,
+        total_cancellations: 125,
+        overall_cancellation_rate: 0.038,
+        most_affected_station: 'Hauptbahnhof',
+        most_affected_line: 'S-Bahn',
+      },
+    }
+
+    return HttpResponse.json(response, {
+      headers: {
+        'X-Cache-Status': 'miss',
+      },
+    })
   }),
 ]
