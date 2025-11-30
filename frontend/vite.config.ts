@@ -46,9 +46,9 @@ export default defineConfig({
       '@tanstack/react-query',
       'zustand',
       '@headlessui/react',
+      'leaflet',
+      'react-leaflet',
     ],
-    // Exclude large dependencies from pre-bundling to improve dev startup
-    exclude: ['leaflet', 'react-leaflet'],
   },
   server: {
     // Enable HMR for better development experience
