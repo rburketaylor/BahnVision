@@ -189,7 +189,7 @@ export const handlers = [
         {
           station_id: 'de:09162:1',
           station_name: 'Hauptbahnhof',
-          latitude: 48.140,
+          latitude: 48.14,
           longitude: 11.558,
           total_departures: 2000,
           cancelled_count: 80,

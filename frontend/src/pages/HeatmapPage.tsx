@@ -90,7 +90,10 @@ export default function HeatmapPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Map - takes up 3/4 of the space on large screens */}
         <div className="lg:col-span-3">
-          <div className="bg-card rounded-lg border border-border overflow-hidden" style={{ height: '600px' }}>
+          <div
+            className="bg-card rounded-lg border border-border overflow-hidden"
+            style={{ height: 'calc(100vh - 18rem)' }}
+          >
             <CancellationHeatmap
               dataPoints={dataPoints}
               isLoading={isLoading}

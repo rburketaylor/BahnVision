@@ -1,12 +1,24 @@
 /**
  * Cancellation Heatmap Component
  * Interactive Leaflet map with heatmap overlay for cancellation data
+ *
+ * Layer Configuration:
+ * - Base Layers: Multiple map styles (CartoDB Voyager, Positron, OSM, OPNVKarte)
+ * - Overlay Layers: Railway infrastructure overlay (OpenRailwayMap)
+ * - Heat Layer: Cancellation data visualization
+ * - Station Markers: Individual station markers with cancellation info
+ *
+ * Z-Index Hierarchy:
+ * - Base Maps: 1-100 (automatic)
+ * - Railway Overlay: 500
+ * - Heat Layer: 400
+ * - Station Markers: 1000+
  */
 
 import { useEffect, useRef, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+// CSS is imported in main.tsx
 
 import type { HeatmapDataPoint } from '../../types/heatmap'
 import { MUNICH_CENTER, DEFAULT_ZOOM } from '../../types/heatmap'
@@ -16,28 +28,33 @@ const MAP_LAYERS = {
   // CartoDB Voyager - clean map with good visibility of streets and areas
   cartoVoyager: {
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   },
   // CartoDB Positron - light theme, good for overlays
   cartoPositron: {
     url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   },
   // OpenStreetMap standard
   osm: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
   // ÖPNVKarte - German public transport map
   opnvkarte: {
     url: 'https://tileserver.memomaps.de/tilegen/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://memomaps.de/">memomaps.de</a>',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://memomaps.de/">memomaps.de</a>',
   },
   // OpenRailwayMap overlay - shows rail infrastructure
   // Note: OpenRailwayMap does NOT support {s} subdomains
   openRailwayMap: {
     url: 'https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>',
   },
 }
 
@@ -108,7 +125,10 @@ function ZoomTracker({ onZoomChange }: { onZoomChange?: (zoom: number) => void }
 // Custom hook to manage the heat layer
 function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
   const map = useMap()
-  const heatLayerRef = useRef<L.Layer | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const heatLayerRef = useRef<any>(null)
+  const processedDataCache = useRef<Map<string, [number, number, number][]>>(new Map())
+  const debouncedUpdateRef = useRef<number | null>(null)
 
   // Dynamic heat layer configuration based on zoom
   const getHeatLayerOptions = (zoom: number) => {
@@ -131,51 +151,80 @@ function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
     }
   }
 
-  useEffect(() => {
-    if (!map) return
+  // Pre-process and cache data by zoom range to avoid redundant calculations
+  const getProcessedData = (zoom: number): [number, number, number][] => {
+    const zoomRange = zoom < 10 ? 'low' : zoom < 12 ? 'medium' : 'high'
+    const cacheKey = `${zoomRange}-${dataPoints.length}`
 
-    const createHeatLayer = () => {
-      // Remove existing heat layer
+    if (!processedDataCache.current.has(cacheKey)) {
+      const intensityMultiplier = zoom < 12 ? 10 : 8
+      const processed: [number, number, number][] = dataPoints.map(point => [
+        point.latitude,
+        point.longitude,
+        Math.min(point.cancellation_rate * intensityMultiplier, 1),
+      ])
+      processedDataCache.current.set(cacheKey, processed)
+    }
+
+    return processedDataCache.current.get(cacheKey)!
+  }
+
+  // Efficient heat layer update - only updates existing layer instead of recreating
+  const updateHeatLayer = () => {
+    if (dataPoints.length === 0) {
       if (heatLayerRef.current) {
         map.removeLayer(heatLayerRef.current)
         heatLayerRef.current = null
       }
-
-      if (dataPoints.length === 0) return
-
-      // Get current zoom for configuration
-      const zoom = map.getZoom()
-      const options = getHeatLayerOptions(zoom)
-
-      // Convert data points to heat layer format: [lat, lng, intensity]
-      const heatData: [number, number, number][] = dataPoints.map(point => [
-        point.latitude,
-        point.longitude,
-        // Scale intensity: cancellation rate (0-1) scaled for visualization
-        // Adjust scaling based on zoom level
-        Math.min(point.cancellation_rate * (zoom < 12 ? 10 : 8), 1),
-      ])
-
-      // Create heat layer with dynamic configuration
-      heatLayerRef.current = L.heatLayer(heatData, options).addTo(map)
+      return
     }
 
-    // Initial creation
-    createHeatLayer()
+    const zoom = map.getZoom()
+    const options = getHeatLayerOptions(zoom)
+    const processedData = getProcessedData(zoom)
 
-    // Update on zoom changes
+    if (!heatLayerRef.current) {
+      // Create new layer only if it doesn't exist
+      heatLayerRef.current = L.heatLayer(processedData, options).addTo(map)
+      if (heatLayerRef.current.setZIndex) {
+        heatLayerRef.current.setZIndex(400)
+      }
+    } else {
+      // Update existing layer efficiently
+      heatLayerRef.current.setLatLngs(processedData)
+      heatLayerRef.current.setOptions(options)
+    }
+  }
+
+  useEffect(() => {
+    if (!map) return
+
+    // Initial creation
+    updateHeatLayer()
+
+    // Debounced zoom handler to prevent excessive updates during smooth zoom animations
     const handleZoom = () => {
-      createHeatLayer()
+      if (debouncedUpdateRef.current) {
+        clearTimeout(debouncedUpdateRef.current)
+      }
+      debouncedUpdateRef.current = setTimeout(() => {
+        updateHeatLayer()
+      }, 150) // 150ms debounce
     }
 
     map.on('zoomend', handleZoom)
 
     return () => {
       map.off('zoomend', handleZoom)
+      if (debouncedUpdateRef.current) {
+        clearTimeout(debouncedUpdateRef.current)
+      }
       if (heatLayerRef.current) {
         map.removeLayer(heatLayerRef.current)
         heatLayerRef.current = null
       }
+      // Clear cache on unmount to prevent memory leaks
+      processedDataCache.current.clear()
     }
   }, [map, dataPoints])
 
@@ -185,7 +234,6 @@ function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
 // Station markers component
 function StationMarkers({
   dataPoints,
-  selectedStation: _selectedStation,
   onStationSelect,
 }: {
   dataPoints: HeatmapDataPoint[]
@@ -201,8 +249,10 @@ function StationMarkers({
   // Custom icon based on cancellation severity
   const getMarkerIcon = (rate: number) => {
     let color = '#22c55e' // green
-    if (rate > 0.1) color = '#ef4444' // red
-    else if (rate > 0.05) color = '#f97316' // orange
+    if (rate > 0.1)
+      color = '#ef4444' // red
+    else if (rate > 0.05)
+      color = '#f97316' // orange
     else if (rate > 0.03) color = '#eab308' // yellow
 
     return L.divIcon({
@@ -229,6 +279,7 @@ function StationMarkers({
           key={station.station_id}
           position={[station.latitude, station.longitude]}
           icon={getMarkerIcon(station.cancellation_rate)}
+          zIndexOffset={1000} // Ensure markers appear above heat layer
           eventHandlers={{
             click: () => onStationSelect?.(station.station_id),
           }}
@@ -265,7 +316,7 @@ function StationMarkers({
                   <p className="text-xs text-gray-500 mb-1">By Transport Type:</p>
                   <div className="space-y-1">
                     {Object.entries(station.by_transport)
-                      .filter(([_, stats]) => stats.total > 0)
+                      .filter(([, stats]) => stats.total > 0)
                       .sort((a, b) => b[1].cancelled - a[1].cancelled)
                       .slice(0, 3)
                       .map(([type, stats]) => (
@@ -295,39 +346,56 @@ export function CancellationHeatmap({
   onZoomChange,
 }: CancellationHeatmapProps) {
   return (
-    <div className="w-full h-full min-h-[400px] rounded-lg overflow-hidden border border-border relative">
-      {/* Loading overlay - shown while keeping the map rendered */}
-      {isLoading && (
-        <div className="absolute inset-0 bg-background/50 z-[1000] flex items-center justify-center">
-          <div className="text-center bg-card p-4 rounded-lg shadow-lg">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">Loading heatmap data...</p>
-          </div>
-        </div>
-      )}
+    <div className="relative w-full h-full rounded-lg overflow-hidden border border-border">
       <MapContainer
         center={MUNICH_CENTER}
         zoom={DEFAULT_ZOOM}
-        className="absolute inset-0"
+        className="absolute inset-0 z-0"
         style={{ width: '100%', height: '100%' }}
         scrollWheelZoom={true}
       >
-        {/* Default base layer - always visible initially */}
+        {/* Default base layer - ensures map is always visible */}
         <TileLayer
-          attribution={MAP_LAYERS.cartoPositron.attribution}
-          url={MAP_LAYERS.cartoPositron.url}
+          attribution={MAP_LAYERS.cartoVoyager.attribution}
+          url={MAP_LAYERS.cartoVoyager.url}
           maxZoom={19}
         />
 
-        {/* Layer control for switching map styles */}
+        {/* Layer control for switching map styles and overlays */}
         <LayersControl position="topright">
+          {/* Alternative base layers for switching */}
+          <LayersControl.BaseLayer name="CartoDB Positron">
+            <TileLayer
+              attribution={MAP_LAYERS.cartoPositron.attribution}
+              url={MAP_LAYERS.cartoPositron.url}
+              maxZoom={19}
+            />
+          </LayersControl.BaseLayer>
+
+          <LayersControl.BaseLayer name="OpenStreetMap">
+            <TileLayer
+              attribution={MAP_LAYERS.osm.attribution}
+              url={MAP_LAYERS.osm.url}
+              maxZoom={19}
+            />
+          </LayersControl.BaseLayer>
+
+          <LayersControl.BaseLayer name="ÖPNVKarte (German Transport)">
+            <TileLayer
+              attribution={MAP_LAYERS.opnvkarte.attribution}
+              url={MAP_LAYERS.opnvkarte.url}
+              maxZoom={18}
+            />
+          </LayersControl.BaseLayer>
+
           {/* Overlay layers - can be toggled independently */}
-          <LayersControl.Overlay checked name="Railway Infrastructure">
+          <LayersControl.Overlay name="Railway Infrastructure" checked>
             <TileLayer
               attribution={MAP_LAYERS.openRailwayMap.attribution}
               url={MAP_LAYERS.openRailwayMap.url}
               maxZoom={18}
               opacity={0.7}
+              zIndex={500} // Ensure railway overlay appears above base map but below markers
             />
           </LayersControl.Overlay>
         </LayersControl>
@@ -342,6 +410,16 @@ export function CancellationHeatmap({
           onStationSelect={onStationSelect}
         />
       </MapContainer>
+
+      {/* Loading overlay - shown while keeping the map rendered */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-background/50 z-[1000] flex items-center justify-center">
+          <div className="text-center bg-card p-4 rounded-lg shadow-lg">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading heatmap data...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
