@@ -1,9 +1,8 @@
 """
 Cache warmup job for priming MVG-backed data stores.
 
-This module fetches the station catalog once during startup so the first user
-doesn't wait for the initial MVG sync. It can also warm selected departures
-caches when configured via environment variables.
+Fetches the station catalog during startup so the first user
+doesn't wait for the initial MVG sync.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from typing import Any
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import departures_cache_key
 from app.api.v1.shared.cache_flow import execute_cache_refresh
-from app.api.v1.shared.protocols import (
+from app.api.v1.shared.mvg_protocols import (
     DeparturesRefreshProtocol,
     StationListRefreshProtocol,
 )

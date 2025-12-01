@@ -42,7 +42,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./examples/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
 
   grafana:
@@ -55,8 +55,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./examples/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./examples/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
 
@@ -80,7 +80,7 @@ services:
       - "5433:5432"   # Postgres proxy
       - "6380:6379"   # Valkey proxy
     volumes:
-      - ./toxiproxy/toxiproxy.json:/etc/toxiproxy/toxiproxy.json:ro
+      - ./examples/toxiproxy/toxiproxy.json:/etc/toxiproxy/toxiproxy.json:ro
     command: ["--host", "0.0.0.0", "--config", "/etc/toxiproxy/toxiproxy.json"]
 
   # Tracing (will be used in Phase 2)

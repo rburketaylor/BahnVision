@@ -1,8 +1,6 @@
 """Route planning endpoint for MVG API.
 
-This module provides route planning functionality with caching and error handling.
-It leverages shared infrastructure to minimize code duplication while maintaining
-security, performance, and observability.
+Provides multi-modal route planning with caching and stale fallback.
 """
 
 from datetime import datetime
@@ -20,7 +18,7 @@ from fastapi import (
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import route_cache_key
 from app.api.v1.shared.cache_manager import CacheManager
-from app.api.v1.shared.protocols import RouteRefreshProtocol
+from app.api.v1.shared.mvg_protocols import RouteRefreshProtocol
 from app.core.config import get_settings
 from app.models.mvg import RouteResponse
 from app.services.cache import CacheService, get_cache_service

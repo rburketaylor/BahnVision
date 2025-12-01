@@ -1,8 +1,7 @@
 """
 Stations endpoints for MVG API.
 
-This module provides the /stations/search and /stations/list endpoints with
-dramatically simplified code by leveraging shared caching patterns and utilities.
+Provides station search and listing with caching and stale fallback.
 """
 
 from typing import Annotated
@@ -12,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from app.api.v1.endpoints.mvg.shared.cache_keys import station_search_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import get_client
 from app.api.v1.shared.cache_manager import CacheManager
-from app.api.v1.shared.protocols import (
+from app.api.v1.shared.mvg_protocols import (
     StationListRefreshProtocol,
     StationSearchRefreshProtocol,
 )

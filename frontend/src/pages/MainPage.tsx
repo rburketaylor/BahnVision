@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router'
-import { StationSearchEnhanced } from '../components/StationSearchEnhanced'
+import { StationSearch } from '../components/StationSearch'
 import type { Station } from '../types/api'
 
 export function MainPage() {
@@ -27,7 +27,7 @@ export function MainPage() {
             <div className="rounded-xl border border-border bg-card p-6 sm:p-8 shadow-xl backdrop-blur-sm bg-opacity-95">
               <div className="space-y-4">
                 <h2 className="text-2xl font-semibold text-foreground">Search for a Station</h2>
-                <StationSearchEnhanced onSelect={handleStationSelect} />
+                <StationSearch onSelect={handleStationSelect} />
               </div>
             </div>
           </section>

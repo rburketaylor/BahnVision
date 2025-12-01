@@ -48,7 +48,7 @@ create_cluster() {
         kind delete cluster --name bahnvision-cluster
     fi
 
-    kind create cluster --config k8s/kind-config.yaml --wait 300s
+    kind create cluster --config examples/k8s/kind-config.yaml --wait 300s
     print_status "Kind cluster created successfully"
 }
 
@@ -93,8 +93,8 @@ install_argocd() {
 apply_app_manifests() {
     print_status "Applying BahnVision application manifests..."
 
-    # Apply all manifests in k8s directory except argocd and kind-config
-    for manifest in k8s/*.yaml; do
+    # Apply all manifests in examples/k8s directory except argocd and kind-config
+    for manifest in examples/k8s/*.yaml; do
         if [[ "$manifest" != *"argocd"* ]] && [[ "$manifest" != *"kind-config"* ]]; then
             print_status "Applying $manifest"
             kubectl apply -f "$manifest"

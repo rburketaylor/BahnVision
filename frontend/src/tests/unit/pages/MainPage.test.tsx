@@ -14,8 +14,8 @@ const mockStation: Station = {
   longitude: 11.576124,
 }
 
-vi.mock('../../../components/StationSearchEnhanced', () => ({
-  StationSearchEnhanced: ({ onSelect }: { onSelect: (station: Station) => void }) => (
+vi.mock('../../../components/StationSearch', () => ({
+  StationSearch: ({ onSelect }: { onSelect: (station: Station) => void }) => (
     <button type="button" onClick={() => onSelect(mockStation)}>
       Select Station
     </button>

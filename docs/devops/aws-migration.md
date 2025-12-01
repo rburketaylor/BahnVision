@@ -532,11 +532,11 @@ jobs:
     - name: Deploy to EKS
       run: |
         # Update image tags in deployments
-        sed -i "s|bahnvision-backend:latest|$ECR_REGISTRY/bahnvision-backend:$GITHUB_SHA|g" k8s/backend-deployment.yaml
-        sed -i "s|bahnvision-frontend:latest|$ECR_REGISTRY/bahnvision-frontend:$GITHUB_SHA|g" k8s/frontend-deployment.yaml
+        sed -i "s|bahnvision-backend:latest|$ECR_REGISTRY/bahnvision-backend:$GITHUB_SHA|g" examples/k8s/backend-deployment.yaml
+        sed -i "s|bahnvision-frontend:latest|$ECR_REGISTRY/bahnvision-frontend:$GITHUB_SHA|g" examples/k8s/frontend-deployment.yaml
 
         # Apply manifests
-        kubectl apply -f k8s/
+        kubectl apply -f examples/k8s/
 ```
 
 ## Configuration Updates

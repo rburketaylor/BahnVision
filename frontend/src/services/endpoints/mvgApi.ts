@@ -12,6 +12,7 @@ import type {
   StationSearchParams,
   StationSearchResponse,
 } from '../../types/api'
+import type { HeatmapParams, HeatmapResponse } from '../../types/heatmap'
 import { ApiError, type ApiResponse } from '../apiTypes'
 import { httpClient } from '../httpClient'
 
@@ -89,6 +90,27 @@ class MvgApiClient {
 
     const queryString = buildQueryString(params as unknown as Record<string, unknown>)
     return httpClient.request<RoutePlanResponse>(`/api/v1/mvg/routes/plan${queryString}`)
+  }
+
+  // Heatmap cancellations endpoint
+  async getHeatmapData(params: HeatmapParams = {}): Promise<ApiResponse<HeatmapResponse>> {
+    // Convert transport_modes array to comma-separated string if provided
+    const apiParams: Record<string, unknown> = {
+      time_range: params.time_range,
+      bucket_width: params.bucket_width,
+      zoom: params.zoom,
+      max_points: params.max_points,
+    }
+
+    if (params.transport_modes && params.transport_modes.length > 0) {
+      apiParams.transport_modes = params.transport_modes.join(',')
+    }
+
+    const queryString = buildQueryString(apiParams)
+    // Heatmap aggregation can take time, use extended timeout
+    return httpClient.request<HeatmapResponse>(`/api/v1/heatmap/cancellations${queryString}`, {
+      timeout: 15000,
+    })
   }
 
   // Metrics endpoint (returns plain text)

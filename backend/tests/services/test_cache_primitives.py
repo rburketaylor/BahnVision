@@ -6,8 +6,7 @@ from unittest.mock import Mock
 from unittest.mock import patch
 import pytest
 
-from app.services.cache_circuit_breaker import CircuitBreaker
-from app.services.cache_ttl_config import TTLConfig
+from app.services.cache import CircuitBreaker, TTLConfig
 from app.core.config import Settings
 
 
@@ -16,21 +15,10 @@ class TestTTLConfig:
 
     @pytest.fixture
     def mock_settings(self):
-        with patch("app.services.cache_ttl_config.get_settings") as mock:
+        with patch("app.services.cache.get_settings") as mock:
             settings = Mock(spec=Settings)
             settings.valkey_cache_ttl_seconds = 300
             settings.valkey_cache_ttl_not_found_seconds = 60
-            settings.mvg_departures_cache_ttl_seconds = 60
-            settings.mvg_departures_cache_stale_ttl_seconds = 120
-            settings.mvg_station_search_cache_ttl_seconds = 3600
-            settings.mvg_station_search_cache_stale_ttl_seconds = 7200
-            settings.mvg_station_list_cache_ttl_seconds = 86400
-            settings.mvg_station_list_cache_stale_ttl_seconds = 172800
-            settings.mvg_route_cache_ttl_seconds = 300
-            settings.mvg_route_cache_stale_ttl_seconds = 600
-            settings.cache_singleflight_lock_ttl_seconds = 5
-            settings.cache_singleflight_lock_wait_seconds = 2.0
-            settings.cache_singleflight_retry_delay_seconds = 0.1
             settings.cache_circuit_breaker_timeout_seconds = 30
             mock.return_value = settings
             yield settings

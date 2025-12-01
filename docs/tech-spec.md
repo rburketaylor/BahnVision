@@ -118,7 +118,7 @@ Valkey stores serialized Pydantic responses (JSON) using TTL + stale TTL pairs f
 - **Local:** `docker compose up --build` runs Valkey, Postgres, backend, frontend, cache warmup. Alternatively run backend via `uvicorn` and frontend via `npm run dev`.
 - **Configuration:** Managed via env vars (`VALKEY_URL`, `DATABASE_URL`, `CACHE_*`, `MVG_*_TTL_SECONDS`, `VITE_API_BASE_URL`). `.env.example` documents defaults; see `docs/runtime-configuration.md`.
 - **Build/Test:** Backend uses `pytest`; frontend uses `npm run test` (Vitest) and `npm run lint`. CI should run both plus Playwright smoke if containerized MVG stubs available.
-- **Release Flow:** Build Docker images for backend/frontend; deploy with Compose, Kubernetes (manifests in `k8s/`), or platform-specific pipelines. Ensure `cache-warmup` job runs before switching traffic.
+- **Release Flow:** Build Docker images for backend/frontend; deploy with Compose, Kubernetes (example manifests in `examples/k8s/`), or platform-specific pipelines. Ensure `cache-warmup` job runs before switching traffic.
 
 ## 11. Observability & Operations
 
