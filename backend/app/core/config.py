@@ -138,7 +138,9 @@ class Settings(BaseSettings):
     # ==========================================================================
 
     otel_enabled: bool = Field(default=False, alias="OTEL_ENABLED")
-    otel_service_name: str = Field(default="bahnvision-backend", alias="OTEL_SERVICE_NAME")
+    otel_service_name: str = Field(
+        default="bahnvision-backend", alias="OTEL_SERVICE_NAME"
+    )
     otel_service_version: str = Field(default="0.1.0", alias="OTEL_SERVICE_VERSION")
     otel_exporter_otlp_endpoint: str = Field(
         default="http://jaeger:4317", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
