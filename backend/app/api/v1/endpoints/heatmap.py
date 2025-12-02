@@ -4,12 +4,11 @@ Heatmap endpoint for cancellation data visualization.
 Provides an endpoint to retrieve cancellation heatmap data for map visualization.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
 
 from app.api.v1.endpoints.mvg.shared.utils import get_client
-from app.core.config import get_settings
 from app.models.heatmap import HeatmapResponse, TimeRangePreset
 from app.services.cache import CacheService, get_cache_service
 from app.services.heatmap_service import HeatmapService
@@ -90,8 +89,6 @@ async def get_cancellation_heatmap(
 
     The response is cached for 5 minutes to balance freshness with performance.
     """
-    settings = get_settings()
-
     # Generate cache key
     cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}:{zoom}:{max_points or 'default'}"
 

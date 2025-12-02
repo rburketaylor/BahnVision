@@ -4,18 +4,14 @@ Tests for the heatmap service.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from app.models.heatmap import (
     HeatmapDataPoint,
     HeatmapResponse,
-    HeatmapSummary,
     TransportStats,
 )
 from app.services.heatmap_service import (
-    DEFAULT_TIME_RANGE,
     HeatmapService,
     parse_time_range,
     parse_transport_modes,

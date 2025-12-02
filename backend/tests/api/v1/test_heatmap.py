@@ -4,13 +4,8 @@ Tests for the heatmap endpoint.
 
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-from fastapi.testclient import TestClient
-
 from app.models.heatmap import HeatmapResponse
-from tests.api.conftest import CacheScenario, MVGClientScenario
+from tests.api.conftest import CacheScenario
 
 
 def test_heatmap_cancellations_cache_hit(api_client, fake_cache):
@@ -46,8 +41,9 @@ def test_heatmap_cancellations_cache_hit(api_client, fake_cache):
     }
 
     # Configure cache to return cached payload
+    # Cache key includes: time_range, transport_modes, bucket_width, zoom, max_points
     fake_cache.configure(
-        "heatmap:cancellations:24h:all:60",
+        "heatmap:cancellations:24h:all:60:10:default",
         CacheScenario(fresh_value=cached_payload),
     )
 
