@@ -20,6 +20,7 @@
 - Python: PEP 8, 4-space indent, snake_case modules; prefer typed signatures and Pydantic models; keep services stateless and cache logic centralized.
 - TypeScript/React: idiomatic React 19 with hooks; prefer typed props and TanStack Query for data fetching; Tailwind utility classes.
 - Use existing patterns for caching (single-flight locks, stale reads) and metrics; avoid new dependencies without discussion.
+- Pre-commit hooks enforce black formatting and ruff linting; install with `pre-commit install` after setting up the backend virtualenv.
 
 ## Testing Guidelines
 - Mirror code structure in tests; add regression tests for bugs and unit/integration for new features.

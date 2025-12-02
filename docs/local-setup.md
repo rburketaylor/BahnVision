@@ -51,6 +51,10 @@ For active development with hot reload:
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
+
+# Install pre-commit hooks (auto-runs black & ruff on commit)
+pre-commit install
+
 uvicorn app.main:app --reload --app-dir backend
 
 # Frontend setup (in separate terminal)
