@@ -7,7 +7,7 @@ This script inserts sample data that can be used to verify migrations work corre
 import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
@@ -119,23 +119,25 @@ async def verify_fixtures():
             print("\nVerifying test fixtures...")
 
             # Count stations
-            result = await conn.execute(select(Station))
-            station_count = len(result.all())
+            result = await conn.execute(select(func.count()).select_from(Station))
+            station_count = result.scalar() or 0
             print(f"✓ Stations: {station_count}")
 
             # Count transit lines
-            result = await conn.execute(select(TransitLine))
-            line_count = len(result.all())
+            result = await conn.execute(select(func.count()).select_from(TransitLine))
+            line_count = result.scalar() or 0
             print(f"✓ Transit lines: {line_count}")
 
             # Count ingestion runs
-            result = await conn.execute(select(IngestionRun))
-            ingestion_count = len(result.all())
+            result = await conn.execute(select(func.count()).select_from(IngestionRun))
+            ingestion_count = result.scalar() or 0
             print(f"✓ Ingestion runs: {ingestion_count}")
 
             # Count departures
-            result = await conn.execute(select(DepartureObservation))
-            departure_count = len(result.all())
+            result = await conn.execute(
+                select(func.count()).select_from(DepartureObservation)
+            )
+            departure_count = result.scalar() or 0
             print(f"✓ Departure observations: {departure_count}")
 
             if station_count > 0 and line_count > 0 and departure_count > 0:
