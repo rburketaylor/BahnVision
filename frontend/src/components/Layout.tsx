@@ -13,6 +13,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Departures' },
     { path: '/planner', label: 'Planner' },
+    { path: '/heatmap', label: 'Heatmap' },
     { path: '/insights', label: 'Insights' },
   ]
 

@@ -213,7 +213,7 @@ class TransitDataRepository:
         result = await self._session.execute(
             stmt.returning(models.DepartureObservation.id)
         )
-        return len(result.scalars().all())
+        return len(list(result.scalars()))
 
     async def record_weather_observations(
         self, weather_samples: Iterable[WeatherObservationPayload]
@@ -248,7 +248,7 @@ class TransitDataRepository:
         result = await self._session.execute(
             stmt.returning(models.WeatherObservation.id)
         )
-        return len(result.scalars().all())
+        return len(list(result.scalars()))
 
     async def link_departure_weather(
         self, links: Iterable[DepartureWeatherLinkPayload]

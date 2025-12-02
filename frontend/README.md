@@ -131,7 +131,7 @@ npm test -- api.test.ts
 
 ### E2E Tests
 
-Located in `src/tests/e2e/`. Test complete user flows with Playwright.
+Located in `tests/e2e/`. Test complete user flows with Playwright.
 
 ```bash
 npm run test:e2e

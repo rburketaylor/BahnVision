@@ -6,6 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Update system packages to patch known vulnerabilities
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 COPY backend/requirements.runtime.txt .
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.runtime.txt
