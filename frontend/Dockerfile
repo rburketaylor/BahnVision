@@ -30,6 +30,9 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine AS production
 
+# Update packages to patch known vulnerabilities
+RUN apk update && apk upgrade --no-cache
+
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
@@ -42,5 +45,8 @@ EXPOSE 80
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1
+
+# Run as non-root user for security
+USER nginx
 
 CMD ["nginx", "-g", "daemon off;"]

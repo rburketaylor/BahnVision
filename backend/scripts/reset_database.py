@@ -37,6 +37,7 @@ async def reset_database():
             ]
 
             for table in tables:
+                # nosec: table names are hardcoded above, not user input
                 await conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
                 print(f"✓ Dropped table: {table}")
 
@@ -51,6 +52,7 @@ async def reset_database():
             ]
 
             for enum in enums:
+                # nosec: enum names are hardcoded above, not user input
                 await conn.execute(text(f"DROP TYPE IF EXISTS {enum} CASCADE"))
                 print(f"✓ Dropped enum: {enum}")
 
