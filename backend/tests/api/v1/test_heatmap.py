@@ -75,7 +75,9 @@ def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_mvg_clien
 def test_heatmap_cancellations_with_time_range(api_client, fake_cache, fake_mvg_client):
     """Test heatmap endpoint with different time ranges."""
     for time_range in ["1h", "6h", "24h", "7d"]:
-        response = api_client.get(f"/api/v1/heatmap/cancellations?time_range={time_range}")
+        response = api_client.get(
+            f"/api/v1/heatmap/cancellations?time_range={time_range}"
+        )
         assert response.status_code == 200, f"Failed for time_range={time_range}"
 
         data = response.json()
@@ -83,9 +85,13 @@ def test_heatmap_cancellations_with_time_range(api_client, fake_cache, fake_mvg_
         assert validated.time_range is not None
 
 
-def test_heatmap_cancellations_with_transport_filter(api_client, fake_cache, fake_mvg_client):
+def test_heatmap_cancellations_with_transport_filter(
+    api_client, fake_cache, fake_mvg_client
+):
     """Test heatmap endpoint with transport mode filtering."""
-    response = api_client.get("/api/v1/heatmap/cancellations?transport_modes=UBAHN,SBAHN")
+    response = api_client.get(
+        "/api/v1/heatmap/cancellations?transport_modes=UBAHN,SBAHN"
+    )
     assert response.status_code == 200
 
     data = response.json()
@@ -110,7 +116,9 @@ def test_heatmap_cancellations_invalid_bucket_width(api_client):
     assert response.status_code == 422
 
 
-def test_heatmap_cancellations_response_structure(api_client, fake_cache, fake_mvg_client):
+def test_heatmap_cancellations_response_structure(
+    api_client, fake_cache, fake_mvg_client
+):
     """Test that heatmap response has correct structure."""
     response = api_client.get("/api/v1/heatmap/cancellations")
     assert response.status_code == 200

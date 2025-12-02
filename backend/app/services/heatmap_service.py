@@ -198,15 +198,15 @@ class HeatmapService:
 
         # Filter to stations with significant data
         data_points = [
-            dp for dp in data_points
+            dp
+            for dp in data_points
             if dp.total_departures >= MIN_DEPARTURES
             and dp.cancellation_rate >= MIN_CANCELLATION_RATE
         ]
 
         # Sort by impact (cancellation rate * departures) and limit
         data_points.sort(
-            key=lambda x: x.cancellation_rate * x.total_departures,
-            reverse=True
+            key=lambda x: x.cancellation_rate * x.total_departures, reverse=True
         )
         data_points = data_points[:max_points]
 
@@ -354,9 +354,7 @@ class HeatmapService:
         )
 
         # Find most affected station (by rate, with minimum departures threshold)
-        affected_stations = [
-            dp for dp in data_points if dp.total_departures >= 50
-        ]
+        affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
         most_affected_station = None
         if affected_stations:
             most_affected = max(affected_stations, key=lambda x: x.cancellation_rate)

@@ -15,7 +15,9 @@ from pydantic import BaseModel, Field
 class TransportStats(BaseModel):
     """Statistics for a single transport type."""
 
-    total: int = Field(..., ge=0, description="Total departures for this transport type.")
+    total: int = Field(
+        ..., ge=0, description="Total departures for this transport type."
+    )
     cancelled: int = Field(..., ge=0, description="Number of cancelled departures.")
 
 
@@ -26,8 +28,12 @@ class HeatmapDataPoint(BaseModel):
     station_name: str = Field(..., description="Human-readable station name.")
     latitude: float = Field(..., ge=-90, le=90, description="Station latitude.")
     longitude: float = Field(..., ge=-180, le=180, description="Station longitude.")
-    total_departures: int = Field(..., ge=0, description="Total departures in the time range.")
-    cancelled_count: int = Field(..., ge=0, description="Number of cancelled departures.")
+    total_departures: int = Field(
+        ..., ge=0, description="Total departures in the time range."
+    )
+    cancelled_count: int = Field(
+        ..., ge=0, description="Number of cancelled departures."
+    )
     cancellation_rate: float = Field(
         ..., ge=0, le=1, description="Cancellation rate (0.0 to 1.0)."
     )
@@ -40,7 +46,9 @@ class HeatmapDataPoint(BaseModel):
 class TimeRange(BaseModel):
     """Time range specification."""
 
-    from_time: datetime = Field(..., alias="from", description="Start of time range (UTC).")
+    from_time: datetime = Field(
+        ..., alias="from", description="Start of time range (UTC)."
+    )
     to_time: datetime = Field(..., alias="to", description="End of time range (UTC).")
 
     model_config = {"populate_by_name": True}
@@ -50,7 +58,9 @@ class HeatmapSummary(BaseModel):
     """Summary statistics for the heatmap."""
 
     total_stations: int = Field(..., ge=0, description="Number of stations with data.")
-    total_departures: int = Field(..., ge=0, description="Total departures across all stations.")
+    total_departures: int = Field(
+        ..., ge=0, description="Total departures across all stations."
+    )
     total_cancellations: int = Field(
         ..., ge=0, description="Total cancellations across all stations."
     )
