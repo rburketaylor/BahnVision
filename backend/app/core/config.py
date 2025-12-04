@@ -153,6 +153,49 @@ class Settings(BaseSettings):
     )
 
     # ==========================================================================
+    # GTFS Configuration
+    # ==========================================================================
+
+    # GTFS Static Feed Configuration
+    gtfs_feed_url: str = Field(
+        default="https://download.gtfs.de/germany/full/latest.zip",
+        alias="GTFS_FEED_URL",
+    )
+    gtfs_update_interval_hours: int = Field(
+        default=24, alias="GTFS_UPDATE_INTERVAL_HOURS"
+    )
+    gtfs_max_feed_age_hours: int = Field(
+        default=48, alias="GTFS_MAX_FEED_AGE_HOURS"  # Force re-download if older
+    )
+    gtfs_download_timeout_seconds: int = Field(
+        default=300, alias="GTFS_DOWNLOAD_TIMEOUT"  # 5 min for large feed
+    )
+    gtfs_storage_path: str = Field(default="/data/gtfs", alias="GTFS_STORAGE_PATH")
+
+    # GTFS-RT Configuration
+    gtfs_rt_feed_url: str = Field(
+        default="https://realtime.gtfs.de/realtime-free.pb", alias="GTFS_RT_FEED_URL"
+    )
+    gtfs_rt_timeout_seconds: int = Field(default=10, alias="GTFS_RT_TIMEOUT")
+    gtfs_rt_circuit_breaker_threshold: int = Field(
+        default=3, alias="GTFS_RT_CIRCUIT_BREAKER_THRESHOLD"
+    )
+    gtfs_rt_circuit_breaker_recovery_seconds: int = Field(
+        default=60, alias="GTFS_RT_CIRCUIT_BREAKER_RECOVERY"
+    )
+
+    # GTFS Cache TTLs
+    gtfs_schedule_cache_ttl_seconds: int = Field(
+        default=43200, alias="GTFS_SCHEDULE_CACHE_TTL_SECONDS"  # 12 hours
+    )
+    gtfs_stop_cache_ttl_seconds: int = Field(
+        default=86400, alias="GTFS_STOP_CACHE_TTL_SECONDS"  # 24 hours
+    )
+    gtfs_rt_cache_ttl_seconds: int = Field(
+        default=30, alias="GTFS_RT_CACHE_TTL_SECONDS"  # 30 seconds (real-time)
+    )
+
+    # ==========================================================================
     # OpenTelemetry (optional)
     # ==========================================================================
 
