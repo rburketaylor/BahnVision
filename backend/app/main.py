@@ -5,9 +5,12 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.metrics import router as metrics_router
 from app.api.routes import api_router
+from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.telemetry import (
@@ -85,20 +88,45 @@ def create_app() -> FastAPI:
 
     _configure_sqlalchemy_logging(settings.database_echo)
 
+    # Configure rate limiting using the shared limiter
+    if settings.rate_limit_enabled:
+        app.state.limiter = limiter
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        logger.info("Rate limiting enabled")
+
     # Instrument FastAPI for tracing if enabled
     instrument_fastapi(app, enabled=settings.otel_enabled)
     _install_request_id_middleware(app)
 
     allow_origins = settings.cors_allow_origins
     allow_origin_regex = settings.cors_allow_origin_regex
+
+    # In strict mode, only allow explicitly configured origins
+    if settings.cors_strict_mode:
+        # Validate origins are not overly permissive in production
+        for origin in allow_origins:
+            if "*" in origin and not origin.startswith("http://localhost"):
+                raise ValueError(
+                    f"Wildcard CORS origin '{origin}' not allowed in strict mode. "
+                    "Use specific domains in production."
+                )
+
     if allow_origins or allow_origin_regex:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=allow_origins,
             allow_origin_regex=allow_origin_regex,
             allow_credentials=bool(allow_origins),
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "accept",
+                "accept-language",
+                "content-language",
+                "content-type",
+                "authorization",
+                "x-request-id",
+                "x-api-key",
+            ],
         )
 
     app.include_router(metrics_router)
