@@ -1,7 +1,7 @@
 # Multi-stage build for BahnVision frontend
 
 # Build stage
-FROM node:24-alpine AS builder
+FROM node:lts-alpine AS builder
 
 WORKDIR /app
 
@@ -31,6 +31,7 @@ RUN npm run build
 FROM nginx:alpine AS production
 
 # Update packages to patch known vulnerabilities
+# Using --no-cache avoids storing the index locally, and running in a single layer
 RUN apk update && apk upgrade --no-cache
 
 # Copy built assets from builder
@@ -38,6 +39,13 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Create nginx cache directories with proper permissions
+RUN mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \
+    /var/cache/nginx/fastcgi_temp /var/cache/nginx/uwsgi_temp \
+    /var/cache/nginx/scgi_temp && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chmod -R 755 /var/cache/nginx
 
 # Expose port
 EXPOSE 80
