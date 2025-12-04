@@ -12,6 +12,7 @@ import {
   type KeyboardEvent,
   type ChangeEvent,
 } from 'react'
+import DOMPurify from 'dompurify'
 import { useStationSearch } from '../hooks/useStationSearch'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Station } from '../types/api'
@@ -24,10 +25,15 @@ import {
   type RecentSearch,
 } from '../lib/recentSearches'
 
-// Highlighting function
+// Sanitize user input to prevent XSS
+function sanitizeQuery(query: string): string {
+  return DOMPurify.sanitize(query, { ALLOWED_TAGS: [] })
+}
+
+// Highlighting function - CSS-based approach for security
 function highlightMatch(text: string, query: string) {
   if (!query) {
-    return text
+    return { parts: [{ text, isMatch: false }] }
   }
 
   const lowerText = text.toLowerCase()
@@ -35,20 +41,40 @@ function highlightMatch(text: string, query: string) {
   const index = lowerText.indexOf(lowerQuery)
 
   if (index === -1) {
-    return text
+    return { parts: [{ text, isMatch: false }] }
   }
 
   const before = text.slice(0, index)
   const match = text.slice(index, index + query.length)
   const after = text.slice(index + query.length)
 
+  return {
+    parts: [
+      { text: before, isMatch: false },
+      { text: match, isMatch: true },
+      { text: after, isMatch: false },
+    ].filter(part => part.text.length > 0),
+  }
+}
+
+// Safe highlighted text component
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const { parts } = highlightMatch(text, query)
+
   return (
     <>
-      {before}
-      <span className="font-semibold bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded">
-        {match}
-      </span>
-      {after}
+      {parts.map((part, index) => (
+        <span
+          key={index}
+          className={
+            part.isMatch
+              ? 'font-semibold bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded'
+              : ''
+          }
+        >
+          {part.text}
+        </span>
+      ))}
     </>
   )
 }
@@ -84,7 +110,7 @@ export function StationSearch({
   const [activeIndex, setActiveIndex] = useState<number>(-1)
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(() => getRecentSearches())
 
-  const trimmedQuery = query.trim()
+  const trimmedQuery = sanitizeQuery(query.trim())
   const debouncedQuery = useDebouncedValue(trimmedQuery, debounceMs)
   const isEnabled = debouncedQuery.length > 0
 
@@ -431,7 +457,11 @@ export function StationSearch({
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-foreground truncate">
-                            {isRecent ? station.name : highlightMatch(station.name, trimmedQuery)}
+                            {isRecent ? (
+                              station.name
+                            ) : (
+                              <HighlightedText text={station.name} query={trimmedQuery} />
+                            )}
                           </div>
                           {station.id !== station.name && (
                             <div className="text-sm text-gray-500 truncate">ID: {station.id}</div>
