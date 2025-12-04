@@ -6,7 +6,7 @@ Provides station search and listing with caching and stale fallback.
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 
 from app.api.v1.endpoints.mvg.shared.cache_keys import station_search_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import get_client
@@ -15,6 +15,7 @@ from app.api.v1.shared.mvg_protocols import (
     StationListRefreshProtocol,
     StationSearchRefreshProtocol,
 )
+from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.models.mvg import Station, StationSearchResponse
 from app.persistence.dependencies import get_station_repository
@@ -34,7 +35,9 @@ _CACHE_STATION_LIST = "mvg_station_list"
     response_model=StationSearchResponse,
     summary="Find stations matching a search query",
 )
+@limiter.limit("60/minute")
 async def search_stations(
+    request: Request,
     query: Annotated[
         str,
         Query(
@@ -82,7 +85,9 @@ async def search_stations(
     response_model=list[Station],
     summary="Get all MVG stations (cached)",
 )
+@limiter.limit("30/minute")
 async def list_stations(
+    request: Request,
     response: Response,
     background_tasks: BackgroundTasks,
     client: MVGClient = Depends(get_client),

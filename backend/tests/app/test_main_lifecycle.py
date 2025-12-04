@@ -98,7 +98,9 @@ def test_create_app_passes_otel_flag_to_fastapi(monkeypatch):
         database_echo=False,
         cors_allow_origins=["http://localhost"],
         cors_allow_origin_regex=None,
+        cors_strict_mode=False,
         otel_enabled=False,
+        rate_limit_enabled=False,
     )
     fastapi_call = {}
 

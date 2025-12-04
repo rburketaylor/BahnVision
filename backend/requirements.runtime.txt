@@ -14,3 +14,4 @@ opentelemetry-instrumentation-fastapi==0.59b0
 opentelemetry-instrumentation-httpx==0.59b0
 opentelemetry-exporter-otlp==1.38.0
 opentelemetry-propagator-b3==1.38.0
+slowapi==0.1.9
