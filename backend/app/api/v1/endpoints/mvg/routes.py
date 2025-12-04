@@ -12,6 +12,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     Response,
     status,
 )
@@ -19,6 +20,7 @@ from fastapi import (
 from app.api.v1.endpoints.mvg.shared.cache_keys import route_cache_key
 from app.api.v1.shared.cache_manager import CacheManager
 from app.api.v1.shared.mvg_protocols import RouteRefreshProtocol
+from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.models.mvg import RouteResponse
 from app.services.cache import CacheService, get_cache_service
@@ -38,7 +40,9 @@ router = APIRouter()
     response_model=RouteResponse,
     summary="Plan a route between two stations",
 )
+@limiter.limit("10/minute")
 async def plan_route(
+    request: Request,
     origin: Annotated[
         str,
         Query(

@@ -13,6 +13,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     Response,
     status,
 )
@@ -21,6 +22,7 @@ from app.api.v1.endpoints.mvg.shared.cache_keys import departures_cache_key
 from app.api.v1.endpoints.mvg.shared.utils import ensure_aware_utc, get_client
 from app.api.v1.shared.cache_manager import CacheManager
 from app.api.v1.shared.mvg_protocols import DeparturesRefreshProtocol
+from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.models.mvg import DeparturesResponse
 from app.services.cache import CacheService, get_cache_service
@@ -38,7 +40,9 @@ _CACHE_DEPARTURES = "mvg_departures"
     response_model=DeparturesResponse,
     summary="Get upcoming departures for a station",
 )
+@limiter.limit("30/minute")
 async def departures(
+    request: Request,
     station: Annotated[
         str,
         Query(
