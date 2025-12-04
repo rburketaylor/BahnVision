@@ -194,6 +194,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+      RATE_LIMIT_ENABLED: false
     services:
       postgres:
         image: postgres:18-alpine
