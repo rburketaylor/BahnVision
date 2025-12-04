@@ -1,0 +1,109 @@
+version: 2
+
+updates:
+  # Production Python dependencies - WEEKLY (stability focus)
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    groups:
+      production-python:
+        dependency-type: "production"
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "mvg*"
+          - "valkey*"
+          - "pydantic*"
+          - "prometheus*"
+          - "sqlalchemy*"
+          - "alembic*"
+          - "asyncpg*"
+          - "httpx*"
+          - "opentelemetry*"
+          - "slowapi*"
+      development-python:
+        dependency-type: "development"
+        patterns:
+          - "pytest*"
+          - "ruff*"
+          - "black*"
+          - "pre-commit*"
+
+  # Production Node.js dependencies - WEEKLY (stability focus)
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    groups:
+      production-npm:
+        dependency-type: "production"
+        patterns:
+          - "@headlessui/react"
+          - "@sentry/react"
+          - "@tanstack/react-query"
+          - "dompurify"
+          - "leaflet*"
+          - "react*"
+          - "react-router"
+          - "zustand"
+      development-npm:
+        dependency-type: "development"
+        patterns:
+          - "@types/*"
+          - "@eslint/*"
+          - "@playwright/*"
+          - "@testing-library/*"
+          - "@vitejs/*"
+          - "@vitest/*"
+          - "eslint*"
+          - "prettier*"
+          - "tailwindcss*"
+          - "typescript*"
+          - "vite*"
+          - "vitest*"
+
+  # Security-sensitive GitHub Actions - DAILY (security focus)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "10:00"
+    groups:
+      security-actions:
+        patterns:
+          - "actions/*"
+          - "github/*"
+      setup-actions:
+        patterns:
+          - "actions/setup-*"
+          - "actions/cache*"
+          - "actions/checkout*"
+
+  # Infrastructure Docker Compose - MONTHLY (stability focus)
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "10:00"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+
+  # Root directory GitHub Actions - DAILY (for workflow files)
+  - package-ecosystem: "github-actions"
+    directory: "/.github"
+    schedule:
+      interval: "daily"
+      time: "10:00"
+    groups:
+      workflow-actions:
+        patterns:
+          - "actions/*"
+          - "github/*"
