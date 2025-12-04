@@ -1,0 +1,463 @@
+"""
+Combined Transit Data Service
+
+Integrates static GTFS schedule data with real-time updates to provide
+a unified view of transit information including:
+- Departures with real-time delays
+- Route information with service alerts
+- Vehicle tracking
+- Stop information
+"""
+
+import asyncio
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Set
+from dataclasses import dataclass, asdict
+from enum import Enum
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.core.config import get_settings
+from app.services.cache import CacheService
+from app.models.gtfs import GTFSStop, GTFSRoute
+
+logger = logging.getLogger(__name__)
+
+# Import with fallbacks for missing dependencies
+try:
+    from app.services.gtfs_schedule import GTFSScheduleService, ScheduledDeparture
+
+    GTFS_SCHEDULE_AVAILABLE = True
+except ImportError as e:
+    GTFSScheduleService = None
+    ScheduledDeparture = None
+    GTFS_SCHEDULE_AVAILABLE = False
+    logger.warning(f"GTFS schedule service not available: {e}")
+
+try:
+    from app.services.gtfs_realtime import (
+        GtfsRealtimeService,
+        TripUpdate,
+        VehiclePosition,
+        ServiceAlert,
+    )
+
+    GTFS_REALTIME_AVAILABLE = True
+except ImportError as e:
+    GtfsRealtimeService = None
+    TripUpdate = None
+    VehiclePosition = None
+    ServiceAlert = None
+    GTFS_REALTIME_AVAILABLE = False
+    logger.warning(f"GTFS realtime service not available: {e}")
+
+logger = logging.getLogger(__name__)
+
+
+class ScheduleRelationship(Enum):
+    """Schedule relationship for stop times"""
+
+    SCHEDULED = "SCHEDULED"
+    SKIPPED = "SKIPPED"
+    NO_DATA = "NO_DATA"
+    UNSCHEDULED = "UNSCHEDULED"
+
+
+@dataclass
+class DepartureInfo:
+    """Combined departure information with real-time updates"""
+
+    trip_id: str
+    route_id: str
+    route_short_name: str
+    route_long_name: str
+    trip_headsign: str
+    stop_id: str
+    stop_name: str
+    scheduled_departure: datetime
+    scheduled_arrival: Optional[datetime] = None
+    real_time_departure: Optional[datetime] = None
+    real_time_arrival: Optional[datetime] = None
+    departure_delay_seconds: Optional[int] = None
+    arrival_delay_seconds: Optional[int] = None
+    schedule_relationship: ScheduleRelationship = ScheduleRelationship.SCHEDULED
+    vehicle_id: Optional[str] = None
+    vehicle_position: Optional[Dict] = None
+    alerts: List = None  # Remove ServiceAlert type reference
+
+    def __post_init__(self):
+        if self.alerts is None:
+            self.alerts = []
+
+
+@dataclass
+class RouteInfo:
+    """Route information with real-time status"""
+
+    route_id: str
+    route_short_name: str
+    route_long_name: str
+    route_type: int
+    route_color: str
+    route_text_color: str
+    active_trips: int = 0
+    alerts: List = None  # Remove ServiceAlert type reference
+
+    def __post_init__(self):
+        if self.alerts is None:
+            self.alerts = []
+
+
+@dataclass
+class StopInfo:
+    """Stop information with real-time status"""
+
+    stop_id: str
+    stop_name: str
+    stop_lat: float
+    stop_lon: float
+    zone_id: Optional[str] = None
+    wheelchair_boarding: int = 0
+    upcoming_departures: List = None  # Remove DepartureInfo type reference
+    alerts: List = None  # Remove ServiceAlert type reference
+
+    def __post_init__(self):
+        if self.upcoming_departures is None:
+            self.upcoming_departures = []
+        if self.alerts is None:
+            self.alerts = []
+
+
+class TransitDataService:
+    """Combined service for static and real-time transit data"""
+
+    def __init__(
+        self,
+        cache_service: CacheService,
+        gtfs_schedule,  # Remove type hint to avoid import issues
+        gtfs_realtime,  # Remove type hint to avoid import issues
+        db_session: AsyncSession,
+    ):
+        self.settings = get_settings()
+        self.cache = cache_service
+        self.gtfs_schedule = gtfs_schedule
+        self.gtfs_realtime = gtfs_realtime
+        self.db = db_session
+
+    async def get_departures_for_stop(
+        self,
+        stop_id: str,
+        limit: int = 10,
+        offset_minutes: int = 0,
+        include_real_time: bool = True,
+    ) -> List[DepartureInfo]:
+        """Get departures for a stop with optional real-time updates"""
+        try:
+            # Skip caching for now due to type issues
+            # TODO: Fix caching after resolving type issues
+
+            # Get scheduled departures
+            scheduled_time = datetime.now(timezone.utc) + timedelta(
+                minutes=offset_minutes
+            )
+            scheduled_departures = await self.gtfs_schedule.get_departures_for_stop(
+                stop_id, scheduled_time, limit
+            )
+
+            if not scheduled_departures:
+                return []
+
+            # Get stop information
+            stop_info = await self._get_stop_info(stop_id)
+            if not stop_info:
+                logger.warning(f"Stop {stop_id} not found")
+                return []
+
+            # Get route information
+            route_ids = {dep.route_id for dep in scheduled_departures}
+            route_info = await self._get_route_info_batch(route_ids)
+
+            # Convert to departure info
+            departures = []
+            for dep in scheduled_departures:
+                route = route_info.get(dep.route_id)
+                if not route:
+                    continue
+
+                departure_info = DepartureInfo(
+                    trip_id=str(dep.trip_id),
+                    route_id=str(dep.route_id),
+                    route_short_name=str(route.route_short_name or ""),
+                    route_long_name=str(route.route_long_name or ""),
+                    trip_headsign=str(dep.trip_headsign or ""),
+                    stop_id=str(stop_id),
+                    stop_name=str(stop_info.stop_name),
+                    scheduled_departure=dep.departure_time,
+                    scheduled_arrival=dep.arrival_time,
+                    schedule_relationship=ScheduleRelationship.SCHEDULED,
+                )
+                departures.append(departure_info)
+
+            # Apply real-time updates if requested
+            if include_real_time:
+                await self._apply_real_time_updates(departures, stop_id)
+
+            # TODO: Add caching back after fixing type issues
+
+            return departures
+
+        except Exception as e:
+            logger.error(f"Failed to get departures for stop {stop_id}: {e}")
+            return []
+
+    async def get_route_info(
+        self, route_id: str, include_real_time: bool = True
+    ) -> Optional[RouteInfo]:
+        """Get route information with real-time status"""
+        try:
+            cache_key = f"route:{route_id}:{include_real_time}"
+            cached_result = await self.cache.get_json(cache_key)
+            if cached_result:
+                return RouteInfo(**cached_result)
+
+            # Get route from database
+            stmt = select(GTFSRoute).where(GTFSRoute.route_id == route_id)
+            result = await self.db.execute(stmt)
+            route = result.scalar_one_or_none()
+
+            if not route:
+                return None
+
+            route_info = RouteInfo(
+                route_id=str(route.route_id),
+                route_short_name=str(route.route_short_name or ""),
+                route_long_name=str(route.route_long_name or ""),
+                route_type=int(route.route_type),
+                route_color=str(route.route_color or ""),
+                route_text_color="",  # Not in GTFS model
+            )
+
+            # Get real-time alerts if requested
+            if include_real_time:
+                route_info.alerts = await self.gtfs_realtime.get_alerts_for_route(
+                    route_id
+                )
+
+            # Cache the result
+            await self.cache.set_json(
+                cache_key,
+                asdict(route_info),
+                ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds,
+            )
+
+            return route_info
+
+        except Exception as e:
+            logger.error(f"Failed to get route info for {route_id}: {e}")
+            return None
+
+    async def get_stop_info(
+        self, stop_id: str, include_departures: bool = False
+    ) -> Optional[StopInfo]:
+        """Get stop information with optional departures"""
+        try:
+            cache_key = f"stop:{stop_id}:{include_departures}"
+            cached_result = await self.cache.get_json(cache_key)
+            if cached_result:
+                return StopInfo(**cached_result)
+
+            # Get stop from database
+            stmt = select(GTFSStop).where(GTFSStop.stop_id == stop_id)
+            result = await self.db.execute(stmt)
+            stop = result.scalar_one_or_none()
+
+            if not stop:
+                return None
+
+            stop_info = StopInfo(
+                stop_id=str(stop.stop_id),
+                stop_name=str(stop.stop_name),
+                stop_lat=float(stop.stop_lat),
+                stop_lon=float(stop.stop_lon),
+                zone_id=None,  # Not in GTFS model
+                wheelchair_boarding=0,  # Not in GTFS model
+            )
+
+            # Get upcoming departures if requested
+            if include_departures:
+                stop_info.upcoming_departures = await self.get_departures_for_stop(
+                    stop_id, limit=5
+                )
+
+            # Cache the result
+            await self.cache.set_json(
+                cache_key,
+                asdict(stop_info),
+                ttl_seconds=self.settings.gtfs_stop_cache_ttl_seconds,
+            )
+
+            return stop_info
+
+        except Exception as e:
+            logger.error(f"Failed to get stop info for {stop_id}: {e}")
+            return None
+
+    async def search_stops(self, query: str, limit: int = 10) -> List[StopInfo]:
+        """Search for stops by name"""
+        try:
+            stops = await self.gtfs_schedule.search_stops(query, limit)
+
+            stop_infos = []
+            for stop in stops:
+                stop_info = StopInfo(
+                    stop_id=str(stop.stop_id),
+                    stop_name=str(stop.stop_name),
+                    stop_lat=float(stop.stop_lat) if stop.stop_lat else 0.0,
+                    stop_lon=float(stop.stop_lon) if stop.stop_lon else 0.0,
+                    zone_id=None,  # Not in GTFS model
+                    wheelchair_boarding=0,  # Not in GTFS model
+                )
+                stop_infos.append(stop_info)
+
+            return stop_infos
+
+        except Exception as e:
+            logger.error(f"Failed to search stops for query '{query}': {e}")
+            return []
+
+    async def get_vehicle_position(self, vehicle_id: str) -> Optional[VehiclePosition]:
+        """Get real-time vehicle position"""
+        return await self.gtfs_realtime.get_vehicle_position(vehicle_id)
+
+    async def refresh_real_time_data(self) -> Dict[str, int]:
+        """Refresh all real-time data and return counts"""
+        try:
+            # Fetch all real-time data types
+            trip_updates_task = self.gtfs_realtime.fetch_trip_updates()
+            vehicle_positions_task = self.gtfs_realtime.fetch_vehicle_positions()
+            alerts_task = self.gtfs_realtime.fetch_alerts()
+
+            trip_updates, vehicle_positions, alerts = await asyncio.gather(
+                trip_updates_task,
+                vehicle_positions_task,
+                alerts_task,
+                return_exceptions=True,
+            )
+
+            # Handle exceptions
+            trip_updates_count = (
+                len(trip_updates) if not isinstance(trip_updates, Exception) else 0
+            )
+            vehicle_positions_count = (
+                len(vehicle_positions)
+                if not isinstance(vehicle_positions, Exception)
+                else 0
+            )
+            alerts_count = len(alerts) if not isinstance(alerts, Exception) else 0
+
+            # Log any errors
+            if isinstance(trip_updates, Exception):
+                logger.error(f"Failed to fetch trip updates: {trip_updates}")
+            if isinstance(vehicle_positions, Exception):
+                logger.error(f"Failed to fetch vehicle positions: {vehicle_positions}")
+            if isinstance(alerts, Exception):
+                logger.error(f"Failed to fetch alerts: {alerts}")
+
+            logger.info(
+                f"Real-time data refresh: {trip_updates_count} trip updates, "
+                f"{vehicle_positions_count} vehicle positions, {alerts_count} alerts"
+            )
+
+            return {
+                "trip_updates": trip_updates_count,
+                "vehicle_positions": vehicle_positions_count,
+                "alerts": alerts_count,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to refresh real-time data: {e}")
+            return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
+
+    async def _get_stop_info(self, stop_id: str) -> Optional[GTFSStop]:
+        """Get stop information from database"""
+        try:
+            stmt = select(GTFSStop).where(GTFSStop.stop_id == stop_id)
+            result = await self.db.execute(stmt)
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Failed to get stop info for {stop_id}: {e}")
+            return None
+
+    async def _get_route_info_batch(self, route_ids: Set[str]) -> Dict[str, GTFSRoute]:
+        """Get route information for multiple routes"""
+        try:
+            stmt = select(GTFSRoute).where(GTFSRoute.route_id.in_(route_ids))
+            result = await self.db.execute(stmt)
+            routes = result.scalars().all()
+            return {str(route.route_id): route for route in routes}
+        except Exception as e:
+            logger.error(f"Failed to get route info batch: {e}")
+            return {}
+
+    async def _apply_real_time_updates(
+        self, departures: List[DepartureInfo], stop_id: str
+    ):
+        """Apply real-time updates to scheduled departures"""
+        try:
+            # Get trip updates for this stop
+            trip_updates = await self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
+
+            # Create lookup map
+            update_map = {}
+            for tu in trip_updates:
+                key = (tu.trip_id, tu.stop_id)
+                update_map[key] = tu
+
+            # Apply updates to departures
+            for departure in departures:
+                key = (departure.trip_id, departure.stop_id)
+                if key in update_map:
+                    tu = update_map[key]
+
+                    # Update times
+                    if tu.arrival_delay is not None and departure.scheduled_arrival:
+                        departure.real_time_arrival = (
+                            departure.scheduled_arrival
+                            + timedelta(seconds=tu.arrival_delay)
+                        )
+                        departure.arrival_delay_seconds = tu.arrival_delay
+
+                    if tu.departure_delay is not None:
+                        departure.real_time_departure = (
+                            departure.scheduled_departure
+                            + timedelta(seconds=tu.departure_delay)
+                        )
+                        departure.departure_delay_seconds = tu.departure_delay
+
+                    # Update schedule relationship
+                    departure.schedule_relationship = ScheduleRelationship(
+                        tu.schedule_relationship
+                    )
+
+            # Get vehicle positions for active trips
+            trip_ids = {dep.trip_id for dep in departures}
+            for trip_id in trip_ids:
+                # Note: This is a simplified approach
+                # In practice, you'd need to map vehicles to trips
+                vehicle_pos = await self.gtfs_realtime.get_vehicle_position(trip_id)
+                if vehicle_pos:
+                    for departure in departures:
+                        if departure.trip_id == trip_id:
+                            departure.vehicle_id = vehicle_pos.vehicle_id
+                            departure.vehicle_position = {
+                                "latitude": vehicle_pos.latitude,
+                                "longitude": vehicle_pos.longitude,
+                                "bearing": vehicle_pos.bearing,
+                                "speed": vehicle_pos.speed,
+                            }
+                            break
+
+        except Exception as e:
+            logger.error(f"Failed to apply real-time updates for stop {stop_id}: {e}")
