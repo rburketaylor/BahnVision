@@ -7,12 +7,13 @@ Provides an endpoint to retrieve cancellation heatmap data for map visualization
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.mvg.shared.utils import get_client
+from app.core.database import get_session
 from app.models.heatmap import HeatmapResponse, TimeRangePreset
 from app.services.cache import CacheService, get_cache_service
+from app.services.gtfs_schedule import GTFSScheduleService
 from app.services.heatmap_service import HeatmapService
-from app.services.mvg_client import MVGClient
 
 router = APIRouter()
 
@@ -21,12 +22,19 @@ _CACHE_HEATMAP = "heatmap"
 _HEATMAP_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
+async def get_gtfs_schedule(
+    db: AsyncSession = Depends(get_session),
+) -> GTFSScheduleService:
+    """Create GTFSScheduleService with database session."""
+    return GTFSScheduleService(db)
+
+
 @router.get(
     "/cancellations",
     response_model=HeatmapResponse,
     summary="Get cancellation heatmap data",
     description=(
-        "Returns aggregated cancellation data for all MVG stations, "
+        "Returns aggregated cancellation data for all transit stations, "
         "suitable for rendering as a heatmap overlay on a map."
     ),
 )
@@ -72,13 +80,13 @@ async def get_cancellation_heatmap(
             description="Maximum number of data points to return. Default: based on zoom.",
         ),
     ] = None,
-    client: MVGClient = Depends(get_client),
+    gtfs_schedule: GTFSScheduleService = Depends(get_gtfs_schedule),
     cache: CacheService = Depends(get_cache_service),
 ) -> HeatmapResponse:
     """
     Get cancellation heatmap data for map visualization.
 
-    Returns aggregated cancellation statistics for all MVG stations within
+    Returns aggregated cancellation statistics for all transit stations within
     the specified time range. The data includes:
 
     - Station locations (latitude/longitude)
@@ -99,7 +107,7 @@ async def get_cancellation_heatmap(
         return HeatmapResponse.model_validate(cached_data)
 
     # Generate fresh data
-    service = HeatmapService(client, cache)
+    service = HeatmapService(gtfs_schedule, cache)
     result = await service.get_cancellation_heatmap(
         time_range=time_range,
         transport_modes=transport_modes,
