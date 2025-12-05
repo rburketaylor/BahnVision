@@ -59,7 +59,7 @@ def test_heatmap_cancellations_cache_hit(api_client, fake_cache):
     assert validated.summary.total_stations == 1
 
 
-def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_mvg_client):
+def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_gtfs_schedule):
     """Test heatmap endpoint with cache miss and fresh fetch."""
     response = api_client.get("/api/v1/heatmap/cancellations")
     assert response.status_code == 200
@@ -72,7 +72,9 @@ def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_mvg_clien
     assert validated.summary.total_stations > 0
 
 
-def test_heatmap_cancellations_with_time_range(api_client, fake_cache, fake_mvg_client):
+def test_heatmap_cancellations_with_time_range(
+    api_client, fake_cache, fake_gtfs_schedule
+):
     """Test heatmap endpoint with different time ranges."""
     for time_range in ["1h", "6h", "24h", "7d"]:
         response = api_client.get(
@@ -86,7 +88,7 @@ def test_heatmap_cancellations_with_time_range(api_client, fake_cache, fake_mvg_
 
 
 def test_heatmap_cancellations_with_transport_filter(
-    api_client, fake_cache, fake_mvg_client
+    api_client, fake_cache, fake_gtfs_schedule
 ):
     """Test heatmap endpoint with transport mode filtering."""
     response = api_client.get(
@@ -117,7 +119,7 @@ def test_heatmap_cancellations_invalid_bucket_width(api_client):
 
 
 def test_heatmap_cancellations_response_structure(
-    api_client, fake_cache, fake_mvg_client
+    api_client, fake_cache, fake_gtfs_schedule
 ):
     """Test that heatmap response has correct structure."""
     response = api_client.get("/api/v1/heatmap/cancellations")
@@ -154,11 +156,11 @@ def test_heatmap_cancellations_response_structure(
         assert "by_transport" in point
 
 
-def test_heatmap_cancellations_station_list_failure(
-    api_client, fake_cache, fake_mvg_client
+def test_heatmap_cancellations_stop_list_failure(
+    api_client, fake_cache, fake_gtfs_schedule
 ):
-    """Test heatmap endpoint handles station list failure gracefully."""
-    fake_mvg_client.scenario.fail_station_list = True
+    """Test heatmap endpoint handles stop list failure gracefully."""
+    fake_gtfs_schedule.scenario.fail_stop_list = True
 
     response = api_client.get("/api/v1/heatmap/cancellations")
     assert response.status_code == 200
