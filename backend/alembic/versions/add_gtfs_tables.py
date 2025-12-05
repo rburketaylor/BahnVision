@@ -9,7 +9,6 @@ Create Date: 2025-12-04 20:15:00.000000
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "add_gtfs_tables"
@@ -19,80 +18,78 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create gtfs_stops table
-    op.create_table(
-        "gtfs_stops",
-        sa.Column("stop_id", sa.String(length=64), nullable=False),
-        sa.Column("stop_name", sa.String(length=255), nullable=False),
-        sa.Column("stop_lat", sa.Numeric(precision=9, scale=6), nullable=True),
-        sa.Column("stop_lon", sa.Numeric(precision=9, scale=6), nullable=True),
-        sa.Column("location_type", sa.SmallInteger(), nullable=True),
-        sa.Column("parent_station", sa.String(length=64), nullable=True),
-        sa.Column("platform_code", sa.String(length=16), nullable=True),
-        sa.Column("feed_id", sa.String(length=32), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("stop_id"),
+    # Create gtfs_stops table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_stops (
+            stop_id VARCHAR(64) PRIMARY KEY,
+            stop_name VARCHAR(255) NOT NULL,
+            stop_lat NUMERIC(9, 6),
+            stop_lon NUMERIC(9, 6),
+            location_type SMALLINT,
+            parent_station VARCHAR(64),
+            platform_code VARCHAR(16),
+            feed_id VARCHAR(32),
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """
     )
     op.create_index(
         op.f("ix_gtfs_stops_stop_name"), "gtfs_stops", ["stop_name"], unique=False
     )
 
-    # Create gtfs_routes table
-    op.create_table(
-        "gtfs_routes",
-        sa.Column("route_id", sa.String(length=64), nullable=False),
-        sa.Column("agency_id", sa.String(length=64), nullable=True),
-        sa.Column("route_short_name", sa.String(length=64), nullable=True),
-        sa.Column("route_long_name", sa.String(length=255), nullable=True),
-        sa.Column("route_type", sa.SmallInteger(), nullable=False),
-        sa.Column("route_color", sa.String(length=6), nullable=True),
-        sa.Column("feed_id", sa.String(length=32), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("route_id"),
+    # Create gtfs_routes table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_routes (
+            route_id VARCHAR(64) PRIMARY KEY,
+            agency_id VARCHAR(64),
+            route_short_name VARCHAR(64),
+            route_long_name VARCHAR(255),
+            route_type SMALLINT NOT NULL,
+            route_color VARCHAR(6),
+            feed_id VARCHAR(32),
+            created_at TIMESTAMP
+        )
+    """
     )
 
-    # Create gtfs_trips table
-    op.create_table(
-        "gtfs_trips",
-        sa.Column("trip_id", sa.String(length=64), nullable=False),
-        sa.Column("route_id", sa.String(length=64), nullable=False),
-        sa.Column("service_id", sa.String(length=64), nullable=False),
-        sa.Column("trip_headsign", sa.String(length=255), nullable=True),
-        sa.Column("direction_id", sa.SmallInteger(), nullable=True),
-        sa.Column("feed_id", sa.String(length=32), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["route_id"],
-            ["gtfs_routes.route_id"],
-        ),
-        sa.PrimaryKeyConstraint("trip_id"),
+    # Create gtfs_trips table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_trips (
+            trip_id VARCHAR(64) PRIMARY KEY,
+            route_id VARCHAR(64) NOT NULL REFERENCES gtfs_routes(route_id),
+            service_id VARCHAR(64) NOT NULL,
+            trip_headsign VARCHAR(255),
+            direction_id SMALLINT,
+            feed_id VARCHAR(32),
+            created_at TIMESTAMP
+        )
+    """
     )
     op.create_index(
         op.f("ix_gtfs_trips_service_id"), "gtfs_trips", ["service_id"], unique=False
     )
 
-    # Create gtfs_stop_times table
-    op.create_table(
-        "gtfs_stop_times",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("trip_id", sa.String(length=64), nullable=False),
-        sa.Column("stop_id", sa.String(length=64), nullable=False),
-        sa.Column("arrival_time", sa.Interval(), nullable=True),
-        sa.Column("departure_time", sa.Interval(), nullable=True),
-        sa.Column("stop_sequence", sa.SmallInteger(), nullable=False),
-        sa.Column("pickup_type", sa.SmallInteger(), nullable=True),
-        sa.Column("drop_off_type", sa.SmallInteger(), nullable=True),
-        sa.Column("feed_id", sa.String(length=32), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["stop_id"],
-            ["gtfs_stops.stop_id"],
-        ),
-        sa.ForeignKeyConstraint(
-            ["trip_id"],
-            ["gtfs_trips.trip_id"],
-        ),
-        sa.PrimaryKeyConstraint("id"),
+    # Create gtfs_stop_times table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_stop_times (
+            id SERIAL PRIMARY KEY,
+            trip_id VARCHAR(64) NOT NULL,
+            stop_id VARCHAR(64) NOT NULL,
+            arrival_time INTERVAL,
+            departure_time INTERVAL,
+            stop_sequence SMALLINT NOT NULL,
+            pickup_type SMALLINT,
+            drop_off_type SMALLINT,
+            feed_id VARCHAR(32),
+            FOREIGN KEY (stop_id) REFERENCES gtfs_stops(stop_id),
+            FOREIGN KEY (trip_id) REFERENCES gtfs_trips(trip_id)
+        )
+    """
     )
     op.create_index(
         "idx_gtfs_stop_times_stop", "gtfs_stop_times", ["stop_id"], unique=False
@@ -101,21 +98,23 @@ def upgrade() -> None:
         "idx_gtfs_stop_times_trip", "gtfs_stop_times", ["trip_id"], unique=False
     )
 
-    # Create gtfs_calendar table
-    op.create_table(
-        "gtfs_calendar",
-        sa.Column("service_id", sa.String(length=64), nullable=False),
-        sa.Column("monday", sa.Boolean(), nullable=False),
-        sa.Column("tuesday", sa.Boolean(), nullable=False),
-        sa.Column("wednesday", sa.Boolean(), nullable=False),
-        sa.Column("thursday", sa.Boolean(), nullable=False),
-        sa.Column("friday", sa.Boolean(), nullable=False),
-        sa.Column("saturday", sa.Boolean(), nullable=False),
-        sa.Column("sunday", sa.Boolean(), nullable=False),
-        sa.Column("start_date", sa.Date(), nullable=False),
-        sa.Column("end_date", sa.Date(), nullable=False),
-        sa.Column("feed_id", sa.String(length=32), nullable=True),
-        sa.PrimaryKeyConstraint("service_id"),
+    # Create gtfs_calendar table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_calendar (
+            service_id VARCHAR(64) PRIMARY KEY,
+            monday BOOLEAN NOT NULL,
+            tuesday BOOLEAN NOT NULL,
+            wednesday BOOLEAN NOT NULL,
+            thursday BOOLEAN NOT NULL,
+            friday BOOLEAN NOT NULL,
+            saturday BOOLEAN NOT NULL,
+            sunday BOOLEAN NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            feed_id VARCHAR(32)
+        )
+    """
     )
     op.create_index(
         "idx_gtfs_calendar_active",
@@ -124,14 +123,17 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # Create gtfs_calendar_dates table
-    op.create_table(
-        "gtfs_calendar_dates",
-        sa.Column("service_id", sa.String(length=64), nullable=False),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("exception_type", sa.SmallInteger(), nullable=False),
-        sa.Column("feed_id", sa.String(length=32), nullable=True),
-        sa.PrimaryKeyConstraint("service_id", "date"),
+    # Create gtfs_calendar_dates table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_calendar_dates (
+            service_id VARCHAR(64) NOT NULL,
+            date DATE NOT NULL,
+            exception_type SMALLINT NOT NULL,
+            feed_id VARCHAR(32),
+            PRIMARY KEY (service_id, date)
+        )
+    """
     )
     op.create_index(
         "idx_gtfs_calendar_dates_lookup",
@@ -140,18 +142,20 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # Create gtfs_feed_info table
-    op.create_table(
-        "gtfs_feed_info",
-        sa.Column("feed_id", sa.String(length=32), nullable=False),
-        sa.Column("feed_url", sa.String(length=512), nullable=True),
-        sa.Column("downloaded_at", sa.DateTime(), nullable=False),
-        sa.Column("feed_start_date", sa.Date(), nullable=True),
-        sa.Column("feed_end_date", sa.Date(), nullable=True),
-        sa.Column("stop_count", sa.Integer(), nullable=True),
-        sa.Column("route_count", sa.Integer(), nullable=True),
-        sa.Column("trip_count", sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint("feed_id"),
+    # Create gtfs_feed_info table (UNLOGGED for faster bulk imports - data is rebuildable)
+    op.execute(
+        """
+        CREATE UNLOGGED TABLE gtfs_feed_info (
+            feed_id VARCHAR(32) PRIMARY KEY,
+            feed_url VARCHAR(512),
+            downloaded_at TIMESTAMP NOT NULL,
+            feed_start_date DATE,
+            feed_end_date DATE,
+            stop_count INTEGER,
+            route_count INTEGER,
+            trip_count INTEGER
+        )
+    """
     )
 
     # Performance indexes
