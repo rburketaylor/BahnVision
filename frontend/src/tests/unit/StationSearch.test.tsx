@@ -32,7 +32,7 @@ describe('StationSearch', () => {
 
   afterAll(() => server.close())
 
-  it('shows station results and selects a station', async () => {
+  it('shows stop results and selects a stop', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const user = userEvent.setup()
     const handleSelect = vi.fn()
@@ -54,14 +54,14 @@ describe('StationSearch', () => {
     await user.click(optionButton)
 
     expect(handleSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Marienplatz', place: 'München' })
+      expect.objectContaining({ id: 'de:09162:6', name: 'Marienplatz' })
     )
     expect(input).toHaveValue('Marienplatz')
   })
 
   it('handles no results (404) response gracefully', async () => {
     server.use(
-      http.get(`${BASE_URL}/api/v1/mvg/stations/search`, () =>
+      http.get(`${BASE_URL}/api/v1/transit/stops/search`, () =>
         HttpResponse.json({ detail: 'Not found' }, { status: 404 })
       )
     )
@@ -84,7 +84,7 @@ describe('StationSearch', () => {
     const errorHandler = vi.fn()
 
     server.use(
-      http.get(`${BASE_URL}/api/v1/mvg/stations/search`, () => {
+      http.get(`${BASE_URL}/api/v1/transit/stops/search`, () => {
         errorHandler()
         return HttpResponse.json({ detail: 'Bad request' }, { status: 400 })
       })
@@ -99,11 +99,13 @@ describe('StationSearch', () => {
     await user.type(input, 'Marien')
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
-    expect(await screen.findByText(/api request failed/i)).toBeInTheDocument()
+    // Look for error state - the component shows an error message
+    expect(await screen.findByText(/error occurred|try again/i)).toBeInTheDocument()
     expect(errorHandler).toHaveBeenCalledTimes(1)
 
+    // Reset handler to return success
     server.use(
-      http.get(`${BASE_URL}/api/v1/mvg/stations/search`, ({ request }) => {
+      http.get(`${BASE_URL}/api/v1/transit/stops/search`, ({ request }) => {
         const url = new URL(request.url)
         const queryParam = url.searchParams.get('query') ?? ''
         return HttpResponse.json(
@@ -113,9 +115,10 @@ describe('StationSearch', () => {
               {
                 id: 'de:09162:6',
                 name: 'Marienplatz',
-                place: 'München',
                 latitude: 48.137079,
                 longitude: 11.575447,
+                zone_id: 'M',
+                wheelchair_boarding: 1,
               },
             ],
           },
@@ -144,9 +147,10 @@ describe('StationSearch', () => {
         {
           id: 'de:09162:6',
           name: 'Marienplatz',
-          place: 'München',
           latitude: 48.137079,
           longitude: 11.575447,
+          zone_id: 'M',
+          wheelchair_boarding: 1,
           timestamp: Date.now() - 1_000,
         },
       ])

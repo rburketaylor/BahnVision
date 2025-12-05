@@ -4,26 +4,27 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MainPage } from '../../../pages/MainPage'
-import type { Station } from '../../../types/api'
+import type { TransitStop } from '../../../types/gtfs'
 
-const mockStation: Station = {
+const mockStop: TransitStop = {
   id: 'de:09162:1',
   name: 'Marienplatz',
-  place: 'Munich',
   latitude: 48.137154,
   longitude: 11.576124,
+  zone_id: 'M',
+  wheelchair_boarding: 1,
 }
 
 vi.mock('../../../components/StationSearch', () => ({
-  StationSearch: ({ onSelect }: { onSelect: (station: Station) => void }) => (
-    <button type="button" onClick={() => onSelect(mockStation)}>
+  StationSearch: ({ onSelect }: { onSelect: (stop: TransitStop) => void }) => (
+    <button type="button" onClick={() => onSelect(mockStop)}>
       Select Station
     </button>
   ),
 }))
 
 describe('MainPage', () => {
-  it('navigates to departures when a station is selected', async () => {
+  it('navigates to departures when a stop is selected', async () => {
     const user = userEvent.setup()
     const queryClient = new QueryClient()
 

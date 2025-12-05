@@ -16,16 +16,16 @@ describe('API Client', () => {
     expect(response.data.status).toBe('ok')
   })
 
-  it('should search stations', async () => {
-    const response = await apiClient.searchStations({ query: 'Marienplatz' })
+  it('should search stops', async () => {
+    const response = await apiClient.searchStops({ query: 'Marienplatz' })
     expect(response.data.results).toHaveLength(1)
     expect(response.data.results[0].name).toBe('Marienplatz')
     expect(response.cacheStatus).toBe('hit')
   })
 
   it('should fetch departures', async () => {
-    const response = await apiClient.getDepartures({ station: 'de:09162:6' })
-    expect(response.data.departures).toHaveLength(1)
-    expect(response.data.station.name).toBe('Marienplatz')
+    const response = await apiClient.getDepartures({ stop_id: 'de:09162:6' })
+    expect(response.data.departures).toHaveLength(2) // Our mock now returns 2 departures
+    expect(response.data.stop.name).toBe('Marienplatz')
   })
 })
