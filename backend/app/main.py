@@ -80,9 +80,9 @@ def create_app() -> FastAPI:
     """Application factory for FastAPI."""
     settings = get_settings()
     app = FastAPI(
-        title="BahnVision API",
-        description="Backend service for BahnVision using FastAPI and MVG live data.",
-        version="0.1.0",
+        title="BahnVision",
+        description="Backend service for BahnVision using FastAPI and GTFS transit data.",
+        version="1.0.0",
         lifespan=lifespan,
     )
 
