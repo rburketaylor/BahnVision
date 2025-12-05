@@ -168,6 +168,15 @@ class GTFSScheduleService:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_all_stops(self, limit: int = 10000) -> List[GTFSStop]:
+        """Get all stops (up to limit).
+
+        Used for heatmap generation where we need station coordinates.
+        """
+        stmt = select(GTFSStop).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_nearby_stops(
         self,
         lat: float,
