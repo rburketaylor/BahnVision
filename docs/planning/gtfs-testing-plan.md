@@ -42,7 +42,15 @@ As we migrate from MVG API to GTFS/GTFS-RT data sources, we need to:
 - test_persist_stop_times_batch_insert
 - test_persist_calendar_upsert
 - test_persist_calendar_dates_upsert
+- test_persist_calendar_dates_with_exceptions
+- test_persist_calendar_dates_empty_df
 - test_persist_feed_info_upsert
+
+# Test time conversion edge cases
+- test_convert_time_to_interval_standard_time
+- test_convert_time_to_interval_over_24h  # e.g., "26:30:00"
+- test_convert_time_to_interval_invalid_format
+- test_convert_time_to_interval_none_input
 
 # Test full import workflow
 - test_import_feed_success
@@ -65,6 +73,11 @@ As we migrate from MVG API to GTFS/GTFS-RT data sources, we need to:
 - test_search_stops_fuzzy_match
 - test_search_stops_limit
 - test_search_stops_no_results
+
+# Test get all stops (for heatmap)
+- test_get_all_stops_returns_all
+- test_get_all_stops_respects_limit
+- test_get_all_stops_empty_database
 
 # Test nearby stops (PostGIS)
 - test_get_nearby_stops_returns_sorted_by_distance
@@ -101,6 +114,30 @@ As we migrate from MVG API to GTFS/GTFS-RT data sources, we need to:
 - test_gtfs_station_search_empty_query
 ```
 
+### Integration Tests for Transit API (`backend/tests/api/v1/test_transit.py`)
+
+```python
+# Test departures endpoint
+- test_transit_departures_endpoint_success
+- test_transit_departures_endpoint_stop_not_found
+- test_transit_departures_endpoint_with_limit
+- test_transit_departures_endpoint_with_offset_minutes
+- test_transit_departures_response_structure
+
+# Test stops search endpoint
+- test_transit_stops_search_endpoint_success
+- test_transit_stops_search_endpoint_empty_results
+- test_transit_stops_search_endpoint_with_limit
+
+# Test stop details endpoint
+- test_transit_stop_details_endpoint_success
+- test_transit_stop_details_endpoint_not_found
+
+# Test nearby stops endpoint
+- test_transit_stops_nearby_endpoint_success
+- test_transit_stops_nearby_endpoint_with_radius
+```
+
 ## Phase 2: GTFS-RT Tests
 
 ### Unit Tests for GTFSRealtimeService (`backend/tests/services/test_gtfs_realtime.py`)
@@ -120,6 +157,73 @@ As we migrate from MVG API to GTFS/GTFS-RT data sources, we need to:
 # Test caching
 - test_realtime_data_cached_with_short_ttl
 - test_realtime_cache_invalidation
+
+# Test circuit breaker behavior
+- test_circuit_breaker_opens_after_threshold_failures
+- test_circuit_breaker_transitions_to_half_open_after_recovery
+- test_circuit_breaker_closes_on_success
+- test_circuit_breaker_blocks_requests_when_open
+
+# Test vehicle positions
+- test_fetch_vehicle_positions_success
+- test_fetch_vehicle_positions_missing_position_data
+- test_fetch_vehicle_positions_missing_trip_data
+- test_store_vehicle_positions_in_cache
+
+# Test service alerts
+- test_fetch_alerts_success
+- test_fetch_alerts_extracts_affected_routes
+- test_fetch_alerts_extracts_affected_stops
+- test_fetch_alerts_handles_active_period
+- test_store_alerts_in_cache
+- test_map_cause_values
+- test_map_effect_values
+```
+
+### Unit Tests for TransitDataService (`backend/tests/services/test_transit_data.py`)
+
+```python
+# Test departure retrieval
+- test_get_departures_for_stop_basic
+- test_get_departures_for_stop_with_offset
+- test_get_departures_for_stop_applies_realtime_updates
+- test_get_departures_for_stop_without_realtime
+- test_get_departures_for_stop_empty_results
+
+# Test route info
+- test_get_route_info_basic
+- test_get_route_info_with_alerts
+- test_get_route_info_caching
+- test_get_route_info_not_found
+
+# Test stop info
+- test_get_stop_info_basic
+- test_get_stop_info_with_departures
+- test_get_stop_info_caching
+- test_get_stop_info_not_found
+
+# Test search
+- test_search_stops_returns_stop_info
+- test_search_stops_empty_query
+
+# Test vehicle tracking
+- test_get_vehicle_position_delegates_to_realtime
+
+# Test real-time refresh
+- test_refresh_real_time_data_parallel_fetch
+- test_refresh_real_time_data_handles_exceptions
+```
+
+### Unit Tests for Dataclass Models (`backend/tests/services/test_gtfs_dataclasses.py`)
+
+```python
+# Test dataclass __post_init__ defaults
+- test_trip_update_defaults_timestamp
+- test_vehicle_position_defaults_timestamp
+- test_service_alert_defaults_timestamp
+- test_departure_info_defaults_alerts_list
+- test_route_info_defaults_alerts_list
+- test_stop_info_defaults_lists
 ```
 
 ## Phase 3: Hybrid Mode Tests
@@ -213,6 +317,7 @@ def fake_gtfs_realtime_client():
 | `services/gtfs_feed.py` | 90% |
 | `services/gtfs_schedule.py` | 95% |
 | `services/gtfs_realtime.py` | 90% |
+| `services/transit_data.py` | 90% |
 | `jobs/gtfs_scheduler.py` | 85% |
 | API endpoints | 90% |
 
@@ -226,10 +331,13 @@ def fake_gtfs_realtime_client():
    - [ ] GTFS fixtures
 
 2. **Phase 2**
-   - [ ] `test_gtfs_realtime.py` - Realtime service tests
+   - [ ] `test_gtfs_realtime.py` - Realtime service tests (including circuit breaker)
+   - [ ] `test_transit_data.py` - Combined transit data service tests
+   - [ ] `test_gtfs_dataclasses.py` - Dataclass model tests
    - [ ] Realtime mock client
 
 3. **Phase 3**
+   - [ ] `test_transit.py` - Transit API endpoint tests
    - [ ] `test_hybrid_departures.py` - Fallback tests
    - [ ] Integration tests with both sources
 
