@@ -1,18 +1,20 @@
 /**
  * Departures hook
  * Fetches departure data with configurable live/manual refresh modes
+ * 
+ * Uses the Transit API for GTFS-based departures with real-time updates.
  */
 
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../services/api'
-import type { DeparturesParams } from '../types/api'
+import type { TransitDeparturesParams } from '../types/gtfs'
 
 interface UseDeparturesOptions {
   enabled?: boolean
   live?: boolean // Enable auto-refresh for live mode
 }
 
-export function useDepartures(params: DeparturesParams, options: UseDeparturesOptions = {}) {
+export function useDepartures(params: TransitDeparturesParams, options: UseDeparturesOptions = {}) {
   const { enabled = true, live = false } = options
 
   return useQuery({

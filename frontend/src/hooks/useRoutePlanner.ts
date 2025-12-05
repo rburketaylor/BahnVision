@@ -1,15 +1,28 @@
 /**
  * Route planner hook
  * Plans routes between two stations with optional time constraints
+ * 
+ * NOTE: Route planning is not yet available in the Transit API.
+ * This hook is temporarily disabled and will throw an error if used.
+ * TODO: Implement GTFS-based journey planning in Phase 5+
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '../services/api'
 import type { RoutePlanParams } from '../types/api'
+import { ApiError } from '../services/apiTypes'
 
 interface UseRoutePlannerParams {
   params?: RoutePlanParams
   enabled?: boolean
+}
+
+// Placeholder function that throws until route planning is implemented
+async function planRoute(_params: RoutePlanParams): Promise<never> {
+  throw new ApiError(
+    'Route planning is not yet available. This feature will be implemented in a future update.',
+    501,
+    'Route planning requires GTFS-based journey planning which is planned for Phase 5.'
+  )
 }
 
 export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParams = {}) {
@@ -21,22 +34,11 @@ export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParam
       if (!params) {
         throw new Error('Route planning parameters are required')
       }
-      return apiClient.planRoute(params)
+      return planRoute(params)
     },
     enabled: enabled && !!params && !!params.origin && !!params.destination,
     staleTime: 1000 * 60 * 2, // 2 minutes
-    retry: (failureCount, error) => {
-      // Don't retry on validation errors (4xx)
-      if (
-        'statusCode' in error &&
-        typeof error.statusCode === 'number' &&
-        error.statusCode >= 400 &&
-        error.statusCode < 500
-      ) {
-        return false
-      }
-      return failureCount < 2
-    },
+    retry: false, // Don't retry since this always fails for now
   })
 
   // Invalidate query when parameters change significantly
@@ -54,13 +56,13 @@ export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParam
   }
 }
 
-// Legacy export for backward compatibility
+// Legacy export for backward compatibility - also disabled
 export function useRoutePlannerLegacy(params: RoutePlanParams, enabled = true) {
   return useQuery({
     queryKey: ['routes', 'plan', params],
-    queryFn: () => apiClient.planRoute(params),
+    queryFn: () => planRoute(params),
     enabled,
-    // Cache route plans for 2 minutes
+    retry: false,
     staleTime: 2 * 60 * 1000,
   })
 }
