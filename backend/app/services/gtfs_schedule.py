@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta, timezone, date
 from typing import List, Optional
 
 from sqlalchemy import select, text
@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class ScheduledDeparture:
-    """Represents a scheduled departure from a stop."""
+    """Represents a scheduled departure from a stop with concrete datetimes."""
 
     def __init__(
         self,
-        departure_time: time,
+        departure_time: datetime,
         trip_headsign: str,
         route_short_name: str,
         route_long_name: str,
@@ -27,7 +27,7 @@ class ScheduledDeparture:
         stop_name: str,
         trip_id: str,
         route_id: str,
-        arrival_time: Optional[time] = None,
+        arrival_time: Optional[datetime] = None,
     ):
         self.departure_time = departure_time
         self.trip_headsign = trip_headsign
@@ -131,16 +131,17 @@ class GTFSScheduleService:
 
         departures = []
         for row in result:
-            # Convert interval back to time
-            departure_time = interval_to_time(row.departure_time)
-            arrival_time = (
-                interval_to_time(row.arrival_time) if row.arrival_time else None
+            departure_dt = interval_to_datetime(today, row.departure_time)
+            arrival_dt = (
+                interval_to_datetime(today, row.arrival_time)
+                if row.arrival_time is not None
+                else None
             )
-            if departure_time:
-                # Create a copy of the row with the converted time
+
+            if departure_dt:
                 row_dict = dict(row._mapping)
-                row_dict["departure_time"] = departure_time
-                row_dict["arrival_time"] = arrival_time
+                row_dict["departure_time"] = departure_dt
+                row_dict["arrival_time"] = arrival_dt
                 departures.append(
                     ScheduledDeparture.from_row(type("Row", (), row_dict))
                 )
@@ -219,50 +220,47 @@ def time_to_interval(dt: datetime) -> str:
     return f"{t.hour} hours {t.minute} minutes {t.second} seconds"
 
 
-def interval_to_time(interval_value) -> Optional[time]:
-    """Convert PostgreSQL interval (timedelta) to time object."""
+def interval_to_datetime(service_date: date, interval_value) -> Optional[datetime]:
+    """Convert PostgreSQL interval to a concrete UTC datetime on the service date.
+
+    Handles GTFS times that extend beyond 24h by adding the full timedelta to
+    the service day midnight instead of wrapping to a time-of-day.
+    """
     if interval_value is None:
         return None
 
     try:
-        from datetime import timedelta
-
-        # PostgreSQL returns interval as timedelta
+        # PostgreSQL returns interval as timedelta; strings are possible too.
         if isinstance(interval_value, timedelta):
-            total_seconds = int(interval_value.total_seconds())
-            hours = (total_seconds // 3600) % 24  # Handle >24h by wrapping around
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
-            return time(hour=hours, minute=minutes, second=seconds)
-
-        # Fallback: try parsing as string
-        if isinstance(interval_value, str):
-            # Parse interval like "2 hours 30 minutes 0 seconds"
+            delta = interval_value
+        elif isinstance(interval_value, str):
+            # Parse a string like "2 hours 30 minutes 0 seconds"
             parts = interval_value.split()
             hours = minutes = seconds = 0
-
             i = 0
             while i < len(parts):
                 if i + 1 < len(parts):
                     value = int(parts[i])
                     unit = parts[i + 1]
-
                     if "hour" in unit:
-                        hours = value % 24  # Handle >24h by wrapping around
+                        hours = value
                     elif "minute" in unit:
                         minutes = value
                     elif "second" in unit:
                         seconds = value
-
                     i += 2
                 else:
                     i += 1
+            delta = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+        else:
+            logger.warning("Unknown interval type: %s", type(interval_value))
+            return None
 
-            return time(hour=hours, minute=minutes, second=seconds)
+        service_midnight = datetime.combine(
+            service_date, time(0, 0), tzinfo=timezone.utc
+        )
+        return service_midnight + delta
 
-        logger.warning(f"Unknown interval type: {type(interval_value)}")
-        return None
-
-    except (ValueError, AttributeError) as e:
-        logger.warning(f"Invalid interval format: {interval_value}, error: {e}")
+    except (ValueError, AttributeError) as exc:
+        logger.warning("Invalid interval format: %s, error: %s", interval_value, exc)
         return None
