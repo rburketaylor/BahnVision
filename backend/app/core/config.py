@@ -161,6 +161,9 @@ class Settings(BaseSettings):
         default="https://download.gtfs.de/germany/full/latest.zip",
         alias="GTFS_FEED_URL",
     )
+    gtfs_use_unlogged_tables: bool = Field(
+        default=True, alias="GTFS_USE_UNLOGGED_TABLES"
+    )
     gtfs_update_interval_hours: int = Field(
         default=24, alias="GTFS_UPDATE_INTERVAL_HOURS"
     )
@@ -173,6 +176,7 @@ class Settings(BaseSettings):
     gtfs_storage_path: str = Field(default="/data/gtfs", alias="GTFS_STORAGE_PATH")
 
     # GTFS-RT Configuration
+    gtfs_rt_enabled: bool = Field(default=False, alias="GTFS_RT_ENABLED")
     gtfs_rt_feed_url: str = Field(
         default="https://realtime.gtfs.de/realtime-free.pb", alias="GTFS_RT_FEED_URL"
     )
