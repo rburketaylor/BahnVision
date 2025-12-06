@@ -59,6 +59,7 @@ class GTFSFeedImporter:
     async def import_feed(self, feed_url: Optional[str] = None) -> str:
         """Download, parse, and persist GTFS feed."""
         feed_url = feed_url or self.settings.gtfs_feed_url
+        self._validate_feed_url(feed_url)
 
         # 1. Download feed
         feed_path = await self._download_feed(feed_url)
@@ -68,6 +69,11 @@ class GTFSFeedImporter:
     async def import_from_path(self, feed_path: Path) -> str:
         """Import GTFS feed from a local file path."""
         return await self._import_from_path(feed_path, f"file://{feed_path}")
+
+    def _validate_feed_url(self, feed_url: str) -> None:
+        """Basic allowlist for feed URLs to avoid arbitrary downloads."""
+        if not feed_url.startswith("http://") and not feed_url.startswith("https://"):
+            raise ValueError("GTFS feed URL must be http(s)")
 
     async def _import_from_path(self, feed_path: Path, feed_url: str) -> str:
         """Internal method to import feed from path using fast COPY."""
@@ -130,6 +136,23 @@ class GTFSFeedImporter:
         )
         await self.session.commit()
         logger.info("Truncated all GTFS tables (indexes and FKs dropped)")
+
+        # Ensure logging mode matches configuration
+        logging_mode = (
+            "UNLOGGED" if self.settings.gtfs_use_unlogged_tables else "LOGGED"
+        )
+        for table in [
+            "gtfs_stops",
+            "gtfs_routes",
+            "gtfs_trips",
+            "gtfs_stop_times",
+            "gtfs_calendar",
+            "gtfs_calendar_dates",
+            "gtfs_feed_info",
+        ]:
+            await self.session.execute(text(f"ALTER TABLE {table} SET {logging_mode}"))
+        await self.session.commit()
+        logger.info("GTFS tables set to %s mode", logging_mode)
 
     async def _get_asyncpg_conn(self):
         """Get raw asyncpg connection for COPY operations."""
@@ -270,9 +293,6 @@ class GTFSFeedImporter:
         if stop_times_df is None or stop_times_df.empty:
             return
 
-        import tempfile
-        import subprocess
-
         logger.info(f"Preparing {len(stop_times_df)} stop times for COPY...")
 
         # Prepare DataFrame for TSV export - much faster than row-by-row
@@ -324,75 +344,66 @@ class GTFSFeedImporter:
             ]
         ]
 
-        logger.info(f"Writing {len(export_df)} stop times to temp file...")
+        logger.info(f"Writing {len(export_df)} stop times to TSV buffer for COPY...")
 
-        # Use pandas to_csv - uses optimized C code, 10-20x faster than row iteration
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False) as f:
-            temp_path = f.name
-            export_df.to_csv(f, sep="\t", index=False, header=False, na_rep="\\N")
+        if export_df.empty:
+            logger.info("No stop_times rows to copy; restoring indexes/FKs only")
+        else:
+            lines = []
+            for row in export_df.itertuples(index=False):
+                lines.append(
+                    "\t".join(
+                        [
+                            _escape_tsv(row.trip_id),
+                            _escape_tsv(row.stop_id),
+                            _escape_tsv(row.arrival_time),
+                            _escape_tsv(row.departure_time),
+                            _escape_tsv(row.stop_sequence),
+                            _escape_tsv(row.pickup_type),
+                            _escape_tsv(row.drop_off_type),
+                            _escape_tsv(row.feed_id),
+                        ]
+                    )
+                )
 
-        file_size_mb = Path(temp_path).stat().st_size / 1024 / 1024
-        logger.info(f"File ready ({file_size_mb:.1f} MB), starting COPY via stdin...")
+            tsv_data = "\n".join(lines)
 
-        # Pipe file to psql via stdin - works with Docker
-        try:
-            with open(temp_path, "rb") as f:
-                result = subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        "-i",
-                        "bahnvision-postgres-1",
-                        "psql",
-                        "-U",
-                        "bahnvision",
-                        "-c",
-                        "COPY gtfs_stop_times(trip_id, stop_id, arrival_time, departure_time, stop_sequence, pickup_type, drop_off_type, feed_id) FROM STDIN",
+            asyncpg_conn = await self._get_asyncpg_conn()
+            try:
+                await asyncpg_conn.copy_to_table(
+                    "gtfs_stop_times",
+                    source=io.BytesIO(tsv_data.encode("utf-8")),
+                    columns=[
+                        "trip_id",
+                        "stop_id",
+                        "arrival_time",
+                        "departure_time",
+                        "stop_sequence",
+                        "pickup_type",
+                        "drop_off_type",
+                        "feed_id",
                     ],
-                    stdin=f,
-                    capture_output=True,
-                    text=True,
-                    timeout=3600,  # 60 min timeout
+                    format="text",
                 )
-            if result.returncode != 0:
-                logger.error(f"COPY failed: {result.stderr}")
-                raise RuntimeError(f"COPY failed: {result.stderr}")
+                logger.info(f"Copied {len(export_df)} stop times via asyncpg COPY")
+            except Exception as exc:
+                logger.error("COPY failed: %s", exc)
+                raise
 
-            logger.info(f"Copied {len(stop_times_df)} stop times via COPY FROM STDIN")
-
-            # Recreate indexes and foreign keys after bulk load
-            logger.info("Recreating indexes and foreign keys on stop_times...")
-            recreate_result = subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    "-i",
-                    "bahnvision-postgres-1",
-                    "psql",
-                    "-U",
-                    "bahnvision",
-                    "-c",
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop ON gtfs_stop_times(stop_id);
-                    CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip ON gtfs_stop_times(trip_id);
-                    CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_time);
-                    ALTER TABLE gtfs_stop_times ADD CONSTRAINT gtfs_stop_times_stop_id_fkey FOREIGN KEY (stop_id) REFERENCES gtfs_stops(stop_id);
-                    ALTER TABLE gtfs_stop_times ADD CONSTRAINT gtfs_stop_times_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES gtfs_trips(trip_id);
-                    """,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=1200,  # 20 min for index/FK creation
+        # Recreate indexes and foreign keys after bulk load (even if empty)
+        logger.info("Recreating indexes and foreign keys on stop_times...")
+        await self.session.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop ON gtfs_stop_times(stop_id);
+                CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip ON gtfs_stop_times(trip_id);
+                CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_time);
+                ALTER TABLE gtfs_stop_times ADD CONSTRAINT IF NOT EXISTS gtfs_stop_times_stop_id_fkey FOREIGN KEY (stop_id) REFERENCES gtfs_stops(stop_id);
+                ALTER TABLE gtfs_stop_times ADD CONSTRAINT IF NOT EXISTS gtfs_stop_times_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES gtfs_trips(trip_id);
+                """
             )
-            if recreate_result.returncode != 0:
-                logger.warning(
-                    f"Index/FK creation had issues: {recreate_result.stderr}"
-                )
-            else:
-                logger.info("Indexes and foreign keys recreated successfully")
-        finally:
-            # Cleanup temp file
-            Path(temp_path).unlink(missing_ok=True)
+        )
+        await self.session.commit()
 
     async def _copy_calendar(
         self, calendar_df: DataFrame, calendar_dates_df: DataFrame, feed_id: str
