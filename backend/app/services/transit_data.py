@@ -201,7 +201,7 @@ class TransitDataService:
                 departures.append(departure_info)
 
             # Apply real-time updates if requested
-            if include_real_time:
+            if include_real_time and self.is_realtime_available():
                 await self._apply_real_time_updates(departures, stop_id)
 
             # TODO: Add caching back after fixing type issues
@@ -211,6 +211,10 @@ class TransitDataService:
         except Exception as e:
             logger.error(f"Failed to get departures for stop {stop_id}: {e}")
             return []
+
+    def is_realtime_available(self) -> bool:
+        """Return True if GTFS-RT is enabled and a realtime service is configured."""
+        return bool(self.settings.gtfs_rt_enabled and self.gtfs_realtime is not None)
 
     async def get_route_info(
         self, route_id: str, include_real_time: bool = True

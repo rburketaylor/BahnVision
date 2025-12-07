@@ -20,15 +20,22 @@ from app.services.cache import CacheService
 
 # Import GTFS-RT bindings with fallback
 try:
-    import gtfs_realtime_bindings
+    from google.transit import gtfs_realtime_pb2
 
+    FeedMessage = gtfs_realtime_pb2.FeedMessage
     GTFS_RT_AVAILABLE = True
 except ImportError:
-    gtfs_realtime_bindings = None
-    GTFS_RT_AVAILABLE = False
-    logging.warning(
-        "gtfs_realtime_bindings not available, GTFS-RT functionality disabled"
-    )
+    try:
+        import gtfs_realtime_bindings
+
+        FeedMessage = gtfs_realtime_bindings.FeedMessage
+        GTFS_RT_AVAILABLE = True
+    except ImportError:
+        FeedMessage = None
+        GTFS_RT_AVAILABLE = False
+        logging.warning(
+            "gtfs_realtime_bindings not available, GTFS-RT functionality disabled"
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -95,21 +102,11 @@ class GtfsRealtimeService:
     def __init__(self, cache_service: CacheService):
         self.settings = get_settings()
         self.cache = cache_service
-        self.client = httpx.AsyncClient(
-            timeout=self.settings.gtfs_rt_timeout_seconds,
-            headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
-        )
         self._circuit_breaker_state = {
             "failures": 0,
             "last_failure": None,
             "state": "CLOSED",  # CLOSED, OPEN, HALF_OPEN
         }
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.client.aclose()
 
     def _check_circuit_breaker(self) -> bool:
         """Check if circuit breaker allows requests"""
@@ -156,10 +153,18 @@ class GtfsRealtimeService:
             return []
 
         try:
-            response = await self.client.get(self.settings.gtfs_rt_feed_url)
+            async with httpx.AsyncClient(
+                timeout=self.settings.gtfs_rt_timeout_seconds,
+                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+            ) as client:
+                response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            feed = gtfs_realtime_bindings.FeedMessage()
+            if not FeedMessage:
+                logger.warning("FeedMessage not available, skipping trip updates")
+                return []
+
+            feed = FeedMessage()
             feed.ParseFromString(response.content)
 
             trip_updates = []
@@ -219,10 +224,18 @@ class GtfsRealtimeService:
             return []
 
         try:
-            response = await self.client.get(self.settings.gtfs_rt_feed_url)
+            async with httpx.AsyncClient(
+                timeout=self.settings.gtfs_rt_timeout_seconds,
+                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+            ) as client:
+                response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            feed = gtfs_realtime_bindings.FeedMessage()
+            if not FeedMessage:
+                logger.warning("FeedMessage not available, skipping trip updates")
+                return []
+
+            feed = FeedMessage()
             feed.ParseFromString(response.content)
 
             vehicle_positions = []
@@ -268,10 +281,18 @@ class GtfsRealtimeService:
             return []
 
         try:
-            response = await self.client.get(self.settings.gtfs_rt_feed_url)
+            async with httpx.AsyncClient(
+                timeout=self.settings.gtfs_rt_timeout_seconds,
+                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+            ) as client:
+                response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            feed = gtfs_realtime_bindings.FeedMessage()
+            if not FeedMessage:
+                logger.warning("FeedMessage not available, skipping trip updates")
+                return []
+
+            feed = FeedMessage()
             feed.ParseFromString(response.content)
 
             alerts = []
@@ -331,9 +352,12 @@ class GtfsRealtimeService:
             return []
 
     async def _store_trip_updates(self, trip_updates: List[TripUpdate]):
-        """Store trip updates in Valkey cache"""
+        """Store trip updates in Valkey cache with stop-based indexing"""
         if not trip_updates:
             return
+
+        # Track trip IDs by stop for the secondary index
+        stop_to_trips = {}
 
         # Store by trip_id for quick lookup
         for tu in trip_updates:
@@ -342,22 +366,51 @@ class GtfsRealtimeService:
                 key, tu.__dict__, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
             )
 
+            # Build stop-to-trips index
+            if tu.stop_id not in stop_to_trips:
+                stop_to_trips[tu.stop_id] = set()
+            stop_to_trips[tu.stop_id].add(tu.trip_id)
+
+        # Store the stop-based indexes
+        for stop_id, trip_ids in stop_to_trips.items():
+            index_key = f"trip_updates:stop:{stop_id}"
+            await self.cache.set_json(
+                index_key,
+                list(trip_ids),
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+            )
+
     async def _store_vehicle_positions(self, vehicle_positions: List[VehiclePosition]):
-        """Store vehicle positions in Valkey cache"""
+        """Store vehicle positions in Valkey cache with trip-based indexing"""
         if not vehicle_positions:
             return
 
-        # Store by vehicle_id for quick lookup
+        # Store by vehicle_id for quick lookup and create trip-to-vehicle index
         for vp in vehicle_positions:
-            key = f"vehicle_position:{vp.vehicle_id}"
+            # Store by vehicle_id
+            vehicle_key = f"vehicle_position:{vp.vehicle_id}"
             await self.cache.set_json(
-                key, vp.__dict__, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
+                vehicle_key,
+                vp.__dict__,
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
+            # Create trip-to-vehicle index if trip_id is available
+            if vp.trip_id:
+                trip_vehicle_key = f"vehicle_position:trip:{vp.trip_id}"
+                await self.cache.set_json(
+                    trip_vehicle_key,
+                    vp.__dict__,
+                    ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+                )
+
     async def _store_alerts(self, alerts: List[ServiceAlert]):
-        """Store service alerts in Valkey cache"""
+        """Store service alerts in Valkey cache with route-based indexing"""
         if not alerts:
             return
+
+        # Track alerts by route for the secondary index
+        route_to_alerts = {}
 
         # Store by alert_id
         for alert in alerts:
@@ -368,6 +421,21 @@ class GtfsRealtimeService:
             alert_dict["affected_stops"] = list(alert.affected_stops)
             await self.cache.set_json(
                 key, alert_dict, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
+            )
+
+            # Build route-to-alerts index
+            for route_id in alert.affected_routes:
+                if route_id not in route_to_alerts:
+                    route_to_alerts[route_id] = set()
+                route_to_alerts[route_id].add(alert.alert_id)
+
+        # Store the route-based indexes
+        for route_id, alert_ids in route_to_alerts.items():
+            index_key = f"service_alerts:route:{route_id}"
+            await self.cache.set_json(
+                index_key,
+                list(alert_ids),
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
     def _map_schedule_relationship(self, relationship) -> str:
@@ -421,17 +489,32 @@ class GtfsRealtimeService:
         return translations[0].text if translations else ""
 
     async def get_trip_updates_for_stop(self, stop_id: str) -> List[TripUpdate]:
-        """Get cached trip updates for a specific stop"""
-        # Note: This is a simplified implementation
-        # In a production system, you might want to maintain an index
-        # of trip updates by stop_id for efficient lookups
-        logger.warning(
-            f"get_trip_updates_for_stop not fully implemented for stop {stop_id}"
-        )
-        return []
+        """Get cached trip updates for a specific stop using the stop-based index"""
+        try:
+            # Get the list of trip IDs for this stop
+            index_key = f"trip_updates:stop:{stop_id}"
+            trip_ids = await self.cache.get_json(index_key)
+
+            if not trip_ids:
+                return []
+
+            # Fetch all trip updates for these trips at this stop
+            trip_updates = []
+            for trip_id in trip_ids:
+                trip_update_key = f"trip_update:{trip_id}:{stop_id}"
+                trip_update_data = await self.cache.get_json(trip_update_key)
+
+                if trip_update_data:
+                    trip_updates.append(TripUpdate(**trip_update_data))
+
+            return trip_updates
+
+        except Exception as e:
+            logger.error(f"Failed to get trip updates for stop {stop_id}: {e}")
+            return []
 
     async def get_vehicle_position(self, vehicle_id: str) -> Optional[VehiclePosition]:
-        """Get cached vehicle position"""
+        """Get cached vehicle position by vehicle ID"""
         try:
             key = f"vehicle_position:{vehicle_id}"
             data = await self.cache.get_json(key)
@@ -443,12 +526,45 @@ class GtfsRealtimeService:
             logger.error(f"Failed to get vehicle position {vehicle_id}: {e}")
             return None
 
+    async def get_vehicle_position_by_trip(
+        self, trip_id: str
+    ) -> Optional[VehiclePosition]:
+        """Get cached vehicle position by trip ID"""
+        try:
+            key = f"vehicle_position:trip:{trip_id}"
+            data = await self.cache.get_json(key)
+
+            if data:
+                return VehiclePosition(**data)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get vehicle position for trip {trip_id}: {e}")
+            return None
+
     async def get_alerts_for_route(self, route_id: str) -> List[ServiceAlert]:
-        """Get cached alerts for a specific route"""
-        # Note: This is a simplified implementation
-        # In a production system, you might want to maintain an index
-        # of alerts by route_id for efficient lookups
-        logger.warning(
-            f"get_alerts_for_route not fully implemented for route {route_id}"
-        )
-        return []
+        """Get cached alerts for a specific route using the route-based index"""
+        try:
+            # Get the list of alert IDs for this route
+            index_key = f"service_alerts:route:{route_id}"
+            alert_ids = await self.cache.get_json(index_key)
+
+            if not alert_ids:
+                return []
+
+            # Fetch all alerts for these IDs
+            alerts = []
+            for alert_id in alert_ids:
+                alert_key = f"service_alert:{alert_id}"
+                alert_data = await self.cache.get_json(alert_key)
+
+                if alert_data:
+                    # Convert lists back to sets for the ServiceAlert constructor
+                    alert_data["affected_routes"] = set(alert_data["affected_routes"])
+                    alert_data["affected_stops"] = set(alert_data["affected_stops"])
+                    alerts.append(ServiceAlert(**alert_data))
+
+            return alerts
+
+        except Exception as e:
+            logger.error(f"Failed to get alerts for route {route_id}: {e}")
+            return []
