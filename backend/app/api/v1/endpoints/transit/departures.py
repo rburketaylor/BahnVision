@@ -144,8 +144,10 @@ async def get_departures(
         f"public, max-age={settings.gtfs_schedule_cache_ttl_seconds}"
     )
 
+    realtime_available = include_realtime and transit_service.is_realtime_available()
+
     return TransitDeparturesResponse(
         stop=transit_stop,
         departures=transit_departures,
-        realtime_available=include_realtime,
+        realtime_available=realtime_available,
     )

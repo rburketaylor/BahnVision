@@ -8,7 +8,9 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints.transit.departures import router as departures_router
 from app.api.v1.endpoints.transit.stops import router as stops_router
+from app.api.v1.endpoints.transit.routes import router as routes_router
 
 router = APIRouter()
 router.include_router(departures_router)
 router.include_router(stops_router)
+router.include_router(routes_router)

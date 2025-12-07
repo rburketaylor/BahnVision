@@ -178,11 +178,11 @@ async def get_nearby_stops(
 ) -> list[TransitStop]:
     """Find transit stops near a location."""
     settings = get_settings()
-    gtfs_schedule = GTFSScheduleService(db, cache)
+    gtfs_schedule = GTFSScheduleService(db)
 
-    stops = await gtfs_schedule.get_nearby_stops(
-        latitude, longitude, radius_meters, limit
-    )
+    radius_km = radius_meters / 1000.0
+
+    stops = await gtfs_schedule.get_nearby_stops(latitude, longitude, radius_km, limit)
 
     # Convert to response models
     results = [
