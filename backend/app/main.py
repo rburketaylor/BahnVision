@@ -18,6 +18,8 @@ from app.core.telemetry import (
     instrument_fastapi,
     instrument_httpx,
 )
+from app.jobs.rt_processor import gtfs_rt_lifespan_manager
+from app.services.cache import get_cache_service
 
 logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -60,6 +62,9 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
     settings = get_settings()
 
+    # Initialize cache service for GTFS-RT processor
+    cache_service = get_cache_service()
+
     # Configure OpenTelemetry at startup
     configure_opentelemetry(
         service_name=settings.otel_service_name,
@@ -72,7 +77,10 @@ async def lifespan(app: FastAPI):
     # Instrument httpx for outbound request tracing
     instrument_httpx(enabled=settings.otel_enabled)
 
-    yield
+    # Start GTFS-RT background processor
+    async with gtfs_rt_lifespan_manager(cache_service) as rt_processor:
+        yield rt_processor
+
     await engine.dispose()
 
 
