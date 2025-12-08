@@ -4,13 +4,18 @@ Unit tests for TransitDataService.
 Tests combined static and real-time transit data functionality.
 """
 
+from dataclasses import dataclass as dc
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.services.transit_data import (
     DepartureInfo,
     RouteInfo,
     StopInfo,
     ScheduleRelationship,
+    TransitDataService,
 )
 
 
@@ -313,3 +318,328 @@ class TestTransitDataServiceDepartureInfo:
         assert dep.arrival_delay_seconds == 300
         assert dep.real_time_departure == real_departure
         assert dep.real_time_arrival == real_arrival
+
+
+# =============================================================================
+# TransitDataService Method Tests
+# =============================================================================
+
+
+@dc
+class MockStop:
+    """Mock GTFS stop."""
+
+    stop_id: str
+    stop_name: str
+    stop_lat: float
+    stop_lon: float
+
+
+@dc
+class MockRoute:
+    """Mock GTFS route."""
+
+    route_id: str
+    route_short_name: str
+    route_long_name: str
+    route_type: int
+    route_color: str
+
+
+@dc
+class MockScheduledDeparture:
+    """Mock scheduled departure."""
+
+    trip_id: str
+    route_id: str
+    trip_headsign: str
+    departure_time: datetime
+    arrival_time: datetime = None
+
+
+class FakeGtfsSchedule:
+    """Fake GTFS schedule service for testing."""
+
+    def __init__(self):
+        self.stops = [
+            MockStop("stop1", "Marienplatz", 48.137, 11.577),
+            MockStop("stop2", "Hauptbahnhof", 48.140, 11.558),
+        ]
+        self.departures = [
+            MockScheduledDeparture(
+                trip_id="trip1",
+                route_id="route1",
+                trip_headsign="Destination A",
+                departure_time=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+            ),
+            MockScheduledDeparture(
+                trip_id="trip2",
+                route_id="route1",
+                trip_headsign="Destination B",
+                departure_time=datetime(2025, 12, 8, 8, 45, tzinfo=timezone.utc),
+            ),
+        ]
+
+    async def get_departures_for_stop(self, stop_id: str, scheduled_time, limit: int):
+        return self.departures[:limit]
+
+    async def search_stops(self, query: str, limit: int = 10):
+        return [s for s in self.stops if query.lower() in s.stop_name.lower()][:limit]
+
+
+class FakeGtfsRealtime:
+    """Fake GTFS realtime service for testing."""
+
+    def __init__(self):
+        self.trip_updates = []
+        self.vehicle_positions = []
+        self.alerts = []
+
+    async def get_trip_updates_for_stop(self, stop_id: str):
+        return self.trip_updates
+
+    async def get_vehicle_position(self, vehicle_id: str):
+        return None
+
+    async def get_vehicle_position_by_trip(self, trip_id: str):
+        return None
+
+    async def get_alerts_for_route(self, route_id: str):
+        return self.alerts
+
+    async def fetch_trip_updates(self):
+        return self.trip_updates
+
+    async def fetch_vehicle_positions(self):
+        return self.vehicle_positions
+
+    async def fetch_alerts(self):
+        return self.alerts
+
+
+class FakeCacheService:
+    """Fake cache service for testing."""
+
+    def __init__(self):
+        self._cache = {}
+
+    async def get_json(self, key: str):
+        return self._cache.get(key)
+
+    async def set_json(self, key: str, value, ttl_seconds=None, stale_ttl_seconds=None):
+        self._cache[key] = value
+
+
+class FakeDbSession:
+    """Fake database session for testing."""
+
+    def __init__(self, stops=None, routes=None):
+        self._stops = {s.stop_id: s for s in (stops or [])}
+        self._routes = {r.route_id: r for r in (routes or [])}
+
+    async def execute(self, stmt):
+        # Simplified mock that returns based on query type
+        return FakeResult(self._stops, self._routes)
+
+
+class FakeResult:
+    """Fake SQLAlchemy result."""
+
+    def __init__(self, stops, routes):
+        self._stops = stops
+        self._routes = routes
+        self._query_type = None
+
+    def scalar_one_or_none(self):
+        # Return first item for simplicity
+        if self._stops:
+            return list(self._stops.values())[0]
+        return None
+
+    def scalars(self):
+        return FakeScalars(list(self._routes.values()))
+
+
+class FakeScalars:
+    """Fake scalars result."""
+
+    def __init__(self, items):
+        self._items = items
+
+    def all(self):
+        return self._items
+
+
+@pytest.fixture
+def transit_service():
+    """Create TransitDataService with fake dependencies."""
+    cache = FakeCacheService()
+    schedule = FakeGtfsSchedule()
+    realtime = FakeGtfsRealtime()
+    db = FakeDbSession(
+        stops=[
+            MockStop("stop1", "Marienplatz", 48.137, 11.577),
+        ],
+        routes=[
+            MockRoute("route1", "S1", "S-Bahn Line 1", 2, "00FF00"),
+        ],
+    )
+
+    with patch("app.services.transit_data.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(
+            gtfs_rt_enabled=True,
+            gtfs_schedule_cache_ttl_seconds=300,
+            gtfs_stop_cache_ttl_seconds=600,
+        )
+        service = TransitDataService(cache, schedule, realtime, db)
+
+    return service
+
+
+class TestTransitDataServiceMethods:
+    """Tests for TransitDataService methods."""
+
+    @pytest.mark.asyncio
+    async def test_is_realtime_available_true(self, transit_service):
+        """Test is_realtime_available returns True when configured."""
+        assert transit_service.is_realtime_available() is True
+
+    @pytest.mark.asyncio
+    async def test_is_realtime_available_false_when_disabled(self):
+        """Test is_realtime_available returns False when RT disabled."""
+        cache = FakeCacheService()
+        schedule = FakeGtfsSchedule()
+        realtime = FakeGtfsRealtime()
+        db = FakeDbSession()
+
+        with patch("app.services.transit_data.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(gtfs_rt_enabled=False)
+            service = TransitDataService(cache, schedule, realtime, db)
+
+        assert service.is_realtime_available() is False
+
+    @pytest.mark.asyncio
+    async def test_is_realtime_available_false_when_no_service(self):
+        """Test is_realtime_available returns False when no realtime service."""
+        cache = FakeCacheService()
+        schedule = FakeGtfsSchedule()
+        db = FakeDbSession()
+
+        with patch("app.services.transit_data.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(gtfs_rt_enabled=True)
+            service = TransitDataService(cache, schedule, None, db)
+
+        assert service.is_realtime_available() is False
+
+    @pytest.mark.asyncio
+    async def test_search_stops_returns_matching_stops(self, transit_service):
+        """Test search_stops returns stops matching query."""
+        result = await transit_service.search_stops("marien", limit=10)
+
+        assert len(result) == 1
+        assert result[0].stop_id == "stop1"
+        assert result[0].stop_name == "Marienplatz"
+
+    @pytest.mark.asyncio
+    async def test_search_stops_returns_empty_for_no_match(self, transit_service):
+        """Test search_stops returns empty list for no matches."""
+        result = await transit_service.search_stops("nonexistent", limit=10)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_search_stops_respects_limit(self, transit_service):
+        """Test search_stops respects the limit parameter."""
+        # Add more stops to the schedule
+        transit_service.gtfs_schedule.stops.extend(
+            [
+                MockStop("stop3", "Marienstr", 48.0, 11.0),
+                MockStop("stop4", "Marienberg", 48.0, 11.0),
+            ]
+        )
+
+        result = await transit_service.search_stops("marien", limit=2)
+
+        assert len(result) <= 2
+
+    @pytest.mark.asyncio
+    async def test_search_stops_handles_exception(self, transit_service):
+        """Test search_stops returns empty list on exception."""
+        transit_service.gtfs_schedule.search_stops = AsyncMock(
+            side_effect=Exception("DB error")
+        )
+
+        result = await transit_service.search_stops("test", limit=10)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_departures_for_stop_returns_departures(self, transit_service):
+        """Test get_departures_for_stop returns departure info."""
+        result = await transit_service.get_departures_for_stop(
+            "stop1", limit=10, include_real_time=False
+        )
+
+        assert len(result) == 2
+        assert result[0].trip_id == "trip1"
+        assert result[0].route_short_name == "S1"
+        assert result[0].stop_name == "Marienplatz"
+
+    @pytest.mark.asyncio
+    async def test_get_departures_for_stop_empty_when_no_departures(
+        self, transit_service
+    ):
+        """Test get_departures_for_stop returns empty list when no departures."""
+        transit_service.gtfs_schedule.departures = []
+
+        result = await transit_service.get_departures_for_stop("stop1", limit=10)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_departures_for_stop_handles_exception(self, transit_service):
+        """Test get_departures_for_stop returns empty list on exception."""
+        transit_service.gtfs_schedule.get_departures_for_stop = AsyncMock(
+            side_effect=Exception("DB error")
+        )
+
+        result = await transit_service.get_departures_for_stop("stop1", limit=10)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_refresh_real_time_data_success(self, transit_service):
+        """Test refresh_real_time_data returns counts."""
+        transit_service.gtfs_realtime.trip_updates = [MagicMock(), MagicMock()]
+        transit_service.gtfs_realtime.vehicle_positions = [MagicMock()]
+        transit_service.gtfs_realtime.alerts = [MagicMock(), MagicMock(), MagicMock()]
+
+        result = await transit_service.refresh_real_time_data()
+
+        assert result["trip_updates"] == 2
+        assert result["vehicle_positions"] == 1
+        assert result["alerts"] == 3
+
+    @pytest.mark.asyncio
+    async def test_refresh_real_time_data_handles_exceptions(self, transit_service):
+        """Test refresh_real_time_data handles fetch exceptions."""
+        transit_service.gtfs_realtime.fetch_trip_updates = AsyncMock(
+            side_effect=Exception("Network error")
+        )
+        transit_service.gtfs_realtime.fetch_vehicle_positions = AsyncMock(
+            return_value=[MagicMock()]
+        )
+        transit_service.gtfs_realtime.fetch_alerts = AsyncMock(return_value=[])
+
+        result = await transit_service.refresh_real_time_data()
+
+        assert result["trip_updates"] == 0  # Exception case
+        assert result["vehicle_positions"] == 1
+        assert result["alerts"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_vehicle_position_delegates_to_realtime(self, transit_service):
+        """Test get_vehicle_position delegates to realtime service."""
+        result = await transit_service.get_vehicle_position("vehicle123")
+
+        assert result is None  # Our fake returns None

@@ -1,62 +1,19 @@
-"""Integration tests for StationRepository against Postgres."""
+"""Integration tests for StationRepository against Postgres.
+
+These tests require a running PostgreSQL database. They will be automatically
+skipped if the database is not available (uses shared conftest.py).
+"""
 
 from __future__ import annotations
 
-import asyncio
-import os
 from dataclasses import replace
 
 import pytest
-import pytest_asyncio
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from app.persistence.repositories import StationPayload, StationRepository
 
-
-TEST_DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision",
-)
-
-
-async def _truncate_tables(engine) -> None:
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                TRUNCATE TABLE
-                    departure_weather_links,
-                    weather_observations,
-                    departure_observations,
-                    route_snapshots,
-                    ingestion_runs,
-                    transit_lines,
-                    stations
-                RESTART IDENTITY CASCADE
-                """
-            )
-        )
-
-
-@pytest_asyncio.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture
-async def db_session():
-    engine = create_async_engine(TEST_DATABASE_URL)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    await _truncate_tables(engine)
-    async with session_factory() as session:
-        try:
-            yield session
-        finally:
-            await session.rollback()
-            await _truncate_tables(engine)
-    await engine.dispose()
+# All tests in this file are integration tests
+pytestmark = pytest.mark.integration
 
 
 def _build_station_payload(

@@ -1,7 +1,7 @@
 """
-Integration tests for Transit API endpoints.
+Unit tests for Transit API endpoints.
 
-Tests the /api/v1/transit/* endpoints.
+Tests the /api/v1/transit/* endpoints using mocked dependencies.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from typing import List, Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
 from app.services.cache import CacheService, get_cache_service
 from app.api.v1.endpoints.transit.stops import get_transit_data_service
 from tests.api.conftest import FakeCacheService
@@ -89,16 +88,33 @@ def transit_api_client(
     fake_cache: FakeCacheService,
     fake_transit_data_service: FakeTransitDataService,
 ) -> TestClient:
-    """Create test client with transit dependencies mocked."""
-    app = create_app()
-    app.dependency_overrides[CacheService] = lambda: fake_cache
-    app.dependency_overrides[get_cache_service] = lambda: fake_cache
-    app.dependency_overrides[get_transit_data_service] = (
+    """Create test client with transit dependencies mocked.
+
+    We create the app without running the lifespan to avoid
+    Valkey/database connection attempts during unit tests.
+    """
+    from contextlib import asynccontextmanager
+    from fastapi import FastAPI
+    from app.api.routes import api_router
+
+    # Create a minimal test app without the full lifespan
+    @asynccontextmanager
+    async def null_lifespan(app: FastAPI):
+        yield {}
+
+    test_app = FastAPI(lifespan=null_lifespan)
+    test_app.include_router(api_router, prefix="/api/v1")
+
+    # Override dependencies
+    test_app.dependency_overrides[CacheService] = lambda: fake_cache
+    test_app.dependency_overrides[get_cache_service] = lambda: fake_cache
+    test_app.dependency_overrides[get_transit_data_service] = (
         lambda: fake_transit_data_service
     )
-    client = TestClient(app)
+
+    client = TestClient(test_app)
     yield client
-    app.dependency_overrides.clear()
+    test_app.dependency_overrides.clear()
 
 
 class TestTransitStopsSearchEndpoint:

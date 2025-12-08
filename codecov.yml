@@ -1,0 +1,78 @@
+# Codecov Configuration
+# https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  precision: 2
+  round: down
+  range: "60...100"
+
+  status:
+    # Overall project coverage - fail if it drops below threshold
+    project:
+      default:
+        target: 70%
+        threshold: 2%  # Allow 2% variance
+        if_ci_failed: error
+
+    # Coverage on new/changed code in PRs
+    patch:
+      default:
+        target: 80%
+        threshold: 5%  # More lenient for patches
+        if_ci_failed: error
+
+# PR comment configuration
+comment:
+  layout: "header,diff,flags,components,footer"
+  behavior: default
+  require_changes: true
+  require_base: false
+  require_head: true
+
+# Separate tracking for backend and frontend
+flags:
+  backend:
+    paths:
+      - backend/app/
+    carryforward: true
+    after_n_builds: 1
+  frontend:
+    paths:
+      - frontend/src/
+    carryforward: true
+    after_n_builds: 1
+
+# Component-level coverage tracking
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 2%
+  individual_components:
+    - component_id: backend-services
+      name: Backend Services
+      paths:
+        - backend/app/services/**
+    - component_id: backend-api
+      name: Backend API
+      paths:
+        - backend/app/api/**
+    - component_id: frontend-hooks
+      name: Frontend Hooks
+      paths:
+        - frontend/src/hooks/**
+    - component_id: frontend-components
+      name: Frontend Components
+      paths:
+        - frontend/src/components/**
+
+# Ignore test files and config files from coverage
+ignore:
+  - "**/*.test.*"
+  - "**/*.spec.*"
+  - "**/tests/**"
+  - "**/__pycache__/**"
+  - "**/node_modules/**"
+  - "**/*.config.*"
+  - "**/conftest.py"
