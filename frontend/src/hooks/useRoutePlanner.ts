@@ -60,7 +60,7 @@ export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParam
 export function useRoutePlannerLegacy(params: RoutePlanParams, enabled = true) {
   return useQuery({
     queryKey: ['routes', 'plan', params],
-    queryFn: () => planRoute(params),
+    queryFn: () => planRoute(),
     enabled,
     retry: false,
     staleTime: 2 * 60 * 1000,
