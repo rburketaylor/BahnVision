@@ -211,3 +211,21 @@ export function getRouteTypeName(routeType: GtfsRouteType): string {
   }
   return names[routeType] ?? 'Unbekannt'
 }
+
+/**
+ * Map route string prefix to GTFS route type
+ */
+export function getRouteTypeFromString(routeString: string): GtfsRouteType {
+  const firstChar = routeString.charAt(0).toUpperCase()
+  switch (firstChar) {
+    case 'U':
+      return GtfsRouteType.METRO
+    case 'S':
+      return GtfsRouteType.RAIL
+    case 'T':
+      return GtfsRouteType.TRAM
+    case 'B':
+    default:
+      return GtfsRouteType.BUS
+  }
+}
