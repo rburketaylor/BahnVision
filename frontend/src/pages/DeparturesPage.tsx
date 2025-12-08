@@ -196,9 +196,7 @@ export function DeparturesPage() {
               <h1 className="text-3xl sm:text-4xl font-bold text-foreground">
                 Departures for {stop?.name}
               </h1>
-              {stop?.id && (
-                <p className="text-sm text-gray-400 mt-1">Stop ID: {stop.id}</p>
-              )}
+              {stop?.id && <p className="text-sm text-gray-400 mt-1">Stop ID: {stop.id}</p>}
             </div>
             <div className="flex items-center gap-2">
               <div

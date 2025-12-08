@@ -1,7 +1,7 @@
 /**
  * Route Planner Page
  * Plan journeys between two stations
- * 
+ *
  * NOTE: Route planning is not yet implemented in the GTFS API.
  * This page shows a "Coming Soon" placeholder.
  */
@@ -22,14 +22,12 @@ export default function PlannerPage() {
         <div className="text-6xl mb-6">🚧</div>
         <h2 className="text-2xl font-semibold text-foreground mb-4">Coming Soon</h2>
         <p className="text-gray-500 mb-6 max-w-md mx-auto">
-          Route planning functionality is being developed as part of our GTFS migration.
-          This feature will enable journey planning across Germany's public transport network.
+          Route planning functionality is being developed as part of our GTFS migration. This
+          feature will enable journey planning across Germany's public transport network.
         </p>
-        
+
         <div className="space-y-3">
-          <p className="text-sm text-gray-400">
-            In the meantime, you can:
-          </p>
+          <p className="text-sm text-gray-400">In the meantime, you can:</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
               to="/"

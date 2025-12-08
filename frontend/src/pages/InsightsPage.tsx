@@ -68,12 +68,12 @@ export default function InsightsPage() {
         }
 
         // Parse request metrics
-        if (metric.startsWith('bahnvision_mvg_requests_total')) {
+        if (metric.startsWith('bahnvision_transit_requests_total')) {
           parsedMetrics.totalRequests += parseInt(value) || 0
         }
 
         // Parse response time metrics
-        if (metric.includes('bahnvision_mvg_request_seconds') && metric.includes('le="')) {
+        if (metric.includes('bahnvision_transit_request_seconds') && metric.includes('le="')) {
           // This is a histogram - simplified parsing for demo
           const duration = parseFloat(value) || 0
           if (duration > 0) {
@@ -83,8 +83,8 @@ export default function InsightsPage() {
       }
 
       // Calculate cache hit rate
-      const hits = parsedMetrics.cacheEvents['mvg_departures_hit'] || 0
-      const misses = parsedMetrics.cacheEvents['mvg_departures_miss'] || 0
+      const hits = parsedMetrics.cacheEvents['transit_departures_hit'] || 0
+      const misses = parsedMetrics.cacheEvents['transit_departures_miss'] || 0
       const total = hits + misses
       parsedMetrics.cacheHitRate = total > 0 ? (hits / total) * 100 : 0
 
