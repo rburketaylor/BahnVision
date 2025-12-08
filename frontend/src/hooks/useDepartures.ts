@@ -1,7 +1,7 @@
 /**
  * Departures hook
  * Fetches departure data with configurable live/manual refresh modes
- * 
+ *
  * Uses the Transit API for GTFS-based departures with real-time updates.
  */
 

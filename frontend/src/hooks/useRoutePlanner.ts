@@ -1,7 +1,7 @@
 /**
  * Route planner hook
  * Plans routes between two stations with optional time constraints
- * 
+ *
  * NOTE: Route planning is not yet available in the Transit API.
  * This hook is temporarily disabled and will throw an error if used.
  * TODO: Implement GTFS-based journey planning in Phase 5+
@@ -17,7 +17,7 @@ interface UseRoutePlannerParams {
 }
 
 // Placeholder function that throws until route planning is implemented
-async function planRoute(_params: RoutePlanParams): Promise<never> {
+async function planRoute(): Promise<never> {
   throw new ApiError(
     'Route planning is not yet available. This feature will be implemented in a future update.',
     501,
@@ -34,7 +34,7 @@ export function useRoutePlanner({ params, enabled = true }: UseRoutePlannerParam
       if (!params) {
         throw new Error('Route planning parameters are required')
       }
-      return planRoute(params)
+      return planRoute()
     },
     enabled: enabled && !!params && !!params.origin && !!params.destination,
     staleTime: 1000 * 60 * 2, // 2 minutes

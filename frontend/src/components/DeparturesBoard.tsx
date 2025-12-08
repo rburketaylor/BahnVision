@@ -85,8 +85,13 @@ export function DeparturesBoard({
       {/* Departures list with better spacing */}
       <div className="space-y-3">
         {sortedDepartures.map((departure, index) => {
-          const time = formatTime(departure.realtime_departure || departure.scheduled_departure, use24Hour)
-          const delayMinutes = departure.departure_delay_seconds ? Math.round(departure.departure_delay_seconds / 60) : 0
+          const time = formatTime(
+            departure.realtime_departure || departure.scheduled_departure,
+            use24Hour
+          )
+          const delayMinutes = departure.departure_delay_seconds
+            ? Math.round(departure.departure_delay_seconds / 60)
+            : 0
           const isDelayed = delayMinutes > 0
           const isCancelled = departure.schedule_relationship === 'SKIPPED'
           // Map GTFS route types to display names

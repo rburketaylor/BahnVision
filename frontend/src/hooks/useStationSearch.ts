@@ -1,7 +1,7 @@
 /**
  * Station search hook
  * Provides autocomplete functionality with debouncing
- * 
+ *
  * Uses the Transit API for GTFS-based stop search with Germany-wide coverage.
  */
 
