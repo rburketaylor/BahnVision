@@ -450,7 +450,9 @@ class TransitDataService:
             for trip_id in trip_ids:
                 # Note: This is a simplified approach
                 # In practice, you'd need to map vehicles to trips
-                vehicle_pos = await self.gtfs_realtime.get_vehicle_position(trip_id)
+                vehicle_pos = await self.gtfs_realtime.get_vehicle_position_by_trip(
+                    trip_id
+                )
                 if vehicle_pos:
                     for departure in departures:
                         if departure.trip_id == trip_id:

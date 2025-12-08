@@ -79,7 +79,7 @@ async def lifespan(app: FastAPI):
 
     # Start GTFS-RT background processor
     async with gtfs_rt_lifespan_manager(cache_service) as rt_processor:
-        yield rt_processor
+        yield {"rt_processor": rt_processor}
 
     await engine.dispose()
 
