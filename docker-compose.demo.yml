@@ -23,7 +23,7 @@ services:
         condition: service_started
   # Monitoring
   prometheus:
-    image: prom/prometheus:v3.7.3
+    image: prom/prometheus:v3.8.0
     container_name: bahnvision-prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -39,7 +39,7 @@ services:
       - prometheus_data:/prometheus
 
   grafana:
-    image: grafana/grafana:12.2.1
+    image: grafana/grafana:12.3.0
     container_name: bahnvision-grafana
     ports:
       - "3001:3000"
@@ -78,7 +78,7 @@ services:
 
   # Tracing (will be used in Phase 2)
   jaeger:
-    image: jaegertracing/all-in-one:1.74.0
+    image: jaegertracing/all-in-one:1.76.0
     container_name: bahnvision-jaeger
     ports:
       - "16686:16686"  # Jaeger UI
