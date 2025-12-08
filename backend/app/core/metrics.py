@@ -12,19 +12,19 @@ CACHE_REFRESH_LATENCY = Histogram(
     "Latency of cache refresh operations.",
     labelnames=("cache",),
 )
-MVG_REQUESTS = Counter(
-    "bahnvision_mvg_requests_total",
-    "Outbound MVG client requests.",
+TRANSIT_REQUESTS = Counter(
+    "bahnvision_transit_requests_total",
+    "Outbound Transit client requests.",
     labelnames=("endpoint", "result"),
 )
-MVG_REQUEST_LATENCY = Histogram(
-    "bahnvision_mvg_request_seconds",
-    "Latency of outbound MVG client requests.",
+TRANSIT_REQUEST_LATENCY = Histogram(
+    "bahnvision_transit_request_seconds",
+    "Latency of outbound Transit client requests.",
     labelnames=("endpoint",),
 )
-MVG_TRANSPORT_REQUESTS = Counter(
-    "bahnvision_mvg_transport_requests_total",
-    "Outbound MVG client requests per transport type.",
+TRANSIT_TRANSPORT_REQUESTS = Counter(
+    "bahnvision_transit_transport_requests_total",
+    "Outbound Transit client requests per transport type.",
     labelnames=("endpoint", "transport_type", "result"),
 )
 
@@ -39,16 +39,18 @@ def observe_cache_refresh(cache: str, duration_seconds: float) -> None:
     CACHE_REFRESH_LATENCY.labels(cache=cache).observe(duration_seconds)
 
 
-def observe_mvg_request(endpoint: str, result: str, duration_seconds: float) -> None:
-    """Record MVG request result and latency."""
-    MVG_REQUESTS.labels(endpoint=endpoint, result=result).inc()
-    MVG_REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration_seconds)
+def observe_transit_request(
+    endpoint: str, result: str, duration_seconds: float
+) -> None:
+    """Record Transit request result and latency."""
+    TRANSIT_REQUESTS.labels(endpoint=endpoint, result=result).inc()
+    TRANSIT_REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration_seconds)
 
 
-def record_mvg_transport_request(
+def record_transit_transport_request(
     endpoint: str, transport_type: str, result: str
 ) -> None:
-    """Record MVG request result per transport type."""
-    MVG_TRANSPORT_REQUESTS.labels(
+    """Record Transit request result per transport type."""
+    TRANSIT_TRANSPORT_REQUESTS.labels(
         endpoint=endpoint, transport_type=transport_type, result=result
     ).inc()

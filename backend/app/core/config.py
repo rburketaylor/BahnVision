@@ -62,35 +62,35 @@ class Settings(BaseSettings):
     )
 
     # Departures: short TTL for real-time data
-    mvg_departures_cache_ttl_seconds: int = Field(
-        default=30, alias="MVG_DEPARTURES_CACHE_TTL_SECONDS"
+    transit_departures_cache_ttl_seconds: int = Field(
+        default=30, alias="TRANSIT_DEPARTURES_CACHE_TTL_SECONDS"
     )
-    mvg_departures_cache_stale_ttl_seconds: int = Field(
-        default=300, alias="MVG_DEPARTURES_CACHE_STALE_TTL_SECONDS"
+    transit_departures_cache_stale_ttl_seconds: int = Field(
+        default=300, alias="TRANSIT_DEPARTURES_CACHE_STALE_TTL_SECONDS"
     )
 
     # Station search: medium TTL
-    mvg_station_search_cache_ttl_seconds: int = Field(
-        default=60, alias="MVG_STATION_SEARCH_CACHE_TTL_SECONDS"
+    transit_station_search_cache_ttl_seconds: int = Field(
+        default=60, alias="TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS"
     )
-    mvg_station_search_cache_stale_ttl_seconds: int = Field(
-        default=600, alias="MVG_STATION_SEARCH_CACHE_STALE_TTL_SECONDS"
+    transit_station_search_cache_stale_ttl_seconds: int = Field(
+        default=600, alias="TRANSIT_STATION_SEARCH_CACHE_STALE_TTL_SECONDS"
     )
 
     # Station list: long TTL (changes rarely)
-    mvg_station_list_cache_ttl_seconds: int = Field(
-        default=86400, alias="MVG_STATION_LIST_CACHE_TTL_SECONDS"
+    transit_station_list_cache_ttl_seconds: int = Field(
+        default=86400, alias="TRANSIT_STATION_LIST_CACHE_TTL_SECONDS"
     )
-    mvg_station_list_cache_stale_ttl_seconds: int = Field(
-        default=172800, alias="MVG_STATION_LIST_CACHE_STALE_TTL_SECONDS"
+    transit_station_list_cache_stale_ttl_seconds: int = Field(
+        default=172800, alias="TRANSIT_STATION_LIST_CACHE_STALE_TTL_SECONDS"
     )
 
     # Route planning: medium TTL
-    mvg_route_cache_ttl_seconds: int = Field(
-        default=120, alias="MVG_ROUTE_CACHE_TTL_SECONDS"
+    transit_route_cache_ttl_seconds: int = Field(
+        default=120, alias="TRANSIT_ROUTE_CACHE_TTL_SECONDS"
     )
-    mvg_route_cache_stale_ttl_seconds: int = Field(
-        default=900, alias="MVG_ROUTE_CACHE_STALE_TTL_SECONDS"
+    transit_route_cache_stale_ttl_seconds: int = Field(
+        default=900, alias="TRANSIT_ROUTE_CACHE_STALE_TTL_SECONDS"
     )
 
     # ==========================================================================
