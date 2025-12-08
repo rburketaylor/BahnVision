@@ -102,7 +102,7 @@
     },
     {
       "datasource": "Prometheus",
-      "description": "MVG API request latency P95",
+      "description": "Transit API request latency P95",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -174,12 +174,12 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(bahnvision_mvg_request_seconds_bucket[5m])) by (le, endpoint))",
+          "expr": "histogram_quantile(0.95, sum(rate(bahnvision_transit_request_seconds_bucket[5m])) by (le, endpoint))",
           "interval": "",
-          "legendFormat": "MVG P95 Latency"
+          "legendFormat": "Transit P95 Latency"
         }
       ],
-      "title": "MVG API P95 Latency",
+      "title": "Transit API P95 Latency",
       "type": "timeseries"
     },
     {
@@ -238,7 +238,7 @@
     },
     {
       "datasource": "Prometheus",
-      "description": "MVG API request success rate",
+      "description": "Transit API request success rate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -310,12 +310,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (endpoint, result) (rate(bahnvision_mvg_requests_total[5m]))",
+          "expr": "sum by (endpoint, result) (rate(bahnvision_transit_requests_total[5m]))",
           "interval": "",
           "legendFormat": "{{endpoint}} - {{result}}"
         }
       ],
-      "title": "MVG API Request Rate",
+      "title": "Transit API Request Rate",
       "type": "timeseries"
     }
   ],

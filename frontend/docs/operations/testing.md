@@ -2,7 +2,7 @@
 
 ## Principles
 - Cover critical rider journeys (station search, departures view, route planning) with automated tests before launch.
-- Keep tests fast and deterministic; mock backend responses with recorded fixtures to avoid MVG rate limits.
+- Keep tests fast and deterministic; mock backend responses with recorded fixtures to avoid provider rate limits.
 - Align coverage with backend expectations: verify cache headers, HTTP error handling, and concurrency safeguards.
 
 ## Test Layers
@@ -21,7 +21,7 @@
    - Percy or Chromatic once UI stabilizes; ensures map overlays and theming remain intact.
 
 ## Test Data & Mocking
-- Maintain JSON fixtures mirroring responses defined in `backend/app/models/mvg.py` and `docs/tech-spec.md`.
+- Maintain JSON fixtures mirroring responses defined in `backend/app/models/transit.py` and `docs/tech-spec.md`.
 - Use MSW to stub `/api/v1` endpoints; simulate error cases (404, 502, 503) and alternate cache headers.
 - For Playwright, start backend in mocked mode or inject static fixtures via query parameters (e.g., `?mock=marienplatz`).
 

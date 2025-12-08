@@ -15,7 +15,7 @@ import {
 import DOMPurify from 'dompurify'
 import { useStationSearch } from '../hooks/useStationSearch'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import type { Station } from '../types/api'
+import type { TransitStop } from '../types/gtfs'
 import { ApiError } from '../services/api'
 import {
   getRecentSearches,
@@ -80,7 +80,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 }
 
 interface StationSearchProps {
-  onSelect?: (station: Station) => void
+  onSelect?: (stop: TransitStop) => void
   initialQuery?: string
   placeholder?: string
   limit?: number
@@ -187,16 +187,16 @@ export function StationSearch({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSelect = (station: Station) => {
-    setQuery(station.name)
+  const handleSelect = (stop: TransitStop) => {
+    setQuery(stop.name)
     setIsOpen(false)
     setActiveIndex(-1)
 
     // Add to recent searches
-    addRecentSearch(station)
+    addRecentSearch(stop)
     setRecentSearches(getRecentSearches())
 
-    onSelect?.(station)
+    onSelect?.(stop)
   }
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {

@@ -2,47 +2,52 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect } from 'vitest'
 import { DeparturesBoard } from '../../components/DeparturesBoard'
-import type { Departure } from '../../types/api'
+import type { TransitDeparture } from '../../types/gtfs'
 
-const baseDeparture: Departure = {
-  planned_time: '2024-01-01T10:00:00Z',
-  realtime_time: '2024-01-01T10:00:00Z',
-  delay_minutes: 0,
-  platform: '1',
-  realtime: true,
-  line: 'U1',
-  destination: 'Default Destination',
-  transport_type: 'UBAHN',
-  icon: null,
-  cancelled: false,
-  messages: [],
+const baseDeparture: TransitDeparture = {
+  trip_id: 'trip_1',
+  route_id: 'U1',
+  route_short_name: 'U1',
+  route_long_name: 'U-Bahn Line 1',
+  headsign: 'Default Destination',
+  stop_id: 'de:09162:6',
+  stop_name: 'Marienplatz',
+  scheduled_departure: '2024-01-01T10:00:00Z',
+  scheduled_arrival: null,
+  realtime_departure: '2024-01-01T10:00:00Z',
+  realtime_arrival: null,
+  departure_delay_seconds: 0,
+  arrival_delay_seconds: null,
+  schedule_relationship: 'SCHEDULED',
+  vehicle_id: null,
+  alerts: [],
 }
 
-const buildDeparture = (overrides: Partial<Departure>): Departure => ({
+const buildDeparture = (overrides: Partial<TransitDeparture>): TransitDeparture => ({
   ...baseDeparture,
   ...overrides,
 })
 
 describe('DeparturesBoard', () => {
-  it('orders departures by effective realtime/planned timestamps', () => {
-    const departures: Departure[] = [
+  it('orders departures by effective realtime/scheduled timestamps', () => {
+    const departures: TransitDeparture[] = [
       buildDeparture({
-        destination: 'Later Train',
-        line: 'U6',
-        planned_time: '2024-01-01T10:00:00Z',
-        realtime_time: '2024-01-01T10:10:00Z',
+        headsign: 'Later Train',
+        route_short_name: 'U6',
+        scheduled_departure: '2024-01-01T10:00:00Z',
+        realtime_departure: '2024-01-01T10:10:00Z',
       }),
       buildDeparture({
-        destination: 'Early Planned',
-        line: 'BUS 50',
-        planned_time: '2024-01-01T09:50:00Z',
-        realtime_time: null,
+        headsign: 'Early Planned',
+        route_short_name: 'BUS',
+        scheduled_departure: '2024-01-01T09:50:00Z',
+        realtime_departure: null,
       }),
       buildDeparture({
-        destination: 'Earlier Real',
-        line: 'TRAM 17',
-        planned_time: '2024-01-01T10:05:00Z',
-        realtime_time: '2024-01-01T10:00:00Z',
+        headsign: 'Earlier Real',
+        route_short_name: 'TRAM',
+        scheduled_departure: '2024-01-01T10:05:00Z',
+        realtime_departure: '2024-01-01T10:00:00Z',
       }),
     ]
 
@@ -57,11 +62,11 @@ describe('DeparturesBoard', () => {
 
   it('toggles between 24h and 12h display', async () => {
     const user = userEvent.setup()
-    const departures: Departure[] = [
+    const departures: TransitDeparture[] = [
       buildDeparture({
-        destination: 'Afternoon Train',
-        planned_time: '2024-01-01T13:00:00Z',
-        realtime_time: '2024-01-01T13:00:00Z',
+        headsign: 'Afternoon Train',
+        scheduled_departure: '2024-01-01T13:00:00Z',
+        realtime_departure: '2024-01-01T13:00:00Z',
       }),
     ]
 
@@ -75,13 +80,13 @@ describe('DeparturesBoard', () => {
   })
 
   it('highlights cancelled departures with the warning background', () => {
-    const departures: Departure[] = [
+    const departures: TransitDeparture[] = [
       buildDeparture({
-        destination: 'Normal Service',
+        headsign: 'Normal Service',
       }),
       buildDeparture({
-        destination: 'Cancelled Service',
-        cancelled: true,
+        headsign: 'Cancelled Service',
+        schedule_relationship: 'SKIPPED',
       }),
     ]
 

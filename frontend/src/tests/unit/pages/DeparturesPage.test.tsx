@@ -22,8 +22,16 @@ describe('DeparturesPage', () => {
     mockUseDepartures.mockReturnValue({
       data: {
         data: {
-          station: { id: 'de:09162:1', name: 'Central Station', place: 'Munich' },
+          stop: {
+            id: 'de:09162:1',
+            name: 'Central Station',
+            latitude: 48.14,
+            longitude: 11.558,
+            zone_id: 'M',
+            wheelchair_boarding: 1,
+          },
           departures: [],
+          realtime_available: true,
         },
       },
       isLoading: false,
@@ -32,7 +40,7 @@ describe('DeparturesPage', () => {
     vi.clearAllMocks()
   })
 
-  it('renders station heading and passes data to departures board', () => {
+  it('renders stop heading and passes data to departures board', () => {
     render(
       <MemoryRouter initialEntries={['/departures/de:09162:1']}>
         <Routes>
@@ -43,10 +51,9 @@ describe('DeparturesPage', () => {
 
     expect(screen.getByText('Departures for Central Station')).toBeInTheDocument()
     expect(screen.getByTestId('departures-board')).toHaveTextContent('0 departures')
-    expect(screen.getByText('Transport Types')).toBeInTheDocument()
 
     const [params, options] = mockUseDepartures.mock.calls[0]
-    expect(params).toMatchObject({ station: 'de:09162:1', limit: 20, offset: 0 })
+    expect(params).toMatchObject({ stop_id: 'de:09162:1', limit: 20, offset_minutes: 0 })
     expect(options).toMatchObject({ enabled: true, live: true })
   })
 })

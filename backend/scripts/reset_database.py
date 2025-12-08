@@ -25,8 +25,9 @@ async def reset_database():
             await conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
             print("✓ Dropped alembic_version table")
 
-            # Drop all our tables
+            # Drop all our tables (including GTFS tables)
             tables = [
+                # Original tables
                 "departure_weather_links",
                 "weather_observations",
                 "route_snapshots",
@@ -34,6 +35,14 @@ async def reset_database():
                 "transit_lines",
                 "stations",
                 "ingestion_runs",
+                # GTFS tables
+                "gtfs_stop_times",
+                "gtfs_calendar_dates",
+                "gtfs_calendar",
+                "gtfs_trips",
+                "gtfs_routes",
+                "gtfs_stops",
+                "gtfs_feed_info",
             ]
 
             for table in tables:

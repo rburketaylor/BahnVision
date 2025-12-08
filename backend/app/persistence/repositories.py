@@ -26,7 +26,7 @@ class StationPayload:
 class TransitLinePayload:
     line_id: str
     transport_mode: models.TransportMode
-    operator: str = "MVG"
+    operator: str = "UNKNOWN"
     description: str | None = None
     color_hex: str | None = None
 
@@ -47,7 +47,7 @@ class DepartureObservationPayload:
     cancellation_reason: str | None = None
     remarks: Sequence[str] = field(default_factory=tuple)
     crowding_level: int | None = None
-    source: str = "mvg"
+    source: str = "transit"
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     raw_payload: dict[str, Any] | None = None
@@ -351,7 +351,7 @@ class StationRepository:
         ]
 
         # asyncpg caps positional parameters at 32767, so chunk the bulk upsert
-        # to avoid InterfaceError when persisting the ~4.7k MVG stations.
+        # to avoid InterfaceError when persisting the ~4.7k stations.
         params_per_row = 7
         max_rows_per_batch = 32767 // params_per_row
         chunked_rows = [
