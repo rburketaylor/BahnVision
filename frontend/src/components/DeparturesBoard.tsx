@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react'
-import type { Departure } from '../types/api'
+import type { TransitDeparture } from '../types/gtfs'
 
 interface DeparturesBoardProps {
-  departures: Departure[]
+  departures: TransitDeparture[]
   use24Hour?: boolean
 }
 
@@ -33,25 +33,6 @@ function TimeFormatToggle({ use24Hour, onToggle }: TimeFormatToggleProps) {
   )
 }
 
-// Transport type color mapping
-const getTransportTypeColor = (transportType?: string) => {
-  switch (transportType) {
-    case 'UBAHN':
-      return 'bg-ubahn text-white'
-    case 'SBAHN':
-      return 'bg-sbahn text-white'
-    case 'TRAM':
-      return 'bg-tram text-white'
-    case 'BUS':
-    case 'REGIONAL_BUS':
-      return 'bg-bus text-white'
-    case 'BAHN':
-      return 'bg-gray-700 text-white'
-    default:
-      return 'bg-gray-600 text-white'
-  }
-}
-
 // Format time for display
 const formatTime = (dateString: string | null | undefined, use24Hour: boolean = true) => {
   if (!dateString) return 'N/A'
@@ -68,12 +49,12 @@ export function DeparturesBoard({
 }: DeparturesBoardProps) {
   const [use24Hour, setUse24Hour] = useState(initialUse24Hour)
 
-  // Sort departures by effective departure time (realtime if available, otherwise planned)
+  // Sort departures by effective departure time (realtime if available, otherwise scheduled)
   const sortedDepartures = useMemo(
     () =>
       [...departures].sort((a, b) => {
-        const timeA = a.realtime_time || a.planned_time
-        const timeB = b.realtime_time || b.planned_time
+        const timeA = a.realtime_departure || a.scheduled_departure
+        const timeB = b.realtime_departure || b.scheduled_departure
         if (!timeA) return 1
         if (!timeB) return -1
         return new Date(timeA).getTime() - new Date(timeB).getTime()
@@ -104,10 +85,17 @@ export function DeparturesBoard({
       {/* Departures list with better spacing */}
       <div className="space-y-3">
         {sortedDepartures.map((departure, index) => {
-          const time = formatTime(departure.realtime_time || departure.planned_time, use24Hour)
-          const isDelayed = departure.delay_minutes && departure.delay_minutes > 0
-          const transportType =
-            departure.transport_type === 'REGIONAL_BUS' ? 'BUS' : departure.transport_type
+          const time = formatTime(
+            departure.realtime_departure || departure.scheduled_departure,
+            use24Hour
+          )
+          const delayMinutes = departure.departure_delay_seconds
+            ? Math.round(departure.departure_delay_seconds / 60)
+            : 0
+          const isDelayed = delayMinutes > 0
+          const isCancelled = departure.schedule_relationship === 'SKIPPED'
+          // Map GTFS route types to display names
+          const transportType = departure.route_short_name || 'Transit'
 
           return (
             <div key={index} className="group">
@@ -115,7 +103,7 @@ export function DeparturesBoard({
                 className={`
                   flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 border
                   ${
-                    departure.cancelled
+                    isCancelled
                       ? 'bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800/60 hover:bg-red-50/60 dark:hover:bg-red-900/30'
                       : isDelayed
                         ? 'bg-yellow-50/40 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800/60 hover:bg-yellow-50/60 dark:hover:bg-yellow-900/30'
@@ -128,10 +116,10 @@ export function DeparturesBoard({
                   <div
                     className={`
                     px-3 py-1.5 rounded-lg text-sm font-bold text-center min-w-[3rem]
-                    ${getTransportTypeColor(departure.transport_type)}
+                    bg-primary text-white
                   `}
                   >
-                    {departure.line}
+                    {departure.route_short_name || '?'}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
                     {transportType}
@@ -145,24 +133,18 @@ export function DeparturesBoard({
 
                 {/* Destination */}
                 <div className="flex-1 text-base font-medium text-foreground">
-                  {departure.destination}
+                  {departure.headsign}
                 </div>
 
-                {/* Platform and delay info */}
+                {/* Status info */}
                 <div className="flex items-center gap-3">
-                  {departure.platform && (
-                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-300">
-                      Platform {departure.platform}
-                    </span>
-                  )}
-
-                  {departure.cancelled ? (
+                  {isCancelled ? (
                     <span className="px-3 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm font-medium">
                       Cancelled
                     </span>
-                  ) : isDelayed && departure.delay_minutes ? (
+                  ) : isDelayed ? (
                     <span className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 rounded-lg text-sm font-medium">
-                      +{departure.delay_minutes}m delay
+                      +{delayMinutes}m delay
                     </span>
                   ) : (
                     <span className="px-3 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg text-sm font-medium">

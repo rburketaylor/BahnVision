@@ -68,7 +68,7 @@ async def load_fixtures():
             # Insert sample ingestion run
             ingestion_data = {
                 "job_name": "test_ingestion",
-                "source": IngestionSource.MVG_DEPARTURES,
+                "source": IngestionSource.TRANSIT_DEPARTURES,
                 "started_at": datetime.now(timezone.utc),
                 "completed_at": datetime.now(timezone.utc),
                 "status": IngestionStatus.SUCCESS,
@@ -95,7 +95,7 @@ async def load_fixtures():
                 "platform": "2",
                 "transport_mode": TransportMode.UBAHN,
                 "status": DepartureStatus.DELAYED,
-                "source": "mvg",
+                "source": "transit",
                 "created_at": datetime.now(timezone.utc),
             }
             await conn.execute(

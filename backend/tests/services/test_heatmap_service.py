@@ -4,6 +4,9 @@ Tests for the heatmap service.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import List, Optional
+
 import pytest
 
 from app.models.heatmap import (
@@ -16,7 +19,6 @@ from app.services.heatmap_service import (
     parse_time_range,
     parse_transport_modes,
 )
-from app.services.mvg_dto import Station
 
 
 class FakeCache:
@@ -29,43 +31,52 @@ class FakeCache:
         pass
 
 
-class FakeMVGClient:
-    """Fake MVG client for testing."""
+@dataclass
+class FakeGTFSStop:
+    """Fake GTFS stop for testing."""
 
-    def __init__(self, stations: list[Station] | None = None):
-        self.stations = stations or []
-        self.fail_stations = False
+    stop_id: str
+    stop_name: str
+    stop_lat: float
+    stop_lon: float
+    location_type: int = 0
+    parent_station: Optional[str] = None
 
-    async def get_all_stations(self) -> list[Station]:
-        if self.fail_stations:
-            raise Exception("Station list unavailable")
-        return self.stations
+
+class FakeGTFSScheduleService:
+    """Fake GTFS schedule service for testing."""
+
+    def __init__(self, stops: list[FakeGTFSStop] | None = None):
+        self.stops = stops or []
+        self.fail_stops = False
+
+    async def get_all_stops(self, limit: int = 10000) -> List[FakeGTFSStop]:
+        if self.fail_stops:
+            raise Exception("Stop list unavailable")
+        return self.stops[:limit]
 
 
 @pytest.fixture
-def sample_stations() -> list[Station]:
-    """Sample stations for testing."""
+def sample_stops() -> list[FakeGTFSStop]:
+    """Sample stops for testing."""
     return [
-        Station(
-            id="de:09162:6",
-            name="Marienplatz",
-            place="München",
-            latitude=48.13743,
-            longitude=11.57549,
+        FakeGTFSStop(
+            stop_id="de:09162:6",
+            stop_name="Marienplatz",
+            stop_lat=48.13743,
+            stop_lon=11.57549,
         ),
-        Station(
-            id="de:09162:1",
-            name="Hauptbahnhof",
-            place="München",
-            latitude=48.140,
-            longitude=11.558,
+        FakeGTFSStop(
+            stop_id="de:09162:1",
+            stop_name="Hauptbahnhof",
+            stop_lat=48.140,
+            stop_lon=11.558,
         ),
-        Station(
-            id="de:09162:10",
-            name="Sendlinger Tor",
-            place="München",
-            latitude=48.134,
-            longitude=11.567,
+        FakeGTFSStop(
+            stop_id="de:09162:10",
+            stop_name="Sendlinger Tor",
+            stop_lat=48.134,
+            stop_lon=11.567,
         ),
     ]
 
@@ -119,7 +130,7 @@ class TestParseTransportModes:
         modes = parse_transport_modes("UBAHN")
         assert modes is not None
         assert len(modes) == 1
-        assert modes[0].name == "UBAHN"
+        assert modes[0] == "UBAHN"
 
     def test_parse_multiple_modes(self):
         """Test parsing multiple transport modes."""
@@ -154,18 +165,18 @@ class TestParseTransportModes:
         modes = parse_transport_modes("S-BAHN")
         assert modes is not None
         assert len(modes) == 1
-        assert modes[0].name == "SBAHN"
+        assert modes[0] == "SBAHN"
 
 
 class TestHeatmapService:
     """Tests for HeatmapService."""
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_basic(self, sample_stations):
+    async def test_get_cancellation_heatmap_basic(self, sample_stops):
         """Test basic heatmap generation."""
-        client = FakeMVGClient(stations=sample_stations)
+        gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap()
 
@@ -174,11 +185,11 @@ class TestHeatmapService:
         assert result.summary.total_stations > 0
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_with_time_range(self, sample_stations):
+    async def test_get_cancellation_heatmap_with_time_range(self, sample_stops):
         """Test heatmap with specific time range."""
-        client = FakeMVGClient(stations=sample_stations)
+        gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap(time_range="1h")
 
@@ -187,11 +198,11 @@ class TestHeatmapService:
         assert abs(delta.total_seconds() - 3600) < 1
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_empty_stations(self):
-        """Test heatmap with no stations."""
-        client = FakeMVGClient(stations=[])
+    async def test_get_cancellation_heatmap_empty_stops(self):
+        """Test heatmap with no stops."""
+        gtfs_schedule = FakeGTFSScheduleService(stops=[])
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap()
 
@@ -200,12 +211,12 @@ class TestHeatmapService:
         assert result.summary.overall_cancellation_rate == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_station_failure(self):
-        """Test heatmap handles station fetch failure."""
-        client = FakeMVGClient()
-        client.fail_stations = True
+    async def test_get_cancellation_heatmap_stop_failure(self):
+        """Test heatmap handles stop fetch failure."""
+        gtfs_schedule = FakeGTFSScheduleService()
+        gtfs_schedule.fail_stops = True
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap()
 
@@ -213,11 +224,11 @@ class TestHeatmapService:
         assert result.summary.total_stations == 0
 
     @pytest.mark.asyncio
-    async def test_data_point_structure(self, sample_stations):
+    async def test_data_point_structure(self, sample_stops):
         """Test that data points have correct structure."""
-        client = FakeMVGClient(stations=sample_stations)
+        gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap()
 
@@ -232,11 +243,11 @@ class TestHeatmapService:
             assert 0 <= point.cancellation_rate <= 1
 
     @pytest.mark.asyncio
-    async def test_summary_statistics(self, sample_stations):
+    async def test_summary_statistics(self, sample_stops):
         """Test that summary statistics are calculated correctly."""
-        client = FakeMVGClient(stations=sample_stations)
+        gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap()
 
@@ -257,9 +268,9 @@ class TestCalculateSummary:
 
     def test_calculate_summary_empty(self):
         """Test summary calculation with empty data."""
-        client = FakeMVGClient()
+        gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         summary = service._calculate_summary([])
 
@@ -272,9 +283,9 @@ class TestCalculateSummary:
 
     def test_calculate_summary_single_station(self):
         """Test summary calculation with single station."""
-        client = FakeMVGClient()
+        gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         data_points = [
             HeatmapDataPoint(
@@ -300,9 +311,9 @@ class TestCalculateSummary:
 
     def test_calculate_summary_multiple_stations(self):
         """Test summary calculation with multiple stations."""
-        client = FakeMVGClient()
+        gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
-        service = HeatmapService(client, cache)
+        service = HeatmapService(gtfs_schedule, cache)
 
         data_points = [
             HeatmapDataPoint(

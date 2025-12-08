@@ -1,17 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useRoutePlanner } from '../../hooks/useRoutePlanner'
-import { apiClient } from '../../services/api'
 import type { RoutePlanParams } from '../../types/api'
-
-vi.mock('../../services/api', () => ({
-  apiClient: {
-    planRoute: vi.fn(),
-  },
-}))
-
-const mockPlanRoute = vi.mocked(apiClient.planRoute)
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -30,27 +21,23 @@ describe('useRoutePlanner', () => {
         },
       },
     })
-    vi.clearAllMocks()
   })
 
-  it('fetches routes with expected caching options', async () => {
+  it('returns an error since route planning is not yet implemented', async () => {
     const params: RoutePlanParams = {
       origin: 'de:1',
       destination: 'de:2',
     }
-    mockPlanRoute.mockResolvedValue({ data: { routes: [] } })
 
-    renderHook(() => useRoutePlanner({ params }), {
+    const { result } = renderHook(() => useRoutePlanner({ params }), {
       wrapper: createWrapper(queryClient),
     })
 
     await waitFor(() => {
-      expect(mockPlanRoute).toHaveBeenCalledWith(params)
+      expect(result.current.error).toBeTruthy()
     })
 
-    const query = queryClient.getQueryCache().find(['route-plan', params])
-    expect(query?.queryKey).toEqual(['route-plan', params])
-    expect(query?.options.staleTime).toBe(120_000)
+    expect(result.current.error?.message).toContain('not yet available')
   })
 
   it('respects enabled flag', () => {
@@ -64,6 +51,6 @@ describe('useRoutePlanner', () => {
     })
 
     expect(result.current.isFetching).toBe(false)
-    expect(mockPlanRoute).not.toHaveBeenCalled()
+    expect(result.current.error).toBeNull()
   })
 })

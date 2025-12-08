@@ -3,15 +3,15 @@ Heatmap service for cancellation data aggregation.
 
 Aggregates departure cancellation data across stations for heatmap visualization.
 Since historical data persistence is not yet implemented (Phase 2), this service
-currently aggregates from the cached departures data in real-time.
+currently generates simulated data based on station characteristics.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-
-from mvg import TransportType
 
 from app.models.heatmap import (
     HeatmapDataPoint,
@@ -22,8 +22,7 @@ from app.models.heatmap import (
     TransportStats,
 )
 from app.services.cache import CacheService
-from app.services.mvg_client import MVGClient
-from app.services.mvg_dto import Station
+from app.services.gtfs_schedule import GTFSScheduleService
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +56,36 @@ TRANSPORT_TYPE_NAMES: dict[str, str] = {
     "SEV": "SEV",
 }
 
+# GTFS route_type mapping to our transport types
+GTFS_ROUTE_TYPES: dict[int, str] = {
+    0: "TRAM",  # Tram, Streetcar, Light rail
+    1: "UBAHN",  # Subway, Metro
+    2: "BAHN",  # Rail
+    3: "BUS",  # Bus
+    4: "SCHIFF",  # Ferry
+    5: "TRAM",  # Cable tram
+    6: "TRAM",  # Aerial lift, gondola
+    7: "TRAM",  # Funicular
+    11: "TRAM",  # Trolleybus
+    12: "BAHN",  # Monorail
+    100: "BAHN",  # Railway Service
+    109: "SBAHN",  # Suburban Railway
+    400: "UBAHN",  # Urban Railway Service
+    700: "BUS",  # Bus Service
+    900: "TRAM",  # Tram Service
+    1000: "SCHIFF",  # Water Transport Service
+}
+
+
+@dataclass
+class StopInfo:
+    """Simple stop info for heatmap generation."""
+
+    stop_id: str
+    stop_name: str
+    stop_lat: float
+    stop_lon: float
+
 
 def parse_time_range(preset: TimeRangePreset | None) -> tuple[datetime, datetime]:
     """Convert a time range preset to concrete datetime bounds.
@@ -73,31 +102,30 @@ def parse_time_range(preset: TimeRangePreset | None) -> tuple[datetime, datetime
     return from_time, now
 
 
-def parse_transport_modes(transport_modes: str | None) -> list[TransportType] | None:
-    """Parse comma-separated transport modes string into list of TransportType.
+def parse_transport_modes(transport_modes: str | None) -> list[str] | None:
+    """Parse comma-separated transport modes string into list of transport type names.
 
     Args:
         transport_modes: Comma-separated string of transport types
 
     Returns:
-        List of TransportType or None for all types
+        List of transport type names or None for all types
     """
     if not transport_modes:
         return None
 
-    modes: list[TransportType] = []
+    modes: list[str] = []
     for mode_str in transport_modes.split(","):
         mode_str = mode_str.strip().upper()
-        try:
-            # Handle common aliases
-            if mode_str == "S-BAHN":
-                mode_str = "SBAHN"
-            elif mode_str == "U-BAHN":
-                mode_str = "UBAHN"
-            modes.append(TransportType[mode_str])
-        except KeyError:
+        # Handle common aliases
+        if mode_str == "S-BAHN":
+            mode_str = "SBAHN"
+        elif mode_str == "U-BAHN":
+            mode_str = "UBAHN"
+        if mode_str in TRANSPORT_TYPE_NAMES:
+            modes.append(mode_str)
+        else:
             logger.warning("Unknown transport mode: %s", mode_str)
-            continue
 
     return modes if modes else None
 
@@ -106,10 +134,9 @@ class HeatmapService:
     """Service for aggregating cancellation data for heatmap visualization.
 
     Since historical data persistence is Phase 2, this service currently:
-    1. Fetches all stations from the cached station list
-    2. For each station, fetches recent departures from cache
-    3. Aggregates cancellation statistics
-    4. Returns data points with lat/lng for map rendering
+    1. Fetches all stops from the GTFS database
+    2. Generates simulated cancellation data based on station characteristics
+    3. Returns data points with lat/lng for map rendering
 
     The service is designed to work efficiently with the existing cache
     infrastructure and can be extended to use historical data once available.
@@ -117,16 +144,16 @@ class HeatmapService:
 
     def __init__(
         self,
-        client: MVGClient,
+        gtfs_schedule: GTFSScheduleService,
         cache: CacheService,
     ) -> None:
         """Initialize heatmap service.
 
         Args:
-            client: MVG API client for fetching data
+            gtfs_schedule: GTFS schedule service for fetching stop data
             cache: Cache service for data storage and retrieval
         """
-        self._client = client
+        self._gtfs_schedule = gtfs_schedule
         self._cache = cache
 
     async def get_cancellation_heatmap(
@@ -159,14 +186,24 @@ class HeatmapService:
             transport_modes or "all",
         )
 
-        # Get all stations
+        # Get all stops from GTFS data
         try:
-            stations = await self._client.get_all_stations()
+            gtfs_stops = await self._gtfs_schedule.get_all_stops(limit=5000)
+            stops = [
+                StopInfo(
+                    stop_id=stop.stop_id,
+                    stop_name=stop.stop_name,
+                    stop_lat=float(stop.stop_lat) if stop.stop_lat else 0.0,
+                    stop_lon=float(stop.stop_lon) if stop.stop_lon else 0.0,
+                )
+                for stop in gtfs_stops
+                if stop.stop_lat and stop.stop_lon
+            ]
         except Exception as exc:
-            logger.error("Failed to fetch station list: %s", exc)
-            stations = []
+            logger.error("Failed to fetch stop list: %s", exc)
+            stops = []
 
-        if not stations:
+        if not stops:
             return HeatmapResponse(
                 time_range=TimeRange(from_time=from_time, to_time=to_time),
                 data_points=[],
@@ -192,9 +229,7 @@ class HeatmapService:
             max_points = min(max_points, MAX_DATA_POINTS)
 
         # Aggregate cancellation data for each station
-        data_points = await self._aggregate_station_data(
-            stations, transport_types, from_time, to_time
-        )
+        data_points = self._aggregate_station_data(stops, transport_types)
 
         # Filter to stations with significant data
         data_points = [
@@ -219,44 +254,43 @@ class HeatmapService:
             summary=summary,
         )
 
-    async def _aggregate_station_data(
+    def _aggregate_station_data(
         self,
-        stations: list[Station],
-        transport_types: list[TransportType] | None,
-        from_time: datetime,
-        to_time: datetime,
+        stops: list[StopInfo],
+        transport_types: list[str] | None,
     ) -> list[HeatmapDataPoint]:
-        """Aggregate cancellation data for each station.
+        """Generate simulated cancellation data for each station.
 
-        Currently uses simulated data since historical persistence is Phase 2.
+        Currently generates fake data since historical persistence is Phase 2.
         The structure is designed to be replaced with real database queries
         when that feature is implemented.
 
         Args:
-            stations: List of stations to aggregate data for
+            stops: List of stops to generate data for
             transport_types: Filter to specific transport types
-            from_time: Start of time range
-            to_time: End of time range
 
         Returns:
-            List of HeatmapDataPoint with aggregated statistics
+            List of HeatmapDataPoint with simulated statistics
         """
-        import hashlib
-
         data_points: list[HeatmapDataPoint] = []
 
-        # For MVP, generate realistic-looking data based on station characteristics
-        # This will be replaced with real database queries in Phase 2
-        for station in stations:
-            # Use station ID hash for reproducible "random" data
-            station_hash = int(hashlib.md5(station.id.encode()).hexdigest()[:8], 16)
+        # Default transport types if not specified
+        all_transport_types = ["UBAHN", "SBAHN", "TRAM", "BUS", "BAHN"]
+        active_types = transport_types or all_transport_types
+
+        # Generate realistic-looking data based on station characteristics
+        for stop in stops:
+            # Use stop ID hash for reproducible "random" data
+            # Using SHA256 instead of MD5 for security compliance
+            stop_hash = int(hashlib.sha256(stop.stop_id.encode()).hexdigest()[:8], 16)
 
             # Generate realistic departure counts based on station importance
             # Central stations have more departures
             is_major_station = any(
-                name in station.name.lower()
+                name in stop.stop_name.lower()
                 for name in [
                     "hauptbahnhof",
+                    "hbf",
                     "marienplatz",
                     "sendlinger",
                     "stachus",
@@ -266,34 +300,35 @@ class HeatmapService:
                     "pasing",
                     "giesing",
                     "moosach",
+                    "zentrum",
+                    "bahnhof",
                 ]
             )
 
             base_departures = 500 if is_major_station else 100
-            total_departures = base_departures + (station_hash % 200)
+            total_departures = base_departures + (stop_hash % 200)
 
             # Calculate cancellation rate (typically 1-5%, higher for some stations)
-            base_rate = 0.02 + (station_hash % 100) / 3000
-            if station_hash % 20 == 0:  # Some stations have higher issues
+            base_rate = 0.02 + (stop_hash % 100) / 3000
+            if stop_hash % 20 == 0:  # Some stations have higher issues
                 base_rate += 0.03
 
             cancelled_count = int(total_departures * min(base_rate, 0.15))
 
             # Generate transport breakdown
             by_transport: dict[str, TransportStats] = {}
-            transport_list = list(transport_types or TransportType)
 
             remaining_departures = total_departures
             remaining_cancellations = cancelled_count
 
-            for i, tt in enumerate(transport_list):
-                if i == len(transport_list) - 1:
+            for i, tt in enumerate(active_types):
+                if i == len(active_types) - 1:
                     # Last transport type gets remaining
                     tt_departures = remaining_departures
                     tt_cancellations = remaining_cancellations
                 else:
                     # Distribute based on hash
-                    ratio = ((station_hash >> (i * 4)) % 10 + 1) / 10
+                    ratio = ((stop_hash >> (i * 4)) % 10 + 1) / 10
                     tt_departures = int(remaining_departures * ratio * 0.3)
                     tt_cancellations = int(remaining_cancellations * ratio * 0.3)
 
@@ -301,7 +336,7 @@ class HeatmapService:
                     remaining_cancellations -= tt_cancellations
 
                 if tt_departures > 0:
-                    by_transport[tt.name] = TransportStats(
+                    by_transport[tt] = TransportStats(
                         total=tt_departures,
                         cancelled=max(0, tt_cancellations),
                     )
@@ -312,10 +347,10 @@ class HeatmapService:
 
             data_points.append(
                 HeatmapDataPoint(
-                    station_id=station.id,
-                    station_name=station.name,
-                    latitude=station.latitude,
-                    longitude=station.longitude,
+                    station_id=stop.stop_id,
+                    station_name=stop.stop_name,
+                    latitude=stop.stop_lat,
+                    longitude=stop.stop_lon,
                     total_departures=total_departures,
                     cancelled_count=cancelled_count,
                     cancellation_rate=cancellation_rate,
@@ -389,16 +424,16 @@ class HeatmapService:
 
 
 def get_heatmap_service(
-    client: MVGClient,
+    gtfs_schedule: GTFSScheduleService,
     cache: CacheService,
 ) -> HeatmapService:
     """Factory function for HeatmapService.
 
     Args:
-        client: MVG API client
+        gtfs_schedule: GTFS schedule service
         cache: Cache service
 
     Returns:
         Configured HeatmapService instance
     """
-    return HeatmapService(client, cache)
+    return HeatmapService(gtfs_schedule, cache)

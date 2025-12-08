@@ -62,35 +62,35 @@ class Settings(BaseSettings):
     )
 
     # Departures: short TTL for real-time data
-    mvg_departures_cache_ttl_seconds: int = Field(
-        default=30, alias="MVG_DEPARTURES_CACHE_TTL_SECONDS"
+    transit_departures_cache_ttl_seconds: int = Field(
+        default=30, alias="TRANSIT_DEPARTURES_CACHE_TTL_SECONDS"
     )
-    mvg_departures_cache_stale_ttl_seconds: int = Field(
-        default=300, alias="MVG_DEPARTURES_CACHE_STALE_TTL_SECONDS"
+    transit_departures_cache_stale_ttl_seconds: int = Field(
+        default=300, alias="TRANSIT_DEPARTURES_CACHE_STALE_TTL_SECONDS"
     )
 
     # Station search: medium TTL
-    mvg_station_search_cache_ttl_seconds: int = Field(
-        default=60, alias="MVG_STATION_SEARCH_CACHE_TTL_SECONDS"
+    transit_station_search_cache_ttl_seconds: int = Field(
+        default=60, alias="TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS"
     )
-    mvg_station_search_cache_stale_ttl_seconds: int = Field(
-        default=600, alias="MVG_STATION_SEARCH_CACHE_STALE_TTL_SECONDS"
+    transit_station_search_cache_stale_ttl_seconds: int = Field(
+        default=600, alias="TRANSIT_STATION_SEARCH_CACHE_STALE_TTL_SECONDS"
     )
 
     # Station list: long TTL (changes rarely)
-    mvg_station_list_cache_ttl_seconds: int = Field(
-        default=86400, alias="MVG_STATION_LIST_CACHE_TTL_SECONDS"
+    transit_station_list_cache_ttl_seconds: int = Field(
+        default=86400, alias="TRANSIT_STATION_LIST_CACHE_TTL_SECONDS"
     )
-    mvg_station_list_cache_stale_ttl_seconds: int = Field(
-        default=172800, alias="MVG_STATION_LIST_CACHE_STALE_TTL_SECONDS"
+    transit_station_list_cache_stale_ttl_seconds: int = Field(
+        default=172800, alias="TRANSIT_STATION_LIST_CACHE_STALE_TTL_SECONDS"
     )
 
     # Route planning: medium TTL
-    mvg_route_cache_ttl_seconds: int = Field(
-        default=120, alias="MVG_ROUTE_CACHE_TTL_SECONDS"
+    transit_route_cache_ttl_seconds: int = Field(
+        default=120, alias="TRANSIT_ROUTE_CACHE_TTL_SECONDS"
     )
-    mvg_route_cache_stale_ttl_seconds: int = Field(
-        default=900, alias="MVG_ROUTE_CACHE_STALE_TTL_SECONDS"
+    transit_route_cache_stale_ttl_seconds: int = Field(
+        default=900, alias="TRANSIT_ROUTE_CACHE_STALE_TTL_SECONDS"
     )
 
     # ==========================================================================
@@ -150,6 +150,53 @@ class Settings(BaseSettings):
     )
     rate_limit_requests_per_day: int = Field(
         default=10000, alias="RATE_LIMIT_REQUESTS_PER_DAY", gt=0
+    )
+
+    # ==========================================================================
+    # GTFS Configuration
+    # ==========================================================================
+
+    # GTFS Static Feed Configuration
+    gtfs_feed_url: str = Field(
+        default="https://download.gtfs.de/germany/full/latest.zip",
+        alias="GTFS_FEED_URL",
+    )
+    gtfs_use_unlogged_tables: bool = Field(
+        default=True, alias="GTFS_USE_UNLOGGED_TABLES"
+    )
+    gtfs_update_interval_hours: int = Field(
+        default=24, alias="GTFS_UPDATE_INTERVAL_HOURS"
+    )
+    gtfs_max_feed_age_hours: int = Field(
+        default=48, alias="GTFS_MAX_FEED_AGE_HOURS"  # Force re-download if older
+    )
+    gtfs_download_timeout_seconds: int = Field(
+        default=300, alias="GTFS_DOWNLOAD_TIMEOUT"  # 5 min for large feed
+    )
+    gtfs_storage_path: str = Field(default="/data/gtfs", alias="GTFS_STORAGE_PATH")
+
+    # GTFS-RT Configuration
+    gtfs_rt_enabled: bool = Field(default=False, alias="GTFS_RT_ENABLED")
+    gtfs_rt_feed_url: str = Field(
+        default="https://realtime.gtfs.de/realtime-free.pb", alias="GTFS_RT_FEED_URL"
+    )
+    gtfs_rt_timeout_seconds: int = Field(default=10, alias="GTFS_RT_TIMEOUT")
+    gtfs_rt_circuit_breaker_threshold: int = Field(
+        default=3, alias="GTFS_RT_CIRCUIT_BREAKER_THRESHOLD"
+    )
+    gtfs_rt_circuit_breaker_recovery_seconds: int = Field(
+        default=60, alias="GTFS_RT_CIRCUIT_BREAKER_RECOVERY"
+    )
+
+    # GTFS Cache TTLs
+    gtfs_schedule_cache_ttl_seconds: int = Field(
+        default=43200, alias="GTFS_SCHEDULE_CACHE_TTL_SECONDS"  # 12 hours
+    )
+    gtfs_stop_cache_ttl_seconds: int = Field(
+        default=86400, alias="GTFS_STOP_CACHE_TTL_SECONDS"  # 24 hours
+    )
+    gtfs_rt_cache_ttl_seconds: int = Field(
+        default=30, alias="GTFS_RT_CACHE_TTL_SECONDS"  # 30 seconds (real-time)
     )
 
     # ==========================================================================

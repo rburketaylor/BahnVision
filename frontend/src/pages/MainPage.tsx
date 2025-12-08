@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router'
 import { StationSearch } from '../components/StationSearch'
-import type { Station } from '../types/api'
+import type { TransitStop } from '../types/gtfs'
 
 export function MainPage() {
   const navigate = useNavigate()
 
-  const handleStationSelect = (station: Station) => {
-    navigate(`/departures/${station.id}`)
+  const handleStationSelect = (stop: TransitStop) => {
+    navigate(`/departures/${stop.id}`)
   }
 
   return (

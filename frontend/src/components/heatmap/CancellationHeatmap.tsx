@@ -15,7 +15,7 @@
  * - Station Markers: 1000+
  */
 
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useCallback } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 // CSS is imported in main.tsx
@@ -122,6 +122,27 @@ function ZoomTracker({ onZoomChange }: { onZoomChange?: (zoom: number) => void }
   return null
 }
 
+// Dynamic heat layer configuration based on zoom
+const getHeatLayerOptions = (zoom: number) => {
+  const radius = zoom < 10 ? 30 : zoom < 12 ? 20 : 15
+  const blur = zoom < 10 ? 20 : zoom < 12 ? 15 : 10
+
+  return {
+    radius,
+    blur,
+    maxZoom: 17,
+    max: 1.0,
+    gradient: {
+      0.0: 'rgba(0, 255, 0, 0)',
+      0.2: 'rgba(0, 255, 0, 0.5)',
+      0.4: 'yellow',
+      0.6: 'orange',
+      0.8: 'red',
+      1.0: 'darkred',
+    },
+  }
+}
+
 // Custom hook to manage the heat layer
 function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
   const map = useMap()
@@ -130,47 +151,31 @@ function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
   const processedDataCache = useRef<Map<string, [number, number, number][]>>(new Map())
   const debouncedUpdateRef = useRef<number | null>(null)
 
-  // Dynamic heat layer configuration based on zoom
-  const getHeatLayerOptions = (zoom: number) => {
-    const radius = zoom < 10 ? 30 : zoom < 12 ? 20 : 15
-    const blur = zoom < 10 ? 20 : zoom < 12 ? 15 : 10
 
-    return {
-      radius,
-      blur,
-      maxZoom: 17,
-      max: 1.0,
-      gradient: {
-        0.0: 'rgba(0, 255, 0, 0)',
-        0.2: 'rgba(0, 255, 0, 0.5)',
-        0.4: 'yellow',
-        0.6: 'orange',
-        0.8: 'red',
-        1.0: 'darkred',
-      },
-    }
-  }
 
   // Pre-process and cache data by zoom range to avoid redundant calculations
-  const getProcessedData = (zoom: number): [number, number, number][] => {
-    const zoomRange = zoom < 10 ? 'low' : zoom < 12 ? 'medium' : 'high'
-    const cacheKey = `${zoomRange}-${dataPoints.length}`
+  const getProcessedData = useCallback(
+    (zoom: number): [number, number, number][] => {
+      const zoomRange = zoom < 10 ? 'low' : zoom < 12 ? 'medium' : 'high'
+      const cacheKey = `${zoomRange}-${dataPoints.length}`
 
-    if (!processedDataCache.current.has(cacheKey)) {
-      const intensityMultiplier = zoom < 12 ? 10 : 8
-      const processed: [number, number, number][] = dataPoints.map(point => [
-        point.latitude,
-        point.longitude,
-        Math.min(point.cancellation_rate * intensityMultiplier, 1),
-      ])
-      processedDataCache.current.set(cacheKey, processed)
-    }
+      if (!processedDataCache.current.has(cacheKey)) {
+        const intensityMultiplier = zoom < 12 ? 10 : 8
+        const processed: [number, number, number][] = dataPoints.map(point => [
+          point.latitude,
+          point.longitude,
+          Math.min(point.cancellation_rate * intensityMultiplier, 1),
+        ])
+        processedDataCache.current.set(cacheKey, processed)
+      }
 
-    return processedDataCache.current.get(cacheKey)!
-  }
+      return processedDataCache.current.get(cacheKey)!
+    },
+    [dataPoints]
+  )
 
   // Efficient heat layer update - only updates existing layer instead of recreating
-  const updateHeatLayer = () => {
+  const updateHeatLayer = useCallback(() => {
     if (dataPoints.length === 0) {
       if (heatLayerRef.current) {
         map.removeLayer(heatLayerRef.current)
@@ -194,10 +199,13 @@ function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
       heatLayerRef.current.setLatLngs(processedData)
       heatLayerRef.current.setOptions(options)
     }
-  }
+  }, [map, dataPoints, getProcessedData])
 
   useEffect(() => {
     if (!map) return
+
+    // Capture ref for cleanup
+    const cache = processedDataCache.current
 
     // Initial creation
     updateHeatLayer()
@@ -224,9 +232,9 @@ function HeatLayer({ dataPoints }: { dataPoints: HeatmapDataPoint[] }) {
         heatLayerRef.current = null
       }
       // Clear cache on unmount to prevent memory leaks
-      processedDataCache.current.clear()
+      cache.clear()
     }
-  }, [map, dataPoints])
+  }, [map, updateHeatLayer])
 
   return null
 }
@@ -291,9 +299,8 @@ function StationMarkers({
                 <div className="flex justify-between">
                   <span className="text-gray-600">Cancellation Rate:</span>
                   <span
-                    className={`font-medium ${
-                      station.cancellation_rate > 0.05 ? 'text-red-600' : 'text-orange-600'
-                    }`}
+                    className={`font-medium ${station.cancellation_rate > 0.05 ? 'text-red-600' : 'text-orange-600'
+                      }`}
                   >
                     {formatPercent(station.cancellation_rate)}
                   </span>

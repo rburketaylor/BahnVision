@@ -3,12 +3,12 @@
  * Handles storing and retrieving recent station searches from localStorage
  */
 
-import type { Station } from '../types/api'
+import type { TransitStop } from '../types/gtfs'
 
 const RECENT_SEARCHES_KEY = 'bahnvision-recent-searches'
 const MAX_RECENT_SEARCHES = 8
 
-export interface RecentSearch extends Station {
+export interface RecentSearch extends TransitStop {
   timestamp: number
 }
 
@@ -26,18 +26,18 @@ export function getRecentSearches(): RecentSearch[] {
   }
 }
 
-export function addRecentSearch(station: Station): void {
+export function addRecentSearch(stop: TransitStop): void {
   if (typeof window === 'undefined') return
 
   try {
     const searches = getRecentSearches()
 
     // Remove existing entry with same ID if it exists
-    const filteredSearches = searches.filter(search => search.id !== station.id)
+    const filteredSearches = searches.filter(search => search.id !== stop.id)
 
     // Add new entry at the beginning
     const newSearch: RecentSearch = {
-      ...station,
+      ...stop,
       timestamp: Date.now(),
     }
 

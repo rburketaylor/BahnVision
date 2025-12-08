@@ -90,12 +90,18 @@ export default function HeatmapPage() {
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-4">
         <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
           <span className="font-medium">Demo Data</span>
         </div>
         <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
-          This heatmap is displaying simulated data for demonstration purposes. Real-time data integration is planned for a future release.
+          This heatmap is displaying simulated data for demonstration purposes. Real-time data
+          integration is planned for a future release.
         </p>
       </div>
 
@@ -155,9 +161,10 @@ export default function HeatmapPage() {
       {/* Data info footer */}
       <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
         <p>
-          <strong>Note:</strong> This heatmap shows <strong>simulated demonstration data</strong> for MVG transit
-          services. The current data is generated using a reproducible algorithm based on station characteristics
-          and does not reflect real cancellation information. Real-time data integration is planned for a future release.
+          <strong>Note:</strong> This heatmap shows <strong>simulated demonstration data</strong>{' '}
+          for transit services. The current data is generated using a reproducible algorithm based
+          on station characteristics and does not reflect real cancellation information. Real-time
+          data integration is planned for a future release.
         </p>
       </div>
     </div>

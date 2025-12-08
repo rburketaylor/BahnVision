@@ -1,18 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router'
 import PlannerPage from '../../../pages/PlannerPage'
 
 describe('PlannerPage', () => {
-  it('renders planner headline and plan route action', () => {
-    const queryClient = new QueryClient()
-
+  it('renders planner headline and coming soon message', () => {
     render(
-      <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
         <PlannerPage />
-      </QueryClientProvider>
+      </MemoryRouter>
     )
     expect(screen.getByText('Route Planner')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /plan route/i })).toBeInTheDocument()
+    expect(screen.getByText('Coming Soon')).toBeInTheDocument()
   })
 })

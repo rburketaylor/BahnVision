@@ -60,8 +60,8 @@ class ExternalStatus(str, enum.Enum):
 
 
 class IngestionSource(str, enum.Enum):
-    MVG_DEPARTURES = "MVG_DEPARTURES"
-    MVG_STATIONS = "MVG_STATIONS"
+    TRANSIT_DEPARTURES = "TRANSIT_DEPARTURES"
+    TRANSIT_STATIONS = "TRANSIT_STATIONS"
     WEATHER = "WEATHER"
 
 
@@ -153,8 +153,8 @@ class TransitLine(Base):
     operator: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        default="MVG",
-        server_default="MVG",
+        default="UNKNOWN",
+        server_default="UNKNOWN",
     )
     description: Mapped[str | None] = mapped_column(String(255))
     color_hex: Mapped[str | None] = mapped_column(String(7))
@@ -253,13 +253,13 @@ class DepartureObservation(Base):
     )
     crowding_level: Mapped[int | None] = mapped_column(
         Integer,
-        doc="Crowding score reported by MVG if available (0-100).",
+        doc="Crowding score if available (0-100).",
     )
     source: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        default="mvg",
-        server_default="mvg",
+        default="transit",
+        server_default="transit",
     )
     valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -313,7 +313,7 @@ class RouteSnapshot(Base):
         nullable=False,
         server_default=func.now(),
     )
-    mvg_status: Mapped[ExternalStatus] = mapped_column(
+    external_status: Mapped[ExternalStatus] = mapped_column(
         external_status_enum.copy(),
         nullable=False,
         default=ExternalStatus.SUCCESS,

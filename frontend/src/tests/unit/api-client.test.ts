@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../lib/config'
-import { apiClient, ApiError } from '../../services/api'
+import { apiClient } from '../../services/api'
 
 const originalFetch = globalThis.fetch
 
@@ -72,27 +72,14 @@ describe('ApiClient low-level behaviors', () => {
     })
     fetchMock.mockResolvedValueOnce(mockResponse)
 
-    // Call searchStations which internally builds a query string
-    await client.searchStations({ query: 'test', limit: 10 })
+    // Call searchStops which internally builds a query string
+    await client.searchStops({ query: 'test', limit: 10 })
 
     // Verify fetch was called with correct URL including query params
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('?query=test&limit=10'),
       expect.any(Object)
     )
-  })
-
-  it('prevents planRoute calls with both departure and arrival times', async () => {
-    await expect(
-      client.planRoute({
-        origin: 'A',
-        destination: 'B',
-        departure_time: '2024-01-01T10:00:00Z',
-        arrival_time: '2024-01-01T11:00:00Z',
-      })
-    ).rejects.toBeInstanceOf(ApiError)
-
-    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('fetches metrics text and errors on non-200 responses', async () => {
