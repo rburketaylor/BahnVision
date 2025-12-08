@@ -40,7 +40,7 @@ jobs:
       continue-on-error: true
 
     - name: Run Safety check
-      run: safety check --json --output safety-report.json || true
+      run: safety check --output json 2>&1 | tee safety-report.json || true
       continue-on-error: true
 
     - name: Upload security reports
@@ -169,9 +169,16 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
     - name: Run Semgrep
       run: |
-        # Install Semgrep
+        # Install Semgrep in a virtual environment
+        python -m venv .semgrep-venv
+        source .semgrep-venv/bin/activate
         pip install semgrep==1.142.0
 
         # Run Semgrep with SARIF output
