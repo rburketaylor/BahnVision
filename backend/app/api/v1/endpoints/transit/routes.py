@@ -1,7 +1,7 @@
 """
 Route planning placeholder endpoint.
 
-This mirrors the legacy MVG /routes/plan route but explicitly returns
+This mirrors the legacy /routes/plan route but explicitly returns
 501 until GTFS-based journey planning is implemented.
 """
 
