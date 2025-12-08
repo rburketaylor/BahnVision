@@ -11,7 +11,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'tests/e2e/**'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'json', 'html', 'lcov'],
       exclude: [
         'node_modules/',
         'src/tests/',
@@ -20,6 +20,13 @@ export default defineConfig({
         '**/mockData',
         'dist/',
       ],
+      // Coverage thresholds - fail if below these percentages
+      thresholds: {
+        lines: 60,
+        functions: 60,
+        branches: 55,
+        statements: 60,
+      },
     },
   },
   resolve: {
