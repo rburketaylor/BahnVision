@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -43,7 +43,7 @@ class GTFSFeedScheduler:
     async def stop(self):
         """Stop the scheduler."""
         logger.info("Stopping GTFS feed scheduler")
-        self.scheduler.shutdown()
+        self.scheduler.shutdown(wait=False)
 
     async def _update_gtfs_feed(self):
         """Update GTFS feed."""
@@ -83,7 +83,7 @@ class GTFSFeedScheduler:
                 else:
                     # Check if feed is too old
                     age_hours = (
-                        datetime.utcnow() - latest_feed.downloaded_at
+                        datetime.now(timezone.utc) - latest_feed.downloaded_at
                     ).total_seconds() / 3600
                     if age_hours > self.settings.gtfs_max_feed_age_hours:
                         logger.info(f"GTFS feed is {age_hours:.1f} hours old, updating")
@@ -103,14 +103,14 @@ class GTFSFeedScheduler:
         """Get information about scheduled jobs."""
         jobs = []
         for job in self.scheduler.get_jobs():
+            # APScheduler v4 might not have next_run_time until scheduler starts
+            next_run = getattr(job, "next_run_time", None)
             jobs.append(
                 {
                     "id": job.id,
-                    "name": job.name,
-                    "next_run": (
-                        job.next_run_time.isoformat() if job.next_run_time else None
-                    ),
-                    "trigger": str(job.trigger),
+                    "name": getattr(job, "name", "Unknown"),
+                    "next_run": (next_run.isoformat() if next_run else None),
+                    "trigger": str(getattr(job, "trigger", "Unknown")),
                 }
             )
 

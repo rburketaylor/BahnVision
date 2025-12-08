@@ -1,6 +1,6 @@
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -510,7 +510,7 @@ class GTFSFeedImporter:
         feed_info = {
             "feed_id": feed_id,
             "feed_url": feed_url,
-            "downloaded_at": datetime.utcnow(),
+            "downloaded_at": datetime.now(timezone.utc),
             "feed_start_date": getattr(feed, "feed_info", {}).get("start_date"),
             "feed_end_date": getattr(feed, "feed_info", {}).get("end_date"),
             "stop_count": len(feed.stops) if feed.stops is not None else 0,
