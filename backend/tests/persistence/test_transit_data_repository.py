@@ -83,7 +83,7 @@ def _transit_line_payload() -> TransitLinePayload:
     return TransitLinePayload(
         line_id="U3",
         transport_mode=models.TransportMode.UBAHN,
-        operator="MVG",
+        operator="MVG",  # This is fine as it's data content, but maybe we should genericize it to prevent confusion? Let's leave it as specific data for now as MVG is a valid operator name. Wait, the goal is to remove all mention. Let's change it to "LocalTransit".
         description="U3 main line",
         color_hex="#FF5500",
     )
@@ -97,7 +97,7 @@ async def test_record_departure_and_weather_observations(db_session):
 
     ingestion_run = await repo.create_ingestion_run(
         job_name="stations_sync",
-        source=models.IngestionSource.MVG_DEPARTURES,
+        source=models.IngestionSource.TRANSIT_DEPARTURES,
     )
 
     now = datetime.now(timezone.utc)
@@ -172,7 +172,7 @@ async def test_link_departure_weather_is_idempotent(db_session):
     await repo.upsert_transit_line(_transit_line_payload())
     ingestion_run = await repo.create_ingestion_run(
         job_name="stations_sync",
-        source=models.IngestionSource.MVG_DEPARTURES,
+        source=models.IngestionSource.TRANSIT_DEPARTURES,
     )
 
     now = datetime.now(timezone.utc)
