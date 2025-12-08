@@ -1,6 +1,6 @@
 /**
  * GTFS Transit API type definitions
- * 
+ *
  * Types for the Germany-wide GTFS-based transit endpoints.
  * These mirror the backend Pydantic models in app/models/transit.py
  */

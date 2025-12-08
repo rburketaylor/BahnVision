@@ -51,11 +51,16 @@ class TransitApiClient {
   /**
    * Search for stops by name
    */
-  async searchStops(params: TransitStopSearchParams): Promise<ApiResponse<TransitStopSearchResponse>> {
+  async searchStops(
+    params: TransitStopSearchParams
+  ): Promise<ApiResponse<TransitStopSearchResponse>> {
     const queryString = buildQueryString(params as unknown as Record<string, unknown>)
-    return httpClient.request<TransitStopSearchResponse>(`/api/v1/transit/stops/search${queryString}`, {
-      timeout: 8000,
-    })
+    return httpClient.request<TransitStopSearchResponse>(
+      `/api/v1/transit/stops/search${queryString}`,
+      {
+        timeout: 8000,
+      }
+    )
   }
 
   /**
@@ -80,11 +85,16 @@ class TransitApiClient {
   /**
    * Get departures for a stop with real-time updates
    */
-  async getDepartures(params: TransitDeparturesParams): Promise<ApiResponse<TransitDeparturesResponse>> {
+  async getDepartures(
+    params: TransitDeparturesParams
+  ): Promise<ApiResponse<TransitDeparturesResponse>> {
     const queryString = buildQueryString(params as unknown as Record<string, unknown>)
-    return httpClient.request<TransitDeparturesResponse>(`/api/v1/transit/departures${queryString}`, {
-      timeout: 10000,
-    })
+    return httpClient.request<TransitDeparturesResponse>(
+      `/api/v1/transit/departures${queryString}`,
+      {
+        timeout: 10000,
+      }
+    )
   }
 
   /**
