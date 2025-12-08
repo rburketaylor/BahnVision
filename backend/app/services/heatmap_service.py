@@ -281,7 +281,8 @@ class HeatmapService:
         # Generate realistic-looking data based on station characteristics
         for stop in stops:
             # Use stop ID hash for reproducible "random" data
-            stop_hash = int(hashlib.md5(stop.stop_id.encode()).hexdigest()[:8], 16)
+            # Using SHA256 instead of MD5 for security compliance
+            stop_hash = int(hashlib.sha256(stop.stop_id.encode()).hexdigest()[:8], 16)
 
             # Generate realistic departure counts based on station importance
             # Central stations have more departures

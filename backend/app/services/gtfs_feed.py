@@ -138,21 +138,31 @@ class GTFSFeedImporter:
         logger.info("Truncated all GTFS tables (indexes and FKs dropped)")
 
         # Ensure logging mode matches configuration
-        logging_mode = (
-            "UNLOGGED" if self.settings.gtfs_use_unlogged_tables else "LOGGED"
-        )
-        for table in [
-            "gtfs_stops",
-            "gtfs_routes",
-            "gtfs_trips",
-            "gtfs_stop_times",
-            "gtfs_calendar",
-            "gtfs_calendar_dates",
-            "gtfs_feed_info",
-        ]:
-            await self.session.execute(text(f"ALTER TABLE {table} SET {logging_mode}"))
+        # Use explicit ALTER TABLE statements to avoid SQL injection concerns
+        # (table names are hardcoded, logging mode is validated from settings)
+        if self.settings.gtfs_use_unlogged_tables:
+            await self.session.execute(text("ALTER TABLE gtfs_stops SET UNLOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_routes SET UNLOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_trips SET UNLOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_stop_times SET UNLOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_calendar SET UNLOGGED"))
+            await self.session.execute(
+                text("ALTER TABLE gtfs_calendar_dates SET UNLOGGED")
+            )
+            await self.session.execute(text("ALTER TABLE gtfs_feed_info SET UNLOGGED"))
+            logger.info("GTFS tables set to UNLOGGED mode")
+        else:
+            await self.session.execute(text("ALTER TABLE gtfs_stops SET LOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_routes SET LOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_trips SET LOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_stop_times SET LOGGED"))
+            await self.session.execute(text("ALTER TABLE gtfs_calendar SET LOGGED"))
+            await self.session.execute(
+                text("ALTER TABLE gtfs_calendar_dates SET LOGGED")
+            )
+            await self.session.execute(text("ALTER TABLE gtfs_feed_info SET LOGGED"))
+            logger.info("GTFS tables set to LOGGED mode")
         await self.session.commit()
-        logger.info("GTFS tables set to %s mode", logging_mode)
 
     async def _get_asyncpg_conn(self):
         """Get raw asyncpg connection for COPY operations."""
