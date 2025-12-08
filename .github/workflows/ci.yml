@@ -2,10 +2,15 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+
+# Cancel redundant runs when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -15,188 +20,41 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Detect if this is a Dependabot PR
+  IS_DEPENDABOT: ${{ github.actor == 'dependabot[bot]' }}
 
 jobs:
-  # Security scanning jobs
-  security-scan-backend:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6
+  # =============================================================================
+  # FAST FEEDBACK JOBS - Run on all PRs (except where skipped for Dependabot)
+  # =============================================================================
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-        cache-dependency-path: backend/requirements.txt
-
-    - name: Install dependencies
-      run: |
-        pip install -r backend/requirements.txt
-        pip install bandit safety
-
-    - name: Run Bandit security linter
-      run: bandit -r backend/app -f json -o bandit-report.json || true
-      continue-on-error: true
-
-    - name: Run Safety check
-      run: safety check --output json 2>&1 | tee safety-report.json || true
-      continue-on-error: true
-
-    - name: Upload security reports
-      uses: actions/upload-artifact@v5
-      with:
-        name: security-reports-backend
-        path: |
-          bandit-report.json
-          safety-report.json
-
+  # Lint backend - Skip for Dependabot (no code changes)
   lint-backend:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-        cache-dependency-path: backend/requirements.txt
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
 
-    - name: Install dependencies
-      run: pip install -r backend/requirements.txt
+      - name: Install linting tools only
+        run: pip install ruff black
 
-    - name: Run Ruff
-      run: |
-        cd backend
-        ruff check .
+      - name: Run Ruff
+        run: ruff check backend/
 
-    - name: Run Black
-      run: |
-        cd backend
-        black --check .
+      - name: Run Black
+        run: black --check backend/
 
-  security-scan-frontend:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6
+  # =============================================================================
+  # TEST JOBS - Always run (deps can break things)
+  # =============================================================================
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: '24'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-
-    - name: Install dependencies
-      run: |
-        cd frontend
-        npm ci
-      env:
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-
-    - name: Run npm audit
-      run: |
-        cd frontend
-        npm audit --json > npm-audit.json || true
-      continue-on-error: true
-
-    - name: Upload security reports
-      uses: actions/upload-artifact@v5
-      with:
-        name: security-reports-frontend
-        path: frontend/npm-audit.json
-
-  # Container image scanning
-  image-scan:
-    runs-on: ubuntu-latest
-    needs: [security-scan-backend, security-scan-frontend]
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build backend image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: backend/Dockerfile
-        push: false
-        load: true
-        tags: bahnvision-backend:test
-
-    - name: Build frontend image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./frontend
-        file: frontend/Dockerfile
-        push: false
-        load: true
-        tags: bahnvision-frontend:test
-
-    - name: Run Trivy vulnerability scanner on backend
-      uses: aquasecurity/trivy-action@0.33.1
-      with:
-        image-ref: 'bahnvision-backend:test'
-        format: 'sarif'
-        output: 'trivy-backend-results.sarif'
-
-    - name: Run Trivy vulnerability scanner on frontend
-      uses: aquasecurity/trivy-action@0.33.1
-      with:
-        image-ref: 'bahnvision-frontend:test'
-        format: 'sarif'
-        output: 'trivy-frontend-results.sarif'
-
-    - name: Upload Trivy backend scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v4
-      if: always() && hashFiles('trivy-backend-results.sarif') != ''
-      with:
-        sarif_file: 'trivy-backend-results.sarif'
-        category: container-backend
-
-    - name: Upload Trivy frontend scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v4
-      if: always() && hashFiles('trivy-frontend-results.sarif') != ''
-      with:
-        sarif_file: 'trivy-frontend-results.sarif'
-        category: container-frontend
-
-  # Static Application Security Testing (SAST)
-  sast-scan:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-
-    - name: Run Semgrep
-      run: |
-        # Install Semgrep in a virtual environment
-        python -m venv .semgrep-venv
-        source .semgrep-venv/bin/activate
-        pip install semgrep==1.142.0
-
-        # Run Semgrep with SARIF output
-        semgrep --config=auto \
-          --config=p/security-audit \
-          --config=p/owasp-top-ten \
-          --config=p/secrets \
-          --sarif \
-          --output=semgrep-report.sarif \
-          . || true
-
-    - name: Upload Semgrep results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v4
-      if: always() && hashFiles('semgrep-report.sarif') != ''
-      with:
-        sarif_file: 'semgrep-report.sarif'
-
-  # Backend testing
   test-backend:
     runs-on: ubuntu-latest
     env:
@@ -217,191 +75,346 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-        cache-dependency-path: backend/requirements.txt
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
 
-    - name: Install dependencies
-      run: |
-        pip install -r backend/requirements.txt
-        pip install pytest pytest-asyncio pytest-cov httpx
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio pytest-cov httpx
 
-    - name: Run database migrations
-      working-directory: backend
-      env:
-        DATABASE_URL: ${{ env.DATABASE_URL }}
-      run: alembic upgrade head
+      - name: Run database migrations
+        working-directory: backend
+        run: alembic upgrade head
 
-    - name: Run tests with coverage
-      run: |
-        cd backend
-        pytest --cov=app --cov-report=xml --cov-report=html
+      - name: Run tests with coverage
+        run: |
+          cd backend
+          pytest --cov=app --cov-report=xml --cov-report=html
 
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        files: backend/coverage.xml
-        flags: backend
-        name: backend-coverage
-        token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: github.actor != 'dependabot[bot]'
+        with:
+          files: backend/coverage.xml
+          flags: backend
+          name: backend-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-    - name: Upload test results
-      if: ${{ !contains(env.ACT, 'true') }}
-      uses: actions/upload-artifact@v5
-      with:
-        name: backend-test-results
-        path: backend/htmlcov/
+      - name: Upload test results
+        uses: actions/upload-artifact@v5
+        if: github.actor != 'dependabot[bot]'
+        with:
+          name: backend-test-results
+          path: backend/htmlcov/
 
-  # Frontend testing
   test-frontend:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: '24'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
-    - name: Install dependencies
-      run: |
-        cd frontend
-        npm ci
-      env:
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      - name: Install dependencies
+        run: npm ci --prefix frontend
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-    - name: Run unit tests
-      run: |
-        cd frontend
-        npm test -- --coverage --run
+      - name: Run unit tests
+        run: npm test --prefix frontend -- --coverage --run
 
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v5
-      with:
-        files: frontend/coverage/lcov.info
-        flags: frontend
-        name: frontend-coverage
-        token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v5
+        if: github.actor != 'dependabot[bot]'
+        with:
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # E2E testing
-  test-e2e:
+  # =============================================================================
+  # SECURITY JOBS - Consolidated and optimized
+  # =============================================================================
+
+  # Security scans - Combined into matrix for efficiency
+  security-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            path: backend
+            setup: python
+          - component: frontend
+            path: frontend
+            setup: node
+    steps:
+      - uses: actions/checkout@v6
+
+      # Python setup for backend
+      - name: Set up Python
+        if: matrix.setup == 'python'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Run Python security scan
+        if: matrix.setup == 'python'
+        run: |
+          pip install bandit safety
+          bandit -r backend/app -f json -o bandit-report.json || true
+          safety check --output json 2>&1 | tee safety-report.json || true
+
+      # Node setup for frontend
+      - name: Set up Node.js
+        if: matrix.setup == 'node'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run npm audit
+        if: matrix.setup == 'node'
+        run: |
+          cd frontend
+          npm audit --json > npm-audit.json || true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v5
+        with:
+          name: security-reports-${{ matrix.component }}
+          path: |
+            bandit-report.json
+            safety-report.json
+            frontend/npm-audit.json
+
+  # SAST scan - Skip for Dependabot (no code changes)
+  sast-scan:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Run Semgrep
+        run: |
+          python -m venv .semgrep-venv
+          source .semgrep-venv/bin/activate
+          pip install semgrep==1.142.0
+          semgrep --config=auto \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/secrets \
+            --sarif \
+            --output=semgrep-report.sarif \
+            . || true
+
+      - name: Upload Semgrep results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('semgrep-report.sarif') != ''
+        with:
+          sarif_file: "semgrep-report.sarif"
+
+  # Container image scanning - runs after tests pass
+  image-scan:
     runs-on: ubuntu-latest
     needs: [test-backend, test-frontend]
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Create CI environment file
-      run: cp .env.example .env
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          load: true
+          tags: bahnvision-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Start services
-      run: |
-        docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
-        sleep 30  # Wait for services to be healthy
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: bahnvision-frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Set up Node.js for E2E tests
-      uses: actions/setup-node@v6
-      with:
-        node-version: '24'
+      - name: Run Trivy vulnerability scanner on backend
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: "bahnvision-backend:test"
+          format: "sarif"
+          output: "trivy-backend-results.sarif"
 
-    - name: Install frontend dependencies
-      working-directory: frontend
-      run: npm ci
-      env:
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      - name: Run Trivy vulnerability scanner on frontend
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: "bahnvision-frontend:test"
+          format: "sarif"
+          output: "trivy-frontend-results.sarif"
 
-    - name: Install Playwright browsers
-      working-directory: frontend
-      run: npx playwright install --with-deps
+      - name: Upload Trivy backend scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-backend-results.sarif') != ''
+        with:
+          sarif_file: "trivy-backend-results.sarif"
+          category: container-backend
 
-    - name: Run E2E tests
-      working-directory: frontend
-      run: npm run test:e2e -- --project=chromium
-      continue-on-error: true
+      - name: Upload Trivy frontend scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-frontend-results.sarif') != ''
+        with:
+          sarif_file: "trivy-frontend-results.sarif"
+          category: container-frontend
 
-    - name: Upload E2E test results
-      uses: actions/upload-artifact@v5
-      if: always()
-      with:
-        name: e2e-test-results
-        path: |
-          frontend/playwright-report/
-          frontend/test-results/
+  # =============================================================================
+  # E2E TESTS - Skip for Dependabot (expensive, unit tests catch most issues)
+  # =============================================================================
 
-    - name: Cleanup
-      if: always()
-      run: |
-        docker compose down --volumes --remove-orphans
+  test-e2e:
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    # Skip E2E for Dependabot - unit tests are sufficient for dep updates
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v6
 
-  # Build and push images
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create CI environment file
+        run: cp .env.example .env
+
+      - name: Start services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+          sleep 30
+
+      - name: Set up Node.js for E2E tests
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npm run test:e2e -- --project=chromium
+        continue-on-error: true
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: e2e-test-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  # =============================================================================
+  # BUILD & PUSH - Only on manual trigger, after all checks pass
+  # =============================================================================
+
   build-and-push:
     runs-on: ubuntu-latest
-    needs: [security-scan-backend, security-scan-frontend, test-backend, test-frontend, image-scan, sast-scan]
+    needs: [security-scan, test-backend, test-frontend, image-scan]
     if: github.event_name == 'workflow_dispatch'
     outputs:
       backend-image: ${{ steps.meta-backend.outputs.tags }}
       frontend-image: ${{ steps.meta-frontend.outputs.tags }}
     steps:
-    - name: Checkout
-      uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract backend metadata
-      id: meta-backend
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
+      - name: Extract backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
 
-    - name: Build and push backend image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: backend/Dockerfile
-        push: true
-        tags: ${{ steps.meta-backend.outputs.tags }}
-        labels: ${{ steps.meta-backend.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Extract frontend metadata
-      id: meta-frontend
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
+      - name: Extract frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
 
-    - name: Build and push frontend image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./frontend
-        file: frontend/Dockerfile
-        push: true
-        tags: ${{ steps.meta-frontend.outputs.tags }}
-        labels: ${{ steps.meta-frontend.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

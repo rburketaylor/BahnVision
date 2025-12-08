@@ -36,6 +36,9 @@ spec:
       - name: frontend
         image: bahnvision-frontend:latest
         imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
         ports:
         - containerPort: 80
           name: http

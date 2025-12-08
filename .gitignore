@@ -1,6 +1,7 @@
 # Python virtual environments
 .venv/
 venv/
+.semgrep-venv/
 .node/
 
 # Byte-compiled / cache
