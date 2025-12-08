@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../../lib/config'
-import { apiClient, ApiError } from '../../services/api'
+import { apiClient } from '../../services/api'
 
 const originalFetch = globalThis.fetch
 

@@ -1,13 +1,13 @@
 /**
  * MSW request handlers for API mocking
- * 
+ *
  * Updated to use Transit API (GTFS) endpoints.
  */
 
 import { http, HttpResponse } from 'msw'
 import type { HealthResponse } from '../../types/api'
-import type { 
-  TransitStop, 
+import type {
+  TransitStop,
   TransitStopSearchResponse,
   TransitDeparturesResponse,
   TransitDeparture,
@@ -99,11 +99,9 @@ export const handlers = [
   http.get(`${BASE_URL}/api/v1/transit/stops/search`, ({ request }) => {
     const url = new URL(request.url)
     const query = url.searchParams.get('query')?.toLowerCase() ?? ''
-    
-    const filteredStops = sampleStops.filter(stop => 
-      stop.name.toLowerCase().includes(query)
-    )
-    
+
+    const filteredStops = sampleStops.filter(stop => stop.name.toLowerCase().includes(query))
+
     const response: TransitStopSearchResponse = {
       query,
       results: filteredStops,
@@ -120,9 +118,9 @@ export const handlers = [
   http.get(`${BASE_URL}/api/v1/transit/departures`, ({ request }) => {
     const url = new URL(request.url)
     const stopId = url.searchParams.get('stop_id') ?? 'de:09162:6'
-    
+
     const stop = sampleStops.find(s => s.id === stopId) ?? sampleStops[0]
-    
+
     const response: TransitDeparturesResponse = {
       stop,
       departures: createSampleDepartures(stop.id, stop.name),
@@ -140,11 +138,11 @@ export const handlers = [
   http.get(`${BASE_URL}/api/v1/transit/stops/:stopId`, ({ params }) => {
     const stopId = params.stopId as string
     const stop = sampleStops.find(s => s.id === stopId)
-    
+
     if (!stop) {
       return HttpResponse.json({ detail: 'Stop not found' }, { status: 404 })
     }
-    
+
     return HttpResponse.json(stop)
   }),
 

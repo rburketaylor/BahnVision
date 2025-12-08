@@ -37,9 +37,9 @@ describe('useDepartures', () => {
   it('fetches departures with default options', async () => {
     const mockResponse = {
       data: {
-        stop: { 
-          id: 'test', 
-          name: 'Test Station', 
+        stop: {
+          id: 'test',
+          name: 'Test Station',
           latitude: 48.14,
           longitude: 11.558,
           zone_id: 'M',
@@ -71,9 +71,9 @@ describe('useDepartures', () => {
   it('enables auto-refresh in live mode', async () => {
     const mockResponse = {
       data: {
-        stop: { 
-          id: 'test', 
-          name: 'Test Station', 
+        stop: {
+          id: 'test',
+          name: 'Test Station',
           latitude: 48.14,
           longitude: 11.558,
           zone_id: 'M',
@@ -105,9 +105,9 @@ describe('useDepartures', () => {
   it('disables auto-refresh in manual mode', async () => {
     const mockResponse = {
       data: {
-        stop: { 
-          id: 'test', 
-          name: 'Test Station', 
+        stop: {
+          id: 'test',
+          name: 'Test Station',
           latitude: 48.14,
           longitude: 11.558,
           zone_id: 'M',
@@ -139,9 +139,9 @@ describe('useDepartures', () => {
   it('handles offset_minutes parameter', async () => {
     const mockResponse = {
       data: {
-        stop: { 
-          id: 'test', 
-          name: 'Test Station', 
+        stop: {
+          id: 'test',
+          name: 'Test Station',
           latitude: 48.14,
           longitude: 11.558,
           zone_id: 'M',

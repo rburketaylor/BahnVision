@@ -22,13 +22,13 @@ describe('DeparturesPage', () => {
     mockUseDepartures.mockReturnValue({
       data: {
         data: {
-          stop: { 
-            id: 'de:09162:1', 
-            name: 'Central Station', 
-            latitude: 48.14, 
+          stop: {
+            id: 'de:09162:1',
+            name: 'Central Station',
+            latitude: 48.14,
             longitude: 11.558,
             zone_id: 'M',
-            wheelchair_boarding: 1
+            wheelchair_boarding: 1,
           },
           departures: [],
           realtime_available: true,
