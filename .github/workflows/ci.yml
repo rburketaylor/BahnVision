@@ -118,7 +118,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build backend image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: backend/Dockerfile
@@ -127,7 +127,7 @@ jobs:
         tags: bahnvision-backend:test
 
     - name: Build frontend image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: ./frontend
         file: frontend/Dockerfile
@@ -375,7 +375,7 @@ jobs:
           type=sha,prefix={{branch}}-
 
     - name: Build and push backend image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: backend/Dockerfile
@@ -396,7 +396,7 @@ jobs:
           type=sha,prefix={{branch}}-
 
     - name: Build and push frontend image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: ./frontend
         file: frontend/Dockerfile
