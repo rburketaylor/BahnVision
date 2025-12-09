@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
-        if: github.actor != 'dependabot[bot]'
+        if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           files: backend/coverage.xml
           flags: backend
@@ -157,7 +157,7 @@ jobs:
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v5
-        if: github.actor != 'dependabot[bot]'
+        if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           files: frontend/coverage/lcov.info
           flags: frontend
