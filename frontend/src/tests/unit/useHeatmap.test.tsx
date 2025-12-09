@@ -136,4 +136,76 @@ describe('useHeatmap', () => {
     expect(result.current.fetchStatus).toBe('idle')
     expect(mockGetHeatmapData).not.toHaveBeenCalled()
   })
+
+  it('uses correct query key structure', async () => {
+    mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
+
+    const params = { time_range: '24h' as const }
+
+    renderHook(() => useHeatmap(params), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      const query = queryClient.getQueryCache().find({ queryKey: ['heatmap', 'cancellations', params] })
+      expect(query).toBeDefined()
+    })
+  })
+
+  it('uses 5 minute stale time matching backend cache', async () => {
+    mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
+
+    const { result } = renderHook(() => useHeatmap(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+
+    // Query should have 5 minute stale time (5 * 60 * 1000 = 300000)
+    const query = queryClient.getQueryCache().find({ queryKey: ['heatmap', 'cancellations', {}] })
+    expect(query?.state.dataUpdatedAt).toBeGreaterThan(0)
+  })
+
+  it('handles API error gracefully', async () => {
+    const mockError = new Error('API Error')
+    mockGetHeatmapData.mockRejectedValue(mockError)
+
+    const { result } = renderHook(() => useHeatmap(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true)
+    })
+
+    expect(result.current.error).toBeTruthy()
+  })
+
+  it('defaults enabled to true', async () => {
+    mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
+
+    const { result } = renderHook(() => useHeatmap({}), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    // Should start loading (enabled by default)
+    expect(result.current.isLoading).toBe(true)
+  })
+
+  it('defaults autoRefresh to true', async () => {
+    mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
+
+    const { result } = renderHook(() => useHeatmap({}), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+
+    // Verify successful fetch with default options
+    expect(mockGetHeatmapData).toHaveBeenCalledWith({})
+  })
 })

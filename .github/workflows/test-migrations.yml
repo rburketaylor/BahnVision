@@ -13,6 +13,10 @@ on:
       - 'backend/alembic/**'
       - 'backend/app/persistence/models.py'
 
+# Minimum permissions following principle of least privilege
+permissions:
+  contents: read
+
 jobs:
   test-migrations:
     name: Test Migration Upgrade/Downgrade

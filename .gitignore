@@ -11,6 +11,13 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+*.coverage
+.coverage.*
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -32,3 +39,9 @@ build/
 
 # Code directory
 .code/
+
+# Mutation testing
+mutants/
+.stryker-tmp/
+**/reports/
+.mutmut-cache

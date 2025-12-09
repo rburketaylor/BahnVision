@@ -5,3 +5,62 @@ build-backend = "hatchling.build"
 [project]
 name = "bahnvision-backend"
 version = "0.1.0"
+
+# ============================================================================
+# Pytest Configuration
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+markers = [
+    "integration: marks tests as integration tests requiring external services (postgres, valkey)",
+    "slow: marks tests as slow running",
+]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+
+# ============================================================================
+# Coverage Configuration
+# ============================================================================
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+fail_under = 65
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+# ============================================================================
+# Mutmut Configuration (Mutation Testing)
+# ============================================================================
+[tool.mutmut]
+paths_to_mutate = ["app"]
