@@ -47,21 +47,41 @@ open http://localhost:5540              # Redis Commander
 For active development with hot reload:
 
 ```bash
+# Quick setup (recommended)
+./scripts/setup-dev.sh   # Downloads Node.js LTS, sets up Python venv, installs all deps
+source .dev-env          # Activate the environment
+
+# Start backend
+uvicorn app.main:app --reload --app-dir backend
+
+# Start frontend (in separate terminal)
+source .dev-env
+cd frontend
+npm run dev
+```
+
+<details>
+<summary>Manual setup (alternative)</summary>
+
+```bash
 # Backend setup
+cd backend
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 
 # Install pre-commit hooks (auto-runs black & ruff on commit)
 pre-commit install
 
-uvicorn app.main:app --reload --app-dir backend
+uvicorn app.main:app --reload
 
 # Frontend setup (in separate terminal)
 cd frontend
 npm install
 npm run dev
 ```
+
+</details>
 
 ## Demo Environment Features
 

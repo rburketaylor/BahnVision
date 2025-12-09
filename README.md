@@ -13,18 +13,22 @@ docker compose up --build
 
 ### Local Development
 
+**Quick Setup (Recommended):**
+```bash
+./scripts/setup-dev.sh   # Downloads Node.js LTS, sets up Python venv
+source .dev-env          # Activate the environment
+```
+
 **Backend:**
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
 **Frontend:**
 ```bash
 cd frontend
-npm install && npm run dev
+npm run dev
 ```
 
 ## API Endpoints
