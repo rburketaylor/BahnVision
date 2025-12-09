@@ -42,6 +42,13 @@ jobs:
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-lint-${{ runner.os }}-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: pip-lint-${{ runner.os }}-
+
       - name: Install linting tools only
         run: pip install ruff black
 
@@ -83,6 +90,13 @@ jobs:
           python-version: "3.13"
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-backend-${{ runner.os }}-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: pip-backend-${{ runner.os }}-
 
       - name: Install dependencies
         run: |
@@ -126,8 +140,15 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Cache npm packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-frontend-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: npm-frontend-${{ runner.os }}-
+
       - name: Install dependencies
-        run: npm ci --prefix frontend
+        run: npm ci --prefer-offline --prefix frontend
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
@@ -148,8 +169,15 @@ jobs:
   # =============================================================================
 
   # Security scans - Combined into matrix for efficiency
+  # Only run when dependencies or security-relevant files change
   security-scan:
     runs-on: ubuntu-latest
+    # Skip for trivial changes - run on dependency updates, main branch, or explicit dispatch
+    if: |
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[security]') ||
+      github.actor == 'dependabot[bot]'
     strategy:
       fail-fast: false
       matrix:
@@ -252,8 +280,8 @@ jobs:
           push: false
           load: true
           tags: bahnvision-backend:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend-image
+          cache-to: type=gha,mode=max,scope=backend-image
 
       - name: Build frontend image
         uses: docker/build-push-action@v6
@@ -263,8 +291,8 @@ jobs:
           push: false
           load: true
           tags: bahnvision-frontend:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-image
+          cache-to: type=gha,mode=max,scope=frontend-image
 
       - name: Run Trivy vulnerability scanner on backend
         uses: aquasecurity/trivy-action@0.33.1
@@ -313,9 +341,15 @@ jobs:
         run: cp .env.example .env
 
       - name: Start services
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+
+      - name: Wait for services to be healthy
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
-          sleep 30
+          echo "Waiting for backend API..."
+          timeout 90 bash -c 'until curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; do echo "Waiting..."; sleep 3; done' || (docker compose logs && exit 1)
+          echo "Waiting for frontend..."
+          timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do echo "Waiting..."; sleep 2; done' || (docker compose logs && exit 1)
+          echo "All services are healthy!"
 
       - name: Set up Node.js for E2E tests
         uses: actions/setup-node@v6
@@ -324,15 +358,29 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --prefer-offline
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cached browsers)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: frontend
+        run: npx playwright install-deps chromium
 
       - name: Run E2E tests
         working-directory: frontend
@@ -395,8 +443,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend-image
+          cache-to: type=gha,mode=max,scope=backend-image
 
       - name: Extract frontend metadata
         id: meta-frontend
@@ -416,5 +464,5 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-image
+          cache-to: type=gha,mode=max,scope=frontend-image
