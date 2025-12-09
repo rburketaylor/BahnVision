@@ -3,6 +3,7 @@
 venv/
 .semgrep-venv/
 .node/
+.dev-env
 
 # Byte-compiled / cache
 __pycache__/
