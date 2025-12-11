@@ -25,9 +25,9 @@ This document outlines the migration strategy for moving BahnVision from the cur
 ## Target Stack (Cartes.app-inspired)
 
 ### Core Technologies
-- **MapLibre GL JS 5.6.0** - Primary mapping engine
+- **MapLibre GL JS 5.14.0** - Primary mapping engine
 - **MapLibre GL IndoorEqual 1.3.0** - Indoor mapping
-- **@watergis/maplibre-gl-terradraw 1.3.11** - Drawing/annotation
+- **@watergis/maplibre-gl-terradraw 1.9.7** - Drawing/annotation
 - **PMTiles** - Vector tile format
 - **MapTiler** - Vector tile provider
 - **Turf.js** - Geospatial analysis
@@ -50,7 +50,7 @@ This document outlines the migration strategy for moving BahnVision from the cur
 npm uninstall leaflet react-leaflet leaflet.heat leaflet.markercluster @types/leaflet @types/leaflet.markercluster
 
 # Install MapLibre dependencies
-npm install maplibre-gl@5.6.0 maplibre-gl-indoorequal@1.3.0 @watergis/maplibre-gl-terradraw@1.3.11
+npm install maplibre-gl@5.14.0 maplibre-gl-indoorequal@1.3.0 @watergis/maplibre-gl-terradraw@1.9.7
 npm install @turf/bbox @turf/bbox-polygon @turf/bearing @turf/bezier-spline @turf/boolean-contains @turf/distance @turf/length @turf/turf
 npm install pmtiles
 
@@ -79,8 +79,9 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 - Add layer control for style switching
 
 #### 2.2 Markers & Interactions
-- Convert Leaflet markers to MapLibre markers
-- Implement popup functionality
+- Implement GeoJSON Source with Symbol Layers (replaces DOM markers for performance)
+- Enable MapLibre native clustering (replaces leaflet.markercluster)
+- Implement popup functionality via layer click events
 - Add station selection interactions
 - Maintain existing zoom tracking
 
@@ -173,15 +174,43 @@ map.addLayer({
 })
 ```
 
-3. **Marker Implementation**
+3. **Marker & Cluster Implementation**
 ```typescript
 // Old (Leaflet)
 <Marker position={[lat, lng]} icon={customIcon}>
 
-// New (MapLibre)
-new maplibregl.Marker({color: markerColor})
-  .setLngLat([lng, lat])
-  .addTo(map)
+// New (MapLibre - High Performance WebGL Layers)
+map.addSource('stations', {
+  type: 'geojson',
+  data: stationData,
+  cluster: true,
+  clusterMaxZoom: 14,
+  clusterRadius: 50
+})
+
+map.addLayer({
+  id: 'clusters',
+  type: 'circle',
+  source: 'stations',
+  filter: ['has', 'point_count'],
+  paint: {
+    'circle-color': '#51bbd6',
+    'circle-radius': 20
+  }
+})
+
+map.addLayer({
+  id: 'unclustered-point',
+  type: 'circle', // or 'symbol' for custom icons
+  source: 'stations',
+  filter: ['!', ['has', 'point_count']],
+  paint: {
+    'circle-color': '#11b4da',
+    'circle-radius': 8,
+    'circle-stroke-width': 1,
+    'circle-stroke-color': '#fff'
+  }
+})
 ```
 
 ### Data Structure Changes
@@ -271,6 +300,7 @@ map.addSource('munich-data', {
 
 ### Expected Improvements
 - **Rendering Speed**: 3-5x faster zoom/pan operations
+- **Marker Performance**: Zero DOM overhead using WebGL Symbol layers
 - **Memory Usage**: 40-60% reduction with vector tiles
 - **Data Transfer**: 50-70% reduction with PMTiles
 - **Mobile Performance**: Significantly improved touch interactions
@@ -378,5 +408,5 @@ map.addSource('munich-data', {
 
 **Migration Owner**: Lead Frontend Developer  
 **Review Date**: Monthly during migration period  
-**Last Updated**: 2025-12-04  
+**Last Updated**: 2025-12-11  
 **Version**: 1.0
