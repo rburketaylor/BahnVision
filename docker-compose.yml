@@ -11,7 +11,7 @@ services:
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health" ]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -32,6 +32,9 @@ services:
       VALKEY_CACHE_TTL_SECONDS: ${VALKEY_CACHE_TTL_SECONDS:-30}
       VALKEY_CACHE_TTL_NOT_FOUND_SECONDS: ${VALKEY_CACHE_TTL_NOT_FOUND_SECONDS:-15}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://bahnvision:bahnvision@postgres:5432/bahnvision}
+      GTFS_STORAGE_PATH: /data/gtfs
+    volumes:
+      - gtfs_data:/data/gtfs
     depends_on:
       valkey:
         condition: service_healthy
@@ -45,7 +48,7 @@ services:
       POSTGRES_PASSWORD: bahnvision
       POSTGRES_DB: bahnvision
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bahnvision"]
+      test: [ "CMD-SHELL", "pg_isready -U bahnvision" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,9 +59,9 @@ services:
 
   valkey:
     image: valkey/valkey:latest
-    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    command: [ "valkey-server", "--save", "", "--appendonly", "no" ]
     healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
+      test: [ "CMD", "valkey-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -67,3 +70,4 @@ services:
 
 volumes:
   postgres_data:
+  gtfs_data:
