@@ -49,13 +49,10 @@ This document outlines the migration strategy for moving BahnVision from the cur
 # Remove Leaflet dependencies
 npm uninstall leaflet react-leaflet leaflet.heat leaflet.markercluster @types/leaflet @types/leaflet.markercluster
 
-# Install MapLibre dependencies
+# Install MapLibre dependencies (types are included - no @types package needed)
 npm install maplibre-gl@5.14.0 maplibre-gl-indoorequal@1.3.0 @watergis/maplibre-gl-terradraw@1.9.7
-npm install @turf/bbox @turf/bbox-polygon @turf/bearing @turf/bezier-spline @turf/boolean-contains @turf/distance @turf/length @turf/turf
+npm install @turf/turf  # Full bundle; or install only specific modules like @turf/bbox if tree-shaking
 npm install pmtiles
-
-# Install types
-npm install --save-dev @types/maplibre-gl
 ```
 
 #### 1.2 CSS Integration
@@ -215,6 +212,8 @@ map.addLayer({
 
 ### Data Structure Changes
 
+> ⚠️ **Coordinate Order Warning**: Leaflet uses `[lat, lng]` but GeoJSON/MapLibre uses `[lng, lat]`. Ensure all data transformations swap the coordinate order correctly.
+
 #### Current: HeatmapDataPoint
 ```typescript
 interface HeatmapDataPoint {
@@ -253,10 +252,10 @@ interface HeatmapSource {
 
 ### Environment Variables
 ```bash
-# .env.local
-NEXT_PUBLIC_MAPTILER_API_KEY=your_maptiler_key
-NEXT_PUBLIC_INDOOREQUAL_API_KEY=your_indoorequal_key
-NEXT_PUBLIC_MAPTILER_STYLE_URL=https://api.maptiler.com/maps/streets-v2/style.json
+# .env.local (Vite uses VITE_ prefix, not NEXT_PUBLIC_)
+VITE_MAPTILER_API_KEY=your_maptiler_key
+VITE_INDOOREQUAL_API_KEY=your_indoorequal_key
+VITE_MAPTILER_STYLE_URL=https://api.maptiler.com/maps/streets-v2/style.json
 ```
 
 ### MapTiler Setup
@@ -265,14 +264,21 @@ NEXT_PUBLIC_MAPTILER_STYLE_URL=https://api.maptiler.com/maps/streets-v2/style.js
 3. Configure vector tile styles
 4. Set up usage monitoring
 
+> **Alternative Free Providers**: For open-source or API-key-free setups, consider [Protomaps](https://protomaps.com/) free basemap tiles or [OpenFreeMap](https://openfreemap.org/).
+
 ### PMTiles Integration (Optional)
 ```typescript
-import { PMTiles } from 'pmtiles'
+import maplibregl from 'maplibre-gl'
+import { Protocol } from 'pmtiles'
 
-const pmtiles = new PMTiles('https://example.com/munich.pmtiles')
+// Register the pmtiles protocol handler (do this once before creating maps)
+const protocol = new Protocol()
+maplibregl.addProtocol('pmtiles', protocol.tile)
+
+// Then use pmtiles:// URLs in your sources
 map.addSource('munich-data', {
   type: 'vector',
-  url: 'pmtiles://' + pmtiles.source.getKey()
+  url: 'pmtiles://https://example.com/munich.pmtiles'
 })
 ```
 
