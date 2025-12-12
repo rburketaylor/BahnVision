@@ -19,6 +19,7 @@ from app.core.telemetry import (
     instrument_httpx,
 )
 from app.jobs.rt_processor import gtfs_rt_lifespan_manager
+from app.jobs.gtfs_scheduler import GTFSFeedScheduler
 from app.services.cache import get_cache_service
 
 logger = logging.getLogger(__name__)
@@ -77,10 +78,15 @@ async def lifespan(app: FastAPI):
     # Instrument httpx for outbound request tracing
     instrument_httpx(enabled=settings.otel_enabled)
 
+    # Start GTFS static feed scheduler (handles initial import if DB empty)
+    gtfs_scheduler = GTFSFeedScheduler(settings)
+    await gtfs_scheduler.start()
+
     # Start GTFS-RT background processor
     async with gtfs_rt_lifespan_manager(cache_service) as rt_processor:
         yield {"rt_processor": rt_processor}
 
+    await gtfs_scheduler.stop()
     await engine.dispose()
 
 

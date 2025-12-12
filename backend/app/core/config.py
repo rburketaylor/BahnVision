@@ -158,7 +158,7 @@ class Settings(BaseSettings):
 
     # GTFS Static Feed Configuration
     gtfs_feed_url: str = Field(
-        default="https://download.gtfs.de/germany/full/latest.zip",
+        default="https://download.gtfs.de/germany/free/latest.zip",
         alias="GTFS_FEED_URL",
     )
     gtfs_use_unlogged_tables: bool = Field(
