@@ -58,7 +58,7 @@ export interface HeatmapParams {
   max_points?: number
 }
 
-/** Heatmap configuration for Leaflet heat layer */
+/** Heatmap configuration for MapLibre heatmap layer */
 export interface HeatmapConfig {
   radius: number
   blur: number
@@ -67,11 +67,11 @@ export interface HeatmapConfig {
   gradient: Record<number, string>
 }
 
-/** Munich center coordinates */
-export const MUNICH_CENTER: [number, number] = [48.137, 11.576]
+/** Germany center coordinates [lat, lng] */
+export const GERMANY_CENTER: [number, number] = [51.1, 10.4]
 
-/** Default zoom level for Munich map */
-export const DEFAULT_ZOOM = 12
+/** Default zoom level for Germany map */
+export const DEFAULT_ZOOM = 6
 
 /** Default heatmap configuration */
 export const DEFAULT_HEATMAP_CONFIG: HeatmapConfig = {

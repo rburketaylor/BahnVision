@@ -24,8 +24,8 @@ export default defineConfig({
           'state-management': ['@tanstack/react-query', 'zustand'],
           // UI components (if we had any heavy ones)
           'ui-components': ['@headlessui/react'],
-          // Map related libraries (large, rarely used)
-          'map-vendor': ['leaflet', 'react-leaflet'],
+          // Map related libraries (large)
+          'map-vendor': ['maplibre-gl'],
           // Error tracking
           monitoring: ['@sentry/react'],
         },
@@ -38,8 +38,8 @@ export default defineConfig({
         },
       },
     },
-    // Optimize chunks
-    chunkSizeWarningLimit: 1000,
+    // MapLibre GL is ~1011KB minified - just over the default 1000KB limit
+    chunkSizeWarningLimit: 1100,
     // CSS code splitting
     cssCodeSplit: true,
   },
@@ -52,8 +52,7 @@ export default defineConfig({
       '@tanstack/react-query',
       'zustand',
       '@headlessui/react',
-      'leaflet',
-      'react-leaflet',
+      'maplibre-gl',
     ],
   },
   server: {

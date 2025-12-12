@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
-/* Leaflet CSS fixes - ensure map container has proper dimensions */
-.leaflet-container {
+/* MapLibre GL CSS fixes - ensure map container has proper dimensions */
+.maplibregl-map {
   width: 100% !important;
   height: 100% !important;
   background: #f5f5f5;
