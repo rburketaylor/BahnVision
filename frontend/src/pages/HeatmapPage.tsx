@@ -1,30 +1,43 @@
 /**
  * Heatmap Page
- * Interactive map visualization of cancellation data across Munich
+ * Interactive map visualization of cancellation data across Germany
  */
 
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useHeatmap } from '../hooks/useHeatmap'
-import {
-  CancellationHeatmap,
-  HeatmapControls,
-  HeatmapLegend,
-  HeatmapStats,
-} from '../components/heatmap'
+import { HeatmapControls, HeatmapLegend, HeatmapStats } from '../components/heatmap'
 import type { TransportType } from '../types/api'
 import type { TimeRangePreset } from '../types/heatmap'
+import { DEFAULT_ZOOM } from '../types/heatmap'
+
+// Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
+const CancellationHeatmap = lazy(() =>
+  import('../components/heatmap/MapLibreHeatmap').then(m => ({ default: m.MapLibreHeatmap }))
+)
+
+// Loading skeleton for the map
+function MapLoadingSkeleton() {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-muted/30 rounded-lg">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">Loading map...</p>
+      </div>
+    </div>
+  )
+}
 
 export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
   const [selectedStation, setSelectedStation] = useState<string | null>(null)
-  const [zoom, setZoom] = useState<number>(12) // Default zoom
+  const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM) // Default zoom
 
   const { data, isLoading, error, refetch } = useHeatmap(
     {
       time_range: timeRange,
       transport_modes: transportModes.length > 0 ? transportModes : undefined,
-      zoom,
+      zoom: Math.round(zoom), // API requires integer zoom
     },
     { autoRefresh: true }
   )
@@ -40,7 +53,7 @@ export default function HeatmapPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Cancellation Heatmap</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Visualize transit cancellation patterns across Munich
+            Visualize transit cancellation patterns across Germany
           </p>
         </div>
 
@@ -86,24 +99,6 @@ export default function HeatmapPage() {
         </div>
       )}
 
-      {/* Demo data warning */}
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-4">
-        <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <span className="font-medium">Demo Data</span>
-        </div>
-        <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
-          This heatmap is displaying simulated data for demonstration purposes. Real-time data
-          integration is planned for a future release.
-        </p>
-      </div>
 
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -113,13 +108,15 @@ export default function HeatmapPage() {
             className="bg-card rounded-lg border border-border overflow-hidden"
             style={{ height: 'calc(100vh - 18rem)' }}
           >
-            <CancellationHeatmap
-              dataPoints={dataPoints}
-              isLoading={isLoading}
-              selectedStation={selectedStation}
-              onStationSelect={setSelectedStation}
-              onZoomChange={setZoom}
-            />
+            <Suspense fallback={<MapLoadingSkeleton />}>
+              <CancellationHeatmap
+                dataPoints={dataPoints}
+                isLoading={isLoading}
+                selectedStation={selectedStation}
+                onStationSelect={setSelectedStation}
+                onZoomChange={setZoom}
+              />
+            </Suspense>
           </div>
 
           {/* Time range info */}
@@ -137,9 +134,7 @@ export default function HeatmapPage() {
             </div>
           )}
           */}
-          <div className="mt-2 text-xs text-orange-600 dark:text-orange-400 font-medium">
-            ⚠️ Currently displaying simulated demo data
-          </div>
+
         </div>
 
         {/* Sidebar - controls, legend, and stats */}
@@ -158,13 +153,12 @@ export default function HeatmapPage() {
         </div>
       </div>
 
-      {/* Data info footer */}
+      {/* Data source footer */}
       <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
         <p>
-          <strong>Note:</strong> This heatmap shows <strong>simulated demonstration data</strong>{' '}
-          for transit services. The current data is generated using a reproducible algorithm based
-          on station characteristics and does not reflect real cancellation information. Real-time
-          data integration is planned for a future release.
+          <strong>Data source:</strong> GTFS schedule data from{' '}
+          <a href="https://gtfs.de" className="underline hover:text-foreground" target="_blank" rel="noopener noreferrer">gtfs.de</a>.
+          Updated daily.
         </p>
       </div>
     </div>
