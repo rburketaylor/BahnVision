@@ -203,7 +203,7 @@ jobs:
       - name: Run Python security scan
         if: matrix.setup == 'python'
         run: |
-          pip install bandit safety
+          pip install bandit==1.9.2 safety==3.7.0
           bandit -r backend/app -f json -o bandit-report.json || true
           safety check --output json 2>&1 | tee safety-report.json || true
 
