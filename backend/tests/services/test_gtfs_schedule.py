@@ -384,3 +384,468 @@ class TestGTFSScheduleService:
         route = await service.get_route_details("unknown")
 
         assert route is None
+
+
+class TestGetStopDepartures:
+    """Tests for get_stop_departures() method with various calendar scenarios."""
+
+    @pytest.fixture
+    def mock_session(self):
+        """Create a mock async database session."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def service(self, mock_session):
+        """Create service with mock session."""
+        return GTFSScheduleService(mock_session)
+
+    def _create_departure_row(
+        self,
+        departure_time: timedelta,
+        trip_id: str = "trip_001",
+        route_id: str = "route_S1",
+        trip_headsign: str = "München Ost",
+        route_short_name: str = "S1",
+        route_long_name: str = "S-Bahn S1",
+        route_type: int = 2,
+        route_color: str = "00BFFF",
+        stop_name: str = "Marienplatz",
+        arrival_time: timedelta = None,
+    ):
+        """Create a mock departure row matching the SQL query output."""
+        row = MagicMock()
+        row.departure_time = departure_time
+        row.arrival_time = arrival_time or departure_time
+        row.trip_headsign = trip_headsign
+        row.route_short_name = route_short_name
+        row.route_long_name = route_long_name
+        row.route_type = route_type
+        row.route_color = route_color
+        row.stop_name = stop_name
+        row.trip_id = trip_id
+        row.route_id = route_id
+        # Add _mapping for dict conversion
+        row._mapping = {
+            "departure_time": departure_time,
+            "arrival_time": arrival_time or departure_time,
+            "trip_headsign": trip_headsign,
+            "route_short_name": route_short_name,
+            "route_long_name": route_long_name,
+            "route_type": route_type,
+            "route_color": route_color,
+            "stop_name": stop_name,
+            "trip_id": trip_id,
+            "route_id": route_id,
+        }
+        return row
+
+    def _mock_stop_exists(self, mock_session, stop_id: str = "de:09162:6"):
+        """Set up mock to return a stop for the first query (stop exists check)."""
+        mock_stop = MagicMock()
+        mock_stop.stop_id = stop_id
+        mock_stop.stop_name = "Marienplatz"
+        return mock_stop
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_weekday_service(self, service, mock_session):
+        """Test departures for normal weekday service (Monday)."""
+        # Create departure rows for weekday service
+        departure_rows = [
+            self._create_departure_row(
+                departure_time=timedelta(hours=8, minutes=30),
+                trip_id="trip_001",
+                trip_headsign="Ostbahnhof",
+            ),
+            self._create_departure_row(
+                departure_time=timedelta(hours=8, minutes=40),
+                trip_id="trip_002",
+                trip_headsign="Ostbahnhof",
+            ),
+        ]
+
+        # First call: check if stop exists (returns stop)
+        # Second call: get departures (returns departure rows)
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        # Create an iterator for departure rows
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        # Query for a Monday
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)  # Monday
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 2
+        assert departures[0].trip_headsign == "Ostbahnhof"
+        assert departures[0].departure_time == datetime(
+            2025, 12, 8, 8, 30, tzinfo=timezone.utc
+        )
+        assert departures[1].departure_time == datetime(
+            2025, 12, 8, 8, 40, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_overnight_service(self, service, mock_session):
+        """Test departures with times > 24:00 (overnight service spanning midnight)."""
+        # GTFS times can exceed 24:00 for overnight services
+        # e.g., 25:30 = 1:30 AM next day
+        departure_rows = [
+            self._create_departure_row(
+                departure_time=timedelta(hours=25, minutes=30),  # 1:30 AM next day
+                trip_id="trip_overnight",
+                trip_headsign="Nachtlinie",
+            ),
+        ]
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        # Query at 11 PM on the service date
+        query_time = datetime(2025, 12, 8, 23, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 1
+        # 25:30 on Dec 8 = 1:30 AM on Dec 9
+        assert departures[0].departure_time == datetime(
+            2025, 12, 9, 1, 30, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_no_results(self, service, mock_session):
+        """Test when there are no departures for the requested time."""
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        # Return empty departures
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert departures == []
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_multiple_routes(self, service, mock_session):
+        """Test departures from multiple routes at the same stop."""
+        departure_rows = [
+            self._create_departure_row(
+                departure_time=timedelta(hours=8, minutes=30),
+                trip_id="trip_s1",
+                route_id="route_S1",
+                route_short_name="S1",
+                trip_headsign="Ost",
+            ),
+            self._create_departure_row(
+                departure_time=timedelta(hours=8, minutes=32),
+                trip_id="trip_u3",
+                route_id="route_U3",
+                route_short_name="U3",
+                route_type=1,  # Subway
+                trip_headsign="Moosach",
+            ),
+            self._create_departure_row(
+                departure_time=timedelta(hours=8, minutes=35),
+                trip_id="trip_tram19",
+                route_id="route_T19",
+                route_short_name="19",
+                route_type=0,  # Tram
+                trip_headsign="Berg am Laim",
+            ),
+        ]
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 3
+        assert departures[0].route_short_name == "S1"
+        assert departures[0].route_type == 2
+        assert departures[1].route_short_name == "U3"
+        assert departures[1].route_type == 1
+        assert departures[2].route_short_name == "19"
+        assert departures[2].route_type == 0
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_weekend_service(self, service, mock_session):
+        """Test departures for weekend (Saturday) service."""
+        departure_rows = [
+            self._create_departure_row(
+                departure_time=timedelta(hours=10, minutes=0),
+                trip_id="trip_weekend",
+                trip_headsign="Flughafen",
+            ),
+        ]
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        # Query for a Saturday
+        query_time = datetime(2025, 12, 13, 9, 0, tzinfo=timezone.utc)  # Saturday
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 1
+        assert departures[0].departure_time == datetime(
+            2025, 12, 13, 10, 0, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_sunday_service(self, service, mock_session):
+        """Test departures for Sunday service."""
+        departure_rows = [
+            self._create_departure_row(
+                departure_time=timedelta(hours=11, minutes=15),
+                trip_id="trip_sunday",
+                trip_headsign="Hauptbahnhof",
+            ),
+        ]
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        # Query for a Sunday
+        query_time = datetime(2025, 12, 14, 10, 0, tzinfo=timezone.utc)  # Sunday
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 1
+        assert departures[0].trip_headsign == "Hauptbahnhof"
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_null_arrival_time(self, service, mock_session):
+        """Test departures with NULL arrival_time (should use departure_time)."""
+        departure_row = self._create_departure_row(
+            departure_time=timedelta(hours=9, minutes=0),
+            trip_id="trip_no_arrival",
+        )
+        departure_row.arrival_time = None
+        departure_row._mapping["arrival_time"] = None
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 1
+        # arrival_time should be None when not provided
+        # (ScheduledDeparture.__init__ sets it to departure_time if None)
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_with_arrival_before_departure(
+        self, service, mock_session
+    ):
+        """Test departures where arrival is before departure (dwell time at station)."""
+        departure_row = self._create_departure_row(
+            departure_time=timedelta(hours=9, minutes=2),
+            arrival_time=timedelta(
+                hours=9, minutes=0
+            ),  # Arrives 2 min before departure
+            trip_id="trip_dwell",
+        )
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 1
+        assert departures[0].departure_time == datetime(
+            2025, 12, 8, 9, 2, tzinfo=timezone.utc
+        )
+        assert departures[0].arrival_time == datetime(
+            2025, 12, 8, 9, 0, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_respects_limit(self, service, mock_session):
+        """Test that the limit parameter is respected."""
+        # Create many departure rows
+        departure_rows = [
+            self._create_departure_row(
+                departure_time=timedelta(hours=8, minutes=i * 5),
+                trip_id=f"trip_{i:03d}",
+            )
+            for i in range(20)
+        ]
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        # Only return 5 rows to simulate limit
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(
+            return_value=iter(departure_rows[:5])
+        )
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=5
+        )
+
+        # Verify we get at most 5 departures
+        assert len(departures) <= 5
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_all_weekdays(self, service, mock_session):
+        """Test that departures work for all days of the week."""
+        # Test each weekday (Monday=0 through Sunday=6)
+        weekdays = [
+            (datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc), "monday"),
+            (datetime(2025, 12, 9, 8, 0, tzinfo=timezone.utc), "tuesday"),
+            (datetime(2025, 12, 10, 8, 0, tzinfo=timezone.utc), "wednesday"),
+            (datetime(2025, 12, 11, 8, 0, tzinfo=timezone.utc), "thursday"),
+            (datetime(2025, 12, 12, 8, 0, tzinfo=timezone.utc), "friday"),
+            (datetime(2025, 12, 13, 8, 0, tzinfo=timezone.utc), "saturday"),
+            (datetime(2025, 12, 14, 8, 0, tzinfo=timezone.utc), "sunday"),
+        ]
+
+        for query_time, expected_day in weekdays:
+            departure_rows = [
+                self._create_departure_row(
+                    departure_time=timedelta(hours=9, minutes=0),
+                    trip_id=f"trip_{expected_day}",
+                    trip_headsign=expected_day.capitalize(),
+                ),
+            ]
+
+            mock_stop = self._mock_stop_exists(mock_session)
+            mock_stop_result = MagicMock()
+            mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+            mock_departure_result = MagicMock()
+            mock_departure_result.__iter__ = MagicMock(
+                return_value=iter(departure_rows)
+            )
+
+            mock_session.execute = AsyncMock(
+                side_effect=[mock_stop_result, mock_departure_result]
+            )
+
+            departures = await service.get_stop_departures(
+                "de:09162:6", query_time, limit=10
+            )
+
+            assert len(departures) == 1, f"Failed for {expected_day}"
+            assert departures[0].trip_headsign == expected_day.capitalize()
+
+    @pytest.mark.asyncio
+    async def test_get_stop_departures_null_optional_fields(
+        self, service, mock_session
+    ):
+        """Test departures with NULL optional fields (headsign, route_color, etc.)."""
+        departure_row = self._create_departure_row(
+            departure_time=timedelta(hours=10, minutes=0),
+            trip_id="trip_sparse",
+            trip_headsign=None,
+            route_long_name=None,
+            route_color=None,
+        )
+        # Update the mapping too
+        departure_row._mapping["trip_headsign"] = None
+        departure_row._mapping["route_long_name"] = None
+        departure_row._mapping["route_color"] = None
+
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
+        departures = await service.get_stop_departures(
+            "de:09162:6", query_time, limit=10
+        )
+
+        assert len(departures) == 1
+        # ScheduledDeparture.from_row converts None to empty string
+        assert departures[0].trip_headsign == ""
+        assert departures[0].route_long_name == ""
+        assert departures[0].route_color is None
