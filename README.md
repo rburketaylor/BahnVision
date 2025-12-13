@@ -104,6 +104,19 @@ cd frontend && npm test
 
 **Caching:** Requests hit Valkey first. On miss, fetch from MVG and cache the result. Stale data is served while refreshing in the background. Circuit breaker falls back to in-memory cache if Valkey is unavailable.
 
+## Security Considerations
+
+This project implements several security best practices:
+
+- **Container Security**: All containers run as non-root users (`appuser`, `nginx`)
+- **Security Headers**: HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy
+- **CORS Protection**: Strict mode available; wildcard origins rejected by default
+- **Rate Limiting**: Configurable request limits per minute/hour/day
+- **Production Safeguards**: Application refuses to start with default credentials in production mode
+- **CI/CD Security Scanning**: Bandit, Safety, Semgrep, npm audit, and Trivy container scanning
+
+**CSP Note**: The Content Security Policy currently allows `'unsafe-inline'` for compatibility with MapLibre GL's WebGL rendering pipeline. A future enhancement would implement nonce-based CSP with server-side nonce injection. See [`docs/planning/security-changes.md`](docs/planning/security-changes.md) for the planned approach.
+
 ## Contributing
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`)
