@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -67,6 +67,7 @@ async def test_lifespan_configures_telemetry_and_disposes_engine(monkeypatch):
         otel_exporter_otlp_endpoint="http://otel",
         otel_exporter_otlp_headers=None,
         otel_enabled=True,
+        gtfs_update_interval_hours=24,
     )
     configure_calls = {}
 
@@ -80,10 +81,18 @@ async def test_lifespan_configures_telemetry_and_disposes_engine(monkeypatch):
 
     fake_engine = SimpleNamespace(dispose=AsyncMock())
 
+    # Create a proper context manager mock for gtfs_rt_lifespan_manager
+    fake_rt_manager = AsyncMock()
+    fake_rt_manager.__aenter__.return_value = "rt_processor"
+    fake_rt_manager.__aexit__.return_value = None
+
     monkeypatch.setattr(main, "get_settings", lambda: fake_settings)
     monkeypatch.setattr(main, "configure_opentelemetry", fake_configure)
     monkeypatch.setattr(main, "instrument_httpx", fake_instrument_httpx)
     monkeypatch.setattr(main, "engine", fake_engine)
+    monkeypatch.setattr(main, "get_cache_service", MagicMock())
+    monkeypatch.setattr(main, "GTFSFeedScheduler", MagicMock(return_value=AsyncMock()))
+    monkeypatch.setattr(main, "gtfs_rt_lifespan_manager", lambda _: fake_rt_manager)
 
     async with main.lifespan(FastAPI()):
         assert configure_calls["service_name"] == "svc"

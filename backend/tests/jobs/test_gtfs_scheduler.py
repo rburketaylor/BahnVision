@@ -138,6 +138,7 @@ class TestGTFSFeedSchedulerUpdateLogic:
             stale_time = datetime.now(timezone.utc) - timedelta(hours=50)
             mock_feed_info = MagicMock()
             mock_feed_info.downloaded_at = stale_time
+            mock_feed_info.feed_end_date = None  # Ensure comparison doesn't fail
 
             mock_result = MagicMock()
             mock_result.scalar_one_or_none = MagicMock(return_value=mock_feed_info)
@@ -167,6 +168,7 @@ class TestGTFSFeedSchedulerUpdateLogic:
             fresh_time = datetime.now(timezone.utc) - timedelta(hours=10)
             mock_feed_info = MagicMock()
             mock_feed_info.downloaded_at = fresh_time
+            mock_feed_info.feed_end_date = None
 
             mock_result = MagicMock()
             mock_result.scalar_one_or_none = MagicMock(return_value=mock_feed_info)
