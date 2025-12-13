@@ -18,6 +18,7 @@ coverage/
 htmlcov/
 *.coverage
 .coverage.*
+coverage.json
 
 # OS files
 .DS_Store
