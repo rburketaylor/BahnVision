@@ -11,8 +11,8 @@ export default defineConfig({
     },
   },
   build: {
-    // Enable source maps for debugging in production
-    sourcemap: true,
+    // Only enable source maps in development, not production (security hardening)
+    sourcemap: process.env.NODE_ENV !== 'production',
     // Generate bundle analysis
     rollupOptions: {
       output: {
