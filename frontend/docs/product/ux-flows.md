@@ -17,13 +17,13 @@
                         v
                   [Cache Badge + Timestamp]
 ```
-- Query: call `GET /api/v1/mvg/stations/search?q=...&limit=8` on every debounced input change.
+- Query: call `GET /api/v1/transit/stations/search?q=...&limit=8` on every debounced input change.
 - Display: list station name + place with highlight of query match; show icon per `transport_mode` once known.
 - Upon selection: trigger `useDepartures` with station id (or name fallback), show spinner while waiting, reveal `X-Cache-Status` badge.
 
 ### 2. Departures Filtering & Refresh
 - Controls: transport type chips, limit slider (default 10, max 40), walking offset selector (0–60 min).
-- API: `GET /api/v1/mvg/departures?station=...&limit=...&offset=...&transport_type=...`.
+- API: `GET /api/v1/transit/departures?station=...&limit=...&offset=...&transport_type=...`.
 - UI: table with line, destination, planned, realtime, delay, messages; highlight cancelled entries.
 - Refresh CTA: manual refresh button invalidates query; auto-refresh every 30 s respecting backend lock throttling.
 
@@ -37,8 +37,8 @@
 
 Submit --> call tanstack mutation --> render itineraries list (map overlay planned)
 ```
-- API: `GET /api/v1/mvg/routes/plan` with origin/destination + either `departure_time` or `arrival_time`.
-- Error states: show inline error if both times set; 404 with copy “No MVG routes available…”; propagate backend detail string.
+- API: `GET /api/v1/transit/routes/plan` with origin/destination + either `departure_time` or `arrival_time`.
+- Error states: show inline error if both times set; 404 with copy "No routes available…"; propagate backend detail string.
 - Display: vertical itinerary cards with summary (duration, transfers) and collapsible leg details; highlight legs on map.
 
 ### 4. System Health & Metrics Peek

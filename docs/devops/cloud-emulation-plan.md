@@ -55,7 +55,7 @@ Deliverables
 - Monitoring config under `examples/monitoring/`:
   - `examples/monitoring/prometheus.yml` scraping backend metrics.
   - `examples/monitoring/grafana/provisioning/datasources/prometheus.yaml`.
-  - `examples/monitoring/grafana/dashboards/*.json` visualising cache/MVG metrics.
+  - `examples/monitoring/grafana/dashboards/*.json` visualising cache/transit metrics.
 
 Notes & pitfalls
 - Compose ignores `deploy.resources`; resource limits are demonstrated later in Kubernetes, not locally.
@@ -71,7 +71,7 @@ Deliverables
 - Backend OpenTelemetry wiring:
   - FastAPI and `httpx` instrumentation.
   - OTLP exporter configuration via env (`OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317`).
-  - Optional header propagation helper for outbound MVG requests.
+  - Optional header propagation helper for outbound GTFS requests.
 - Compose overlay: Jaeger service runs alongside Prometheus/Grafana.
 - Documentation updates describing how to toggle tracing with `OTEL_ENABLED`.
 

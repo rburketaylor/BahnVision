@@ -32,9 +32,9 @@ echo
 echo "Opening the frontend application..."
 open http://localhost:3000
 
-echo "1. Frontend: Munich public transit data visualization"
+echo "1. Frontend: German public transit data visualization"
 echo "   - Real-time departure information"
-echo "   - Route planning capabilities"
+echo "   - Heatmap visualization"
 echo "   - Station search functionality"
 echo
 
@@ -50,7 +50,7 @@ echo
 echo "3. Metrics: Prometheus-compatible metrics endpoint"
 curl -s http://localhost:8000/metrics | head -20
 echo "   - Cache performance metrics"
-echo "   - MVG client latency and outcome metrics"
+echo "   - Transit client latency and outcome metrics"
 echo "   - Transport-type breakdown counters"
 echo
 
@@ -75,14 +75,14 @@ open http://localhost:9090
 
 echo "   Key metrics to explore:"
 echo "   - bahnvision_cache_events_total"
-echo "   - bahnvision_mvg_request_seconds_bucket"
-echo "   - bahnvision_mvg_requests_total"
-echo "   - bahnvision_mvg_transport_requests_total"
+echo "   - bahnvision_transit_request_seconds_bucket"
+echo "   - bahnvision_transit_requests_total"
+echo "   - bahnvision_transit_transport_requests_total"
 echo
 
 echo "Example PromQL queries:"
 echo "   - Cache hit ratio: sum(rate(bahnvision_cache_events_total{event=\"hit\"}[5m])) / (sum(rate(bahnvision_cache_events_total{event=\"hit\"}[5m])) + sum(rate(bahnvision_cache_events_total{event=\"miss\"}[5m])))"
-echo "   - P95 latency: histogram_quantile(0.95, sum(rate(bahnvision_mvg_request_seconds_bucket[5m])) by (le, endpoint))"
+echo "   - P95 latency: histogram_quantile(0.95, sum(rate(bahnvision_transit_request_seconds_bucket[5m])) by (le, endpoint))"
 echo
 
 read -p "Press Enter to continue to Grafana..."
@@ -95,7 +95,7 @@ open http://localhost:3001
 echo "   Login credentials: admin / admin"
 echo
 echo "   Available dashboards:"
-echo "   - BahnVision Overview: Cache hit ratios, MVG latency"
+echo "   - BahnVision Overview: Cache hit ratios, transit latency"
 echo "   - System metrics: Resource utilization"
 echo "   - Custom panels: Real-time performance monitoring"
 echo
@@ -204,7 +204,7 @@ echo "   Simulating complete Valkey cache failure..."
 echo "   Testing API with cache unavailable:"
 time curl -s "http://localhost:8000/api/v1/departures?station=Hauptbahnhof&limit=5" > /dev/null
 
-echo "   Expected: Service continues with direct MVG API calls; cache circuit breaker prevents cascading failures."
+echo "   Expected: Service continues with cached/fallback data; cache circuit breaker prevents cascading failures."
 echo
 
 read -p "Press Enter to simulate PostgreSQL latency..."
@@ -319,7 +319,7 @@ curl -s http://localhost:8000/metrics | grep bahnvision_cache_events_total | sor
 echo
 
 echo "   Key observations:"
-echo "   - First request: cache miss, fetches from MVG API"
+echo "   - First request: cache miss, fetches from GTFS data"
 echo "   - Subsequent requests: cache hits, served from memory"
 echo "   - TTL-based expiration ensures fresh data"
 echo

@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Modules
-- Backend lives in `backend/app`: FastAPI entry in `main.py`, routes under `api/v1/endpoints`, shared cache utilities in `api/v1/shared`, services (MVG client, cache) in `services`, Pydantic models in `models`, persistence in `persistence`.
+- Backend lives in `backend/app`: FastAPI entry in `main.py`, routes under `api/v1/endpoints`, shared cache utilities in `api/v1/shared`, services (GTFS schedule, cache) in `services`, Pydantic models in `models`, persistence in `persistence`.
 - Backend docs: `backend/docs/README.md`, tech spec at `docs/tech-spec.md`.
 - Frontend lives in `frontend`: components/pages/hooks/services under `src`, Vite + React 19 + TypeScript.
 - Tests mirror code: backend tests in `backend/tests`, frontend unit/integration in `frontend/src` (Vitest), E2E in `frontend` (Playwright).
@@ -25,7 +25,7 @@
 
 ## Testing Guidelines
 - Mirror code structure in tests; add regression tests for bugs and unit/integration for new features.
-- Backend: use FastAPI TestClient, Fake Valkey/MVG doubles for deterministic tests.
+- Backend: use FastAPI TestClient, Fake Valkey/GTFS doubles for deterministic tests.
 - Frontend: RTL + MSW for API mocking; keep tests colocated under `src`; name test files `*.test.ts[x]`.
 - Run targeted tests before PRs; aim for coverage via `npm run test:coverage` when touching frontend logic.
 

@@ -152,7 +152,7 @@ scenario_valkey_outage() {
     curl -s -X POST "$TOXIPROXY_API/proxies/valkey_proxy" -d '{"enabled": false}' > /dev/null
 
     print_status "Valkey connection severed"
-    print_warning "Expect cache bypass behavior and increased MVG API calls"
+    print_warning "Expect cache bypass behavior and increased upstream API calls"
 }
 
 # Scenario 7: Bandwidth limitation (slow connection)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines a comprehensive DevOps pipeline for the BahnVision project, a FastAPI backend service delivering MVG (Munich transit) live data through a REST API with production-grade caching, persistence, and observability. The pipeline builds on the existing foundation of Docker containerization, GitHub Actions CI/CD, and comprehensive testing infrastructure.
+This document outlines a comprehensive DevOps pipeline for the BahnVision project, a FastAPI backend service delivering German transit live data through a REST API with production-grade caching, GTFS persistence, and observability. The pipeline builds on the existing foundation of Docker containerization, GitHub Actions CI/CD, and comprehensive testing infrastructure.
 
 ## Current State Analysis
 

@@ -24,7 +24,7 @@ const mockDeparture = {
 
 test.describe('Primary user journeys', () => {
   test('user can search for a station and view departures', async ({ page }) => {
-    await page.route('**/api/v1/mvg/stations/search**', async route => {
+    await page.route('**/api/v1/transit/stations/search**', async route => {
       const url = new URL(route.request().url())
       const query = (url.searchParams.get('query') || '').toLowerCase()
 
@@ -46,7 +46,7 @@ test.describe('Primary user journeys', () => {
       })
     })
 
-    await page.route('**/api/v1/mvg/departures**', async route => {
+    await page.route('**/api/v1/transit/departures**', async route => {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -69,13 +69,5 @@ test.describe('Primary user journeys', () => {
     await expect(page.getByRole('table')).toContainText('U3')
     await expect(page.getByRole('table')).toContainText('Moosach')
   })
-
-  test('user can open the planner view from navigation', async ({ page }) => {
-    await page.goto('/')
-    await page.getByRole('link', { name: 'Planner' }).click()
-
-    await expect(page).toHaveURL(/\/planner$/)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Route Planner')
-    await expect(page.getByText(/Coming soon/i)).toBeVisible()
-  })
 })
+

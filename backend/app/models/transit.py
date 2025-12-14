@@ -1,8 +1,7 @@
 """
 Transit API Pydantic models for GTFS-based endpoints.
 
-These models provide the API response schema for GTFS transit data,
-similar to the MVG models but designed for Germany-wide transit data.
+These models provide the API response schema for Germany-wide GTFS transit data.
 """
 
 from __future__ import annotations

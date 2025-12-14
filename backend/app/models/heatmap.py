@@ -24,7 +24,7 @@ class TransportStats(BaseModel):
 class HeatmapDataPoint(BaseModel):
     """A single data point representing cancellation data for a station."""
 
-    station_id: str = Field(..., description="Global MVG station identifier.")
+    station_id: str = Field(..., description="GTFS stop_id identifier.")
     station_name: str = Field(..., description="Human-readable station name.")
     latitude: float = Field(..., ge=-90, le=90, description="Station latitude.")
     longitude: float = Field(..., ge=-180, le=180, description="Station longitude.")

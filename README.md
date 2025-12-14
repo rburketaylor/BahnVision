@@ -1,6 +1,6 @@
 # BahnVision
 
-Real-time Munich transit data API and dashboard. Live departures, station search, and route planning powered by MVG data with Valkey caching for fast, reliable responses.
+Real-time German transit data API and dashboard. Live departures, station search, and heatmap visualization powered by GTFS data with Valkey caching for fast, reliable responses.
 
 ## Quick Start
 
@@ -35,9 +35,9 @@ npm run dev
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/mvg/stations/search?query=marienplatz` | Station search |
-| `GET /api/v1/mvg/departures?station=marienplatz` | Live departures |
-| `GET /api/v1/mvg/routes/plan?origin=X&destination=Y` | Route planning |
+| `GET /api/v1/transit/stations/search?query=marienplatz` | Station search |
+| `GET /api/v1/transit/departures?station=marienplatz` | Live departures |
+| `GET /api/v1/transit/heatmap/data` | Heatmap activity data |
 | `GET /api/v1/health` | Health check |
 | `GET /metrics` | Prometheus metrics |
 
@@ -90,8 +90,8 @@ cd frontend && npm test
 
 ```
 ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   Frontend  │─────▶│   FastAPI   │─────▶│   MVG API   │
-│   (React)   │      │   Backend   │      │  (upstream) │
+│   Frontend  │─────▶│   FastAPI   │─────▶│  GTFS Feed  │
+│   (React)   │      │   Backend   │      │  (Germany)  │
 └─────────────┘      └──────┬──────┘      └─────────────┘
                            │
               ┌────────────┼────────────┐
@@ -102,7 +102,7 @@ cd frontend && npm test
          └────────┘  └──────────┘  └──────────┘
 ```
 
-**Caching:** Requests hit Valkey first. On miss, fetch from MVG and cache the result. Stale data is served while refreshing in the background. Circuit breaker falls back to in-memory cache if Valkey is unavailable.
+**Caching:** Requests hit Valkey first. On miss, fetch from GTFS data and cache the result. Stale data is served while refreshing in the background. Circuit breaker falls back to in-memory cache if Valkey is unavailable.
 
 ## Security Considerations
 

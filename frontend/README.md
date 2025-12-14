@@ -1,6 +1,6 @@
 # BahnVision Frontend
 
-React + TypeScript frontend for the BahnVision Munich transit live data dashboard.
+React + TypeScript frontend for the BahnVision German transit live data dashboard.
 
 ## Quick Start
 
@@ -112,9 +112,9 @@ docker run -p 3000:80 \
 The frontend consumes REST endpoints from the BahnVision backend:
 
 - `GET /api/v1/health` — System health status
-- `GET /api/v1/mvg/stations/search?query={query}` — Station autocomplete
-- `GET /api/v1/mvg/departures?station={id}` — Live departures board
-- `GET /api/v1/mvg/routes/plan?origin={id}&destination={id}` — Route planning
+- `GET /api/v1/transit/stations/search?query={query}` — Station autocomplete
+- `GET /api/v1/transit/departures?station={id}` — Live departures board
+- `GET /api/v1/transit/heatmap/data` — Heatmap activity data
 - `GET /metrics` — Prometheus metrics (for analysts)
 
 See [docs/archive/api-integration.md](./docs/archive/api-integration.md) for complete API documentation.

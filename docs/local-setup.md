@@ -134,8 +134,8 @@ VALKEY_URL=valkey://localhost:6379/0
 CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173
 
 # Optional: Override cache TTLs
-MVG_DEPARTURES_CACHE_TTL_SECONDS=30
-MVG_DEPARTURES_CACHE_STALE_TTL_SECONDS=300
+TRANSIT_DEPARTURES_CACHE_TTL_SECONDS=30
+TRANSIT_DEPARTURES_CACHE_STALE_TTL_SECONDS=300
 ```
 
 ### OpenTelemetry Configuration (Demo Environment)
@@ -197,7 +197,7 @@ When chaos scenarios are active, test:
 - Cache events (hits, misses, stale reads)
 
 **API Performance**:
-- MVG API latency (<750ms P95 target)
+- API latency (<750ms P95 target)
 - Request success rate
 - Error rates by endpoint
 
