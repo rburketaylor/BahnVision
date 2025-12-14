@@ -206,14 +206,14 @@ class Settings(BaseSettings):
         description="Enable background GTFS-RT data collection for heatmap.",
     )
     gtfs_rt_harvest_interval_seconds: int = Field(
-        default=60,
+        default=300,  # 5 minutes - optimized for delay statistics, not real-time tracking
         alias="GTFS_RT_HARVEST_INTERVAL_SECONDS",
-        description="Interval between GTFS-RT harvest cycles.",
+        description="Interval between GTFS-RT harvest cycles (seconds).",
     )
-    gtfs_rt_observation_retention_days: int = Field(
-        default=30,
-        alias="GTFS_RT_OBSERVATION_RETENTION_DAYS",
-        description="Days to retain historical trip update observations.",
+    gtfs_rt_stats_retention_days: int = Field(
+        default=90,  # Extended retention for aggregated stats (low storage footprint)
+        alias="GTFS_RT_STATS_RETENTION_DAYS",
+        description="Days to retain station statistics.",
     )
 
     # ==========================================================================

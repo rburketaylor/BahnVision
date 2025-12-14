@@ -25,7 +25,7 @@ from app.models.heatmap import (
     TimeRangePreset,
     TransportStats,
 )
-from app.persistence.models import StationAggregation
+from app.persistence.models import RealtimeStationStats
 from app.services.cache import CacheService
 from app.services.gtfs_schedule import GTFSScheduleService
 
@@ -308,28 +308,28 @@ class HeatmapService:
                 route_type_filter = route_types_to_include
 
         try:
-            # Query aggregated data for the time range
+            # Query aggregated data for the time range from realtime_station_stats
             stmt = (
                 select(
-                    StationAggregation.stop_id,
-                    func.sum(StationAggregation.total_departures).label(
-                        "total_departures"
-                    ),
-                    func.sum(StationAggregation.cancelled_count).label(
+                    RealtimeStationStats.stop_id,
+                    func.sum(RealtimeStationStats.trip_count).label("total_departures"),
+                    func.sum(RealtimeStationStats.cancelled_count).label(
                         "cancelled_count"
                     ),
-                    func.sum(StationAggregation.delayed_count).label("delayed_count"),
-                    StationAggregation.route_type,
+                    func.sum(RealtimeStationStats.delayed_count).label("delayed_count"),
+                    RealtimeStationStats.route_type,
                 )
-                .where(StationAggregation.bucket_start >= from_time)
-                .where(StationAggregation.bucket_start < to_time)
+                .where(RealtimeStationStats.bucket_start >= from_time)
+                .where(RealtimeStationStats.bucket_start < to_time)
             )
 
             if route_type_filter:
-                stmt = stmt.where(StationAggregation.route_type.in_(route_type_filter))
+                stmt = stmt.where(
+                    RealtimeStationStats.route_type.in_(route_type_filter)
+                )
 
             stmt = stmt.group_by(
-                StationAggregation.stop_id, StationAggregation.route_type
+                RealtimeStationStats.stop_id, RealtimeStationStats.route_type
             )
 
             result = await self._session.execute(stmt)
