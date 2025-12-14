@@ -57,40 +57,4 @@ class CacheRefreshProtocol(ABC, Generic[T]):
         ...
 
 
-class MvgCacheProtocol(CacheRefreshProtocol[T]):
-    """
-    MVG cache protocol that reduces boilerplate by auto-configuring TTL settings.
-
-    Subclasses only need to define fetch_data and the cache configuration properties.
-    """
-
-    @abstractmethod
-    def get_ttl_setting_name(self) -> str:
-        """Return the settings attribute name for TTL (e.g., 'mvg_departures_cache_ttl_seconds')."""
-        ...
-
-    @abstractmethod
-    def get_stale_ttl_setting_name(self) -> str:
-        """Return the settings attribute name for stale TTL (e.g., 'mvg_departures_cache_stale_ttl_seconds')."""
-        ...
-
-    async def store_data(
-        self,
-        cache: CacheService,
-        cache_key: str,
-        data: T,
-        settings: Settings,
-    ) -> None:
-        """Store data in cache with automatically configured TTL settings."""
-        ttl_seconds = getattr(settings, self.get_ttl_setting_name())
-        stale_ttl_seconds = getattr(settings, self.get_stale_ttl_setting_name())
-
-        await cache.set_json(  # type: ignore
-            cache_key,
-            data.model_dump(mode="json"),
-            ttl_seconds=ttl_seconds,
-            stale_ttl_seconds=stale_ttl_seconds,
-        )
-
-
-__all__ = ["CacheResult", "CacheRefreshProtocol", "MvgCacheProtocol"]
+__all__ = ["CacheResult", "CacheRefreshProtocol"]
