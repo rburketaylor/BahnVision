@@ -21,6 +21,7 @@ from app.core.telemetry import (
 from app.jobs.rt_processor import gtfs_rt_lifespan_manager
 from app.jobs.gtfs_scheduler import GTFSFeedScheduler
 from app.services.cache import get_cache_service
+from app.services.gtfs_realtime_harvester import GTFSRTDataHarvester
 
 logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -82,9 +83,20 @@ async def lifespan(app: FastAPI):
     gtfs_scheduler = GTFSFeedScheduler(settings)
     await gtfs_scheduler.start()
 
+    # Start GTFS-RT data harvester for historical persistence
+    harvester: GTFSRTDataHarvester | None = None
+    if settings.gtfs_rt_harvesting_enabled:
+        harvester = GTFSRTDataHarvester(cache_service=cache_service)
+        await harvester.start()
+        logger.info("GTFS-RT data harvester started")
+
     # Start GTFS-RT background processor
     async with gtfs_rt_lifespan_manager(cache_service) as rt_processor:
-        yield {"rt_processor": rt_processor}
+        yield {"rt_processor": rt_processor, "harvester": harvester}
+
+    # Stop harvester before shutdown
+    if harvester:
+        await harvester.stop()
 
     await gtfs_scheduler.stop()
     await engine.dispose()

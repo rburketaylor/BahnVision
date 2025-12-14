@@ -199,6 +199,23 @@ class Settings(BaseSettings):
         default=30, alias="GTFS_RT_CACHE_TTL_SECONDS"  # 30 seconds (real-time)
     )
 
+    # GTFS-RT Harvesting Configuration
+    gtfs_rt_harvesting_enabled: bool = Field(
+        default=True,
+        alias="GTFS_RT_HARVESTING_ENABLED",
+        description="Enable background GTFS-RT data collection for heatmap.",
+    )
+    gtfs_rt_harvest_interval_seconds: int = Field(
+        default=60,
+        alias="GTFS_RT_HARVEST_INTERVAL_SECONDS",
+        description="Interval between GTFS-RT harvest cycles.",
+    )
+    gtfs_rt_observation_retention_days: int = Field(
+        default=30,
+        alias="GTFS_RT_OBSERVATION_RETENTION_DAYS",
+        description="Days to retain historical trip update observations.",
+    )
+
     # ==========================================================================
     # OpenTelemetry (optional)
     # ==========================================================================
