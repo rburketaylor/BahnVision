@@ -57,48 +57,6 @@ export interface DeparturesResponse {
   departures: Departure[]
 }
 
-// Routes types
-export interface RouteStop {
-  id: string | null
-  name: string | null
-  place: string | null
-  latitude: number | null
-  longitude: number | null
-  planned_time: string | null
-  realtime_time: string | null
-  platform: string | null
-  transport_type: TransportType | null
-  line: string | null
-  destination: string | null
-  delay_minutes: number | null
-  messages: string[]
-}
-
-export interface RouteLeg {
-  origin: RouteStop | null
-  destination: RouteStop | null
-  transport_type: TransportType | null
-  line: string | null
-  direction: string | null
-  duration_minutes: number | null
-  distance_meters: number | null
-  intermediate_stops: RouteStop[]
-}
-
-export interface RoutePlan {
-  duration_minutes: number | null
-  transfers: number | null
-  departure: RouteStop | null
-  arrival: RouteStop | null
-  legs: RouteLeg[]
-}
-
-export interface RoutePlanResponse {
-  origin: Station
-  destination: Station
-  plans: RoutePlan[]
-}
-
 // Error response type
 export interface ErrorResponse {
   detail: string
@@ -116,13 +74,5 @@ export interface DeparturesParams {
   offset?: number
   from?: string // UTC ISO timestamp
   window_minutes?: number
-  transport_type?: TransportType[]
-}
-
-export interface RoutePlanParams {
-  origin: string
-  destination: string
-  departure_time?: string // ISO 8601
-  arrival_time?: string // ISO 8601
   transport_type?: TransportType[]
 }
