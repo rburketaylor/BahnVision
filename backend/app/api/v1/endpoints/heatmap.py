@@ -80,6 +80,7 @@ async def get_cancellation_heatmap(
             description="Maximum number of data points to return. Default: based on zoom.",
         ),
     ] = None,
+    db: AsyncSession = Depends(get_session),
     gtfs_schedule: GTFSScheduleService = Depends(get_gtfs_schedule),
     cache: CacheService = Depends(get_cache_service),
 ) -> HeatmapResponse:
@@ -96,6 +97,7 @@ async def get_cancellation_heatmap(
     - Summary statistics
 
     The response is cached for 5 minutes to balance freshness with performance.
+    When historical data is available, real GTFS-RT observations are used.
     """
     # Generate cache key
     cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}:{zoom}:{max_points or 'default'}"
@@ -106,8 +108,8 @@ async def get_cancellation_heatmap(
         response.headers["X-Cache-Status"] = "hit"
         return HeatmapResponse.model_validate(cached_data)
 
-    # Generate fresh data
-    service = HeatmapService(gtfs_schedule, cache)
+    # Generate fresh data with database session for real aggregations
+    service = HeatmapService(gtfs_schedule, cache, session=db)
     result = await service.get_cancellation_heatmap(
         time_range=time_range,
         transport_modes=transport_modes,

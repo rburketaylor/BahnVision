@@ -2,8 +2,8 @@
 Heatmap service for cancellation data aggregation.
 
 Aggregates departure cancellation data across stations for heatmap visualization.
-Since historical data persistence is not yet implemented (Phase 2), this service
-currently generates simulated data based on station characteristics.
+Uses real GTFS-RT data from the station_aggregations table when available,
+falling back to simulated data when historical data is not yet collected.
 """
 
 from __future__ import annotations
@@ -12,6 +12,10 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.heatmap import (
     HeatmapDataPoint,
@@ -21,8 +25,12 @@ from app.models.heatmap import (
     TimeRangePreset,
     TransportStats,
 )
+from app.persistence.models import StationAggregation
 from app.services.cache import CacheService
 from app.services.gtfs_schedule import GTFSScheduleService
+
+if TYPE_CHECKING:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +82,16 @@ GTFS_ROUTE_TYPES: dict[int, str] = {
     700: "BUS",  # Bus Service
     900: "TRAM",  # Tram Service
     1000: "SCHIFF",  # Water Transport Service
+}
+
+# Reverse mapping for filtering
+TRANSPORT_TO_ROUTE_TYPES: dict[str, list[int]] = {
+    "TRAM": [0, 5, 6, 7, 11, 900],
+    "UBAHN": [1, 400],
+    "BAHN": [2, 12, 100],
+    "BUS": [3, 700],
+    "SCHIFF": [4, 1000],
+    "SBAHN": [109],
 }
 
 
@@ -133,28 +151,26 @@ def parse_transport_modes(transport_modes: str | None) -> list[str] | None:
 class HeatmapService:
     """Service for aggregating cancellation data for heatmap visualization.
 
-    Since historical data persistence is Phase 2, this service currently:
-    1. Fetches all stops from the GTFS database
-    2. Generates simulated cancellation data based on station characteristics
-    3. Returns data points with lat/lng for map rendering
-
-    The service is designed to work efficiently with the existing cache
-    infrastructure and can be extended to use historical data once available.
+    Queries pre-computed station aggregations from the database when available.
+    Falls back to simulated data when historical data collection is still building up.
     """
 
     def __init__(
         self,
         gtfs_schedule: GTFSScheduleService,
         cache: CacheService,
+        session: AsyncSession | None = None,
     ) -> None:
         """Initialize heatmap service.
 
         Args:
             gtfs_schedule: GTFS schedule service for fetching stop data
             cache: Cache service for data storage and retrieval
+            session: Optional database session for aggregation queries
         """
         self._gtfs_schedule = gtfs_schedule
         self._cache = cache
+        self._session = session
 
     async def get_cancellation_heatmap(
         self,
@@ -228,8 +244,15 @@ class HeatmapService:
         else:
             max_points = min(max_points, MAX_DATA_POINTS)
 
-        # Aggregate cancellation data for each station
-        data_points = self._aggregate_station_data(stops, transport_types)
+        # Try to get real aggregation data from database
+        data_points = await self._aggregate_station_data_from_db(
+            stops, transport_types, from_time, to_time
+        )
+
+        # If no data from DB, fall back to simulated data
+        if not data_points:
+            logger.info("No historical data available, using simulated data")
+            data_points = self._aggregate_station_data_simulated(stops, transport_types)
 
         # Filter to stations with significant data
         data_points = [
@@ -254,16 +277,147 @@ class HeatmapService:
             summary=summary,
         )
 
-    def _aggregate_station_data(
+    async def _aggregate_station_data_from_db(
+        self,
+        stops: list[StopInfo],
+        transport_types: list[str] | None,
+        from_time: datetime,
+        to_time: datetime,
+    ) -> list[HeatmapDataPoint]:
+        """Query real cancellation data from station_aggregations table.
+
+        Args:
+            stops: List of stops with coordinates
+            transport_types: Filter to specific transport types
+            from_time: Start of time range
+            to_time: End of time range
+
+        Returns:
+            List of HeatmapDataPoint with real statistics, or empty list if no data
+        """
+        if not self._session:
+            return []
+
+        # Build route_type filter if transport_types specified
+        route_type_filter = None
+        if transport_types:
+            route_types_to_include = []
+            for tt in transport_types:
+                route_types_to_include.extend(TRANSPORT_TO_ROUTE_TYPES.get(tt, []))
+            if route_types_to_include:
+                route_type_filter = route_types_to_include
+
+        try:
+            # Query aggregated data for the time range
+            stmt = (
+                select(
+                    StationAggregation.stop_id,
+                    func.sum(StationAggregation.total_departures).label(
+                        "total_departures"
+                    ),
+                    func.sum(StationAggregation.cancelled_count).label(
+                        "cancelled_count"
+                    ),
+                    func.sum(StationAggregation.delayed_count).label("delayed_count"),
+                    StationAggregation.route_type,
+                )
+                .where(StationAggregation.bucket_start >= from_time)
+                .where(StationAggregation.bucket_start < to_time)
+            )
+
+            if route_type_filter:
+                stmt = stmt.where(StationAggregation.route_type.in_(route_type_filter))
+
+            stmt = stmt.group_by(
+                StationAggregation.stop_id, StationAggregation.route_type
+            )
+
+            result = await self._session.execute(stmt)
+            rows = result.all()
+
+            if not rows:
+                return []
+
+            # Build a map of stop_id -> stop info for lookup
+            stop_map = {stop.stop_id: stop for stop in stops}
+
+            # Aggregate by stop (combining route_types)
+            stop_stats: dict[str, dict] = {}
+            for row in rows:
+                stop_id = row.stop_id
+                if stop_id not in stop_map:
+                    continue
+
+                if stop_id not in stop_stats:
+                    stop_info = stop_map[stop_id]
+                    stop_stats[stop_id] = {
+                        "stop_info": stop_info,
+                        "total_departures": 0,
+                        "cancelled_count": 0,
+                        "by_transport": {},
+                    }
+
+                stop_stats[stop_id]["total_departures"] += row.total_departures or 0
+                stop_stats[stop_id]["cancelled_count"] += row.cancelled_count or 0
+
+                # Track by transport type
+                if row.route_type is not None:
+                    transport_type = GTFS_ROUTE_TYPES.get(row.route_type, "BUS")
+                    if transport_type not in stop_stats[stop_id]["by_transport"]:
+                        stop_stats[stop_id]["by_transport"][transport_type] = {
+                            "total": 0,
+                            "cancelled": 0,
+                        }
+                    stop_stats[stop_id]["by_transport"][transport_type]["total"] += (
+                        row.total_departures or 0
+                    )
+                    stop_stats[stop_id]["by_transport"][transport_type][
+                        "cancelled"
+                    ] += (row.cancelled_count or 0)
+
+            # Convert to HeatmapDataPoint
+            data_points = []
+            for stop_id, stats in stop_stats.items():
+                stop_info = stats["stop_info"]
+                total = stats["total_departures"]
+                cancelled = stats["cancelled_count"]
+                rate = cancelled / total if total > 0 else 0
+
+                by_transport = {
+                    tt: TransportStats(total=ts["total"], cancelled=ts["cancelled"])
+                    for tt, ts in stats["by_transport"].items()
+                }
+
+                data_points.append(
+                    HeatmapDataPoint(
+                        station_id=stop_id,
+                        station_name=stop_info.stop_name,
+                        latitude=stop_info.stop_lat,
+                        longitude=stop_info.stop_lon,
+                        total_departures=total,
+                        cancelled_count=cancelled,
+                        cancellation_rate=rate,
+                        by_transport=by_transport,
+                    )
+                )
+
+            logger.info(
+                "Retrieved %d stations with real aggregation data", len(data_points)
+            )
+            return data_points
+
+        except Exception as exc:
+            logger.warning("Failed to query aggregation data, falling back: %s", exc)
+            return []
+
+    def _aggregate_station_data_simulated(
         self,
         stops: list[StopInfo],
         transport_types: list[str] | None,
     ) -> list[HeatmapDataPoint]:
         """Generate simulated cancellation data for each station.
 
-        Currently generates fake data since historical persistence is Phase 2.
-        The structure is designed to be replaced with real database queries
-        when that feature is implemented.
+        Used as fallback when historical data is not yet available.
 
         Args:
             stops: List of stops to generate data for
@@ -426,14 +580,16 @@ class HeatmapService:
 def get_heatmap_service(
     gtfs_schedule: GTFSScheduleService,
     cache: CacheService,
+    session: AsyncSession | None = None,
 ) -> HeatmapService:
     """Factory function for HeatmapService.
 
     Args:
         gtfs_schedule: GTFS schedule service
         cache: Cache service
+        session: Optional database session for aggregation queries
 
     Returns:
         Configured HeatmapService instance
     """
-    return HeatmapService(gtfs_schedule, cache)
+    return HeatmapService(gtfs_schedule, cache, session)
