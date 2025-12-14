@@ -448,72 +448,23 @@ class DepartureWeatherLink(Base):
     )
 
 
-class TripUpdateObservation(Base):
-    """Historical record of trip updates from GTFS-RT feed.
+class RealtimeStationStats(Base):
+    """Streaming aggregation of GTFS-RT statistics per station per hour.
 
-    Stores individual stop-time updates for analysis and heatmap aggregation.
+    Updated in place on each harvest cycle instead of storing raw observations.
+    This provides ~250x storage reduction compared to storing individual observations.
     """
 
-    __tablename__ = "trip_update_observations"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    trip_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    route_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    stop_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    stop_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    arrival_delay_seconds: Mapped[int | None] = mapped_column(Integer)
-    departure_delay_seconds: Mapped[int | None] = mapped_column(Integer)
-    schedule_relationship: Mapped[ScheduleRelationship] = mapped_column(
-        schedule_relationship_enum.copy(),
-        nullable=False,
-        default=ScheduleRelationship.SCHEDULED,
-        server_default=ScheduleRelationship.SCHEDULED.value,
-    )
-    feed_timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        doc="Timestamp from the GTFS-RT feed header.",
-    )
-    observed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        doc="When we captured this observation.",
-    )
-    route_type: Mapped[int | None] = mapped_column(
-        Integer,
-        doc="GTFS route_type (0=Tram, 1=Metro, 2=Rail, 3=Bus, etc.).",
-    )
-
-    __table_args__ = (
-        Index("ix_trip_obs_stop_observed", "stop_id", "observed_at"),
-        Index("ix_trip_obs_route_observed", "route_id", "observed_at"),
-        Index("ix_trip_obs_feed_ts", "feed_timestamp"),
-        # Deduplication constraint
-        UniqueConstraint(
-            "trip_id",
-            "stop_id",
-            "feed_timestamp",
-            name="uq_trip_update_unique",
-        ),
-    )
-
-
-class StationAggregation(Base):
-    """Pre-computed hourly aggregations per station for fast heatmap queries.
-
-    This table stores aggregated cancellation/delay statistics per stop
-    for efficient heatmap rendering without scanning the raw observations.
-    """
-
-    __tablename__ = "station_aggregations"
+    __tablename__ = "realtime_station_stats"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     stop_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Time bucket
     bucket_start: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        doc="Start of the time bucket (typically hourly).",
+        doc="Start of the time bucket (hourly).",
     )
     bucket_width_minutes: Mapped[int] = mapped_column(
         Integer,
@@ -521,11 +472,30 @@ class StationAggregation(Base):
         default=60,
         server_default="60",
     )
-    total_departures: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
+
+    # Streaming counters (updated incrementally)
+    observation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Number of harvest cycles that contributed to this bucket.",
     )
-    cancelled_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
+    trip_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Number of unique trips observed (deduplicated via Valkey).",
+    )
+
+    # Delay statistics
+    total_delay_seconds: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Cumulative delay for average calculation.",
     )
     delayed_count: Mapped[int] = mapped_column(
         Integer,
@@ -534,14 +504,35 @@ class StationAggregation(Base):
         server_default="0",
         doc="Count of departures delayed > 5 minutes.",
     )
-    avg_delay_seconds: Mapped[float] = mapped_column(
-        Float, nullable=False, default=0.0, server_default="0.0"
+    on_time_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Count of departures with delay < 1 minute.",
     )
+
+    # Cancellations
+    cancelled_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    # Route type (NULL = combined stats for all types)
     route_type: Mapped[int | None] = mapped_column(
         Integer,
         doc="GTFS route_type for transport mode filtering (null = all types).",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+
+    # Timestamps
+    first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
@@ -549,12 +540,13 @@ class StationAggregation(Base):
     )
 
     __table_args__ = (
-        Index("ix_station_agg_stop_bucket", "stop_id", "bucket_start"),
+        Index("ix_realtime_stats_stop_bucket", "stop_id", "bucket_start"),
+        Index("ix_realtime_stats_bucket", "bucket_start"),
         UniqueConstraint(
             "stop_id",
             "bucket_start",
             "bucket_width_minutes",
             "route_type",
-            name="uq_station_agg_unique",
+            name="uq_realtime_stats_unique",
         ),
     )
