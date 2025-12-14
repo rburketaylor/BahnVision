@@ -68,6 +68,7 @@ async def test_lifespan_configures_telemetry_and_disposes_engine(monkeypatch):
         otel_exporter_otlp_headers=None,
         otel_enabled=True,
         gtfs_update_interval_hours=24,
+        gtfs_rt_harvesting_enabled=False,
     )
     configure_calls = {}
 

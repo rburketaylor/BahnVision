@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+> **Note**: `GEMINI.md` and `CLAUDE.md` are symlinks to this file (`AGENTS.md`). All AI agents share this single source of truth for repository guidelines. Edit only `AGENTS.md`; changes will be visible to all agents.
+
 ## Project Structure & Modules
 - Backend lives in `backend/app`: FastAPI entry in `main.py`, routes under `api/v1/endpoints`, shared cache utilities in `api/v1/shared`, services (GTFS schedule, cache) in `services`, Pydantic models in `models`, persistence in `persistence`.
 - Backend docs: `backend/docs/README.md`, tech spec at `docs/tech-spec.md`.
@@ -30,6 +32,8 @@
 - Run targeted tests before PRs; aim for coverage via `npm run test:coverage` when touching frontend logic.
 
 ## Commit & Pull Request Guidelines
+- **Before committing, ensure docker compose is up-to-date**: Run `docker compose up --build -d` to rebuild and start all services with the latest code. Some backend tests require Valkey and other services to be running.
+- **Run the full test suite before committing**: Execute `source backend/.venv/bin/activate && pytest backend/tests` for backend and `cd frontend && npm run test` for frontend. Fix any failures before proceeding with commits.
 - **Always activate the backend virtualenv before committing**: Run `source backend/.venv/bin/activate` before any `git commit` to ensure pre-commit hooks have access to the required tools (black, ruff).
 - **Never skip pre-commit hooks**: Do not use `--no-verify` or similar flags. Pre-commit hooks must run on every commit, even if they report "Skipped" for files not matching their patterns.
 - Follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, etc.); keep subjects concise.
