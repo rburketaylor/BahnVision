@@ -30,6 +30,8 @@
 - Run targeted tests before PRs; aim for coverage via `npm run test:coverage` when touching frontend logic.
 
 ## Commit & Pull Request Guidelines
+- **Always activate the backend virtualenv before committing**: Run `source backend/.venv/bin/activate` before any `git commit` to ensure pre-commit hooks have access to the required tools (black, ruff).
+- **Never skip pre-commit hooks**: Do not use `--no-verify` or similar flags. Pre-commit hooks must run on every commit, even if they report "Skipped" for files not matching their patterns.
 - Follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, etc.); keep subjects concise.
 - PRs should describe scope, testing performed, and any manual steps; link issues and add screenshots or sample responses for UI/API changes.
 - Avoid unrelated drive-by changes; update requirements/package manifests when dependencies change.
