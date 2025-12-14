@@ -182,6 +182,17 @@ def api_client(
     fake_station_repository: FakeStationRepository,
     fake_gtfs_schedule: FakeGTFSScheduleService,
 ) -> TestClient:
+    """Create test client with dependencies mocked.
+
+    Note: This uses the full app which includes rate limiter middleware
+    that requires Valkey. If Valkey is unavailable, tests will be skipped
+    with a helpful message.
+    """
+    from tests.service_availability import skip_if_no_valkey
+
+    # Check Valkey availability before creating client
+    skip_if_no_valkey()
+
     app = create_app()
     app.dependency_overrides[CacheService] = lambda: fake_cache
     app.dependency_overrides[get_cache_service] = lambda: fake_cache

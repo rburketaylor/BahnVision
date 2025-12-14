@@ -16,6 +16,32 @@ from app.services.cache import get_cache_service  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.services.cache import CacheService  # noqa: E402
 
+# Import service availability helpers for use in tests
+from tests.service_availability import (  # noqa: E402, F401
+    is_valkey_available,
+    is_postgres_available,
+    skip_if_no_valkey,
+    skip_if_no_postgres,
+    skip_if_no_services,
+    requires_valkey,
+    requires_postgres,
+    requires_services,
+)
+
+
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line(
+        "markers", "requires_valkey: skip test if Valkey is not available"
+    )
+    config.addinivalue_line(
+        "markers", "requires_postgres: skip test if PostgreSQL is not available"
+    )
+    config.addinivalue_line(
+        "markers", "requires_services: skip test if any service is unavailable"
+    )
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+
 
 class FakeValkey:
     """In-memory Valkey replacement used for tests."""
@@ -82,7 +108,12 @@ def cache_service(fake_valkey: FakeValkey) -> CacheService:
 
 @pytest.fixture()
 def api_client(cache_service: CacheService) -> Iterator[TestClient]:
-    """Create a test client with fake cache service."""
+    """Create a test client with fake cache service.
+
+    Note: Uses full app with rate limiter middleware that requires Valkey.
+    """
+    skip_if_no_valkey()
+
     app = create_app()
     app.dependency_overrides[get_cache_service] = lambda: cache_service
     with TestClient(app) as client:
