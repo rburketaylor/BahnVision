@@ -1,29 +1,27 @@
 """
-GTFS-RT Data Harvester Service
+GTFS-RT Data Harvester Service (Streaming Aggregation)
 
-Background service for collecting and persisting GTFS-RT trip updates
-for historical analysis and heatmap aggregation.
+Background service for collecting GTFS-RT trip updates and aggregating them
+in place using streaming upserts for efficient storage.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import httpx
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory
-from app.persistence.models import (
-    ScheduleRelationship,
-    StationAggregation,
-    TripUpdateObservation,
-)
+from app.persistence.models import RealtimeStationStats, ScheduleRelationship
 
 if TYPE_CHECKING:
     from app.services.cache import CacheService
@@ -46,16 +44,16 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Delay threshold for counting a departure as "delayed" (in seconds)
-DELAY_THRESHOLD_SECONDS = 300  # 5 minutes
+# Delay thresholds (in seconds)
+DELAY_THRESHOLD_SECONDS = 300  # 5 minutes = delayed
+ON_TIME_THRESHOLD_SECONDS = 60  # 1 minute = on time
 
 
 class GTFSRTDataHarvester:
-    """Background service for collecting and persisting GTFS-RT data.
+    """Background service for collecting and aggregating GTFS-RT data.
 
-    Periodically fetches trip updates from the GTFS-RT feed and stores them
-    in the database for historical analysis. Also maintains pre-computed
-    hourly aggregations for efficient heatmap queries.
+    Uses streaming aggregation to update statistics in place, avoiding
+    the storage overhead of storing raw observations.
     """
 
     def __init__(
@@ -66,13 +64,13 @@ class GTFSRTDataHarvester:
         """Initialize the harvester.
 
         Args:
-            cache_service: Optional cache service for coordination
+            cache_service: Cache service for trip deduplication
             harvest_interval_seconds: Override default harvest interval
         """
         self.settings = get_settings()
         self._cache = cache_service
         self._harvest_interval = harvest_interval_seconds or getattr(
-            self.settings, "gtfs_rt_harvest_interval_seconds", 60
+            self.settings, "gtfs_rt_harvest_interval_seconds", 300
         )
         self._running = False
         self._task: asyncio.Task | None = None
@@ -112,10 +110,10 @@ class GTFSRTDataHarvester:
             await asyncio.sleep(self._harvest_interval)
 
     async def harvest_once(self) -> int:
-        """Perform a single harvest iteration.
+        """Perform a single harvest iteration with streaming aggregation.
 
         Returns:
-            Number of new observations recorded.
+            Number of stations updated.
         """
         if not GTFS_RT_AVAILABLE:
             logger.warning("GTFS-RT bindings not available, skipping harvest")
@@ -129,17 +127,25 @@ class GTFSRTDataHarvester:
                 logger.debug("No trip updates received")
                 return 0
 
-            # Store in database
+            # Calculate current time bucket (hourly)
+            now = datetime.now(timezone.utc)
+            bucket_start = now.replace(minute=0, second=0, microsecond=0)
+
+            # Group updates by stop_id and aggregate
+            stop_stats = await self._aggregate_by_stop(trip_updates, bucket_start)
+
+            if not stop_stats:
+                return 0
+
+            # Upsert aggregations to database
             async with AsyncSessionFactory() as session:
-                count = await self._store_observations(session, trip_updates)
+                await self._upsert_stats(session, bucket_start, stop_stats)
                 await session.commit()
 
-            logger.info("Harvested %d trip update observations", count)
-
-            # Trigger aggregation update (can run async)
-            asyncio.create_task(self._update_aggregations())
-
-            return count
+            logger.info(
+                "Harvested and aggregated stats for %d stations", len(stop_stats)
+            )
+            return len(stop_stats)
 
         except Exception as e:
             logger.error("Failed to harvest GTFS-RT data: %s", e)
@@ -192,11 +198,6 @@ class GTFSRTDataHarvester:
                             "route_id": tu.trip.route_id or "",
                             "stop_id": stop_time_update.stop_id,
                             "stop_sequence": stop_time_update.stop_sequence,
-                            "arrival_delay_seconds": (
-                                stop_time_update.arrival.delay
-                                if stop_time_update.HasField("arrival")
-                                else None
-                            ),
                             "departure_delay_seconds": (
                                 stop_time_update.departure.delay
                                 if stop_time_update.HasField("departure")
@@ -204,7 +205,6 @@ class GTFSRTDataHarvester:
                             ),
                             "schedule_relationship": schedule_rel,
                             "feed_timestamp": feed_timestamp,
-                            "route_type": None,  # Could be enriched from GTFS static
                         }
                     )
 
@@ -224,143 +224,163 @@ class GTFSRTDataHarvester:
         }
         return mapping.get(relationship, ScheduleRelationship.SCHEDULED)
 
-    async def _store_observations(
+    async def _aggregate_by_stop(
         self,
-        session: AsyncSession,
         trip_updates: list[dict],
-    ) -> int:
-        """Store trip update observations in the database.
-
-        Uses INSERT ... ON CONFLICT DO NOTHING for deduplication.
-        Batches inserts to avoid exceeding PostgreSQL's 32767 parameter limit.
-
-        Returns:
-            Number of rows inserted.
-        """
-        if not trip_updates:
-            return 0
-
-        # Each record has ~9 parameters, so batch size of 3000 is safe
-        # (3000 * 9 = 27000 < 32767)
-        BATCH_SIZE = 3000
-        total_inserted = 0
-
-        for i in range(0, len(trip_updates), BATCH_SIZE):
-            batch = trip_updates[i : i + BATCH_SIZE]
-
-            # Use PostgreSQL upsert with ON CONFLICT DO NOTHING
-            stmt = insert(TripUpdateObservation).values(batch)
-            stmt = stmt.on_conflict_do_nothing(
-                constraint="uq_trip_update_unique",
-            )
-
-            result = await session.execute(stmt)
-            total_inserted += result.rowcount or 0
-
-        return total_inserted
-
-    async def _update_aggregations(self, hours_back: int = 2) -> int:
-        """Update pre-computed station aggregations.
-
-        Recalculates aggregations for recent time buckets.
+        bucket_start: datetime,
+    ) -> dict[str, dict]:
+        """Aggregate trip updates by stop_id with deduplication.
 
         Args:
-            hours_back: Number of hours to recalculate
+            trip_updates: List of parsed trip updates
+            bucket_start: Start of the current time bucket
 
         Returns:
-            Number of aggregation rows upserted.
+            Dict mapping stop_id -> aggregated statistics
         """
-        async with AsyncSessionFactory() as session:
-            now = datetime.now(timezone.utc)
-            start_time = now - timedelta(hours=hours_back)
+        stop_stats: dict[str, dict] = defaultdict(
+            lambda: {
+                "trips": set(),
+                "delays": [],
+                "delayed": 0,
+                "on_time": 0,
+                "cancelled": 0,
+            }
+        )
 
-            # Calculate hourly buckets
-            count = 0
-            current_bucket = start_time.replace(minute=0, second=0, microsecond=0)
+        for update in trip_updates:
+            stop_id = update["stop_id"]
+            trip_id = update["trip_id"]
 
-            while current_bucket < now:
-                bucket_end = current_bucket + timedelta(hours=1)
+            # Track unique trips
+            stop_stats[stop_id]["trips"].add(trip_id)
 
-                # Query aggregated stats for this bucket
-                stmt = (
-                    select(
-                        TripUpdateObservation.stop_id,
-                        func.count().label("total_departures"),
-                        func.sum(
-                            case(
-                                (
-                                    TripUpdateObservation.schedule_relationship
-                                    == ScheduleRelationship.CANCELED,
-                                    1,
-                                ),
-                                else_=0,
-                            )
-                        ).label("cancelled_count"),
-                        func.sum(
-                            case(
-                                (
-                                    func.coalesce(
-                                        TripUpdateObservation.departure_delay_seconds, 0
-                                    )
-                                    > DELAY_THRESHOLD_SECONDS,
-                                    1,
-                                ),
-                                else_=0,
-                            )
-                        ).label("delayed_count"),
-                        func.avg(
-                            func.coalesce(
-                                TripUpdateObservation.departure_delay_seconds, 0
-                            )
-                        ).label("avg_delay_seconds"),
-                        TripUpdateObservation.route_type,
-                    )
-                    .where(TripUpdateObservation.feed_timestamp >= current_bucket)
-                    .where(TripUpdateObservation.feed_timestamp < bucket_end)
-                    .group_by(
-                        TripUpdateObservation.stop_id, TripUpdateObservation.route_type
-                    )
-                )
+            # Get delay value
+            delay = update.get("departure_delay_seconds") or 0
+            stop_stats[stop_id]["delays"].append(delay)
 
-                result = await session.execute(stmt)
-                rows = result.all()
+            # Classify the observation
+            if update["schedule_relationship"] == ScheduleRelationship.CANCELED:
+                stop_stats[stop_id]["cancelled"] += 1
+            elif delay > DELAY_THRESHOLD_SECONDS:
+                stop_stats[stop_id]["delayed"] += 1
+            elif abs(delay) < ON_TIME_THRESHOLD_SECONDS:
+                stop_stats[stop_id]["on_time"] += 1
 
-                # Upsert aggregation rows
-                for row in rows:
-                    agg_stmt = insert(StationAggregation).values(
-                        stop_id=row.stop_id,
-                        bucket_start=current_bucket,
-                        bucket_width_minutes=60,
-                        total_departures=row.total_departures or 0,
-                        cancelled_count=row.cancelled_count or 0,
-                        delayed_count=row.delayed_count or 0,
-                        avg_delay_seconds=float(row.avg_delay_seconds or 0),
-                        route_type=row.route_type,
-                    )
-                    agg_stmt = agg_stmt.on_conflict_do_update(
-                        constraint="uq_station_agg_unique",
-                        set_={
-                            "total_departures": agg_stmt.excluded.total_departures,
-                            "cancelled_count": agg_stmt.excluded.cancelled_count,
-                            "delayed_count": agg_stmt.excluded.delayed_count,
-                            "avg_delay_seconds": agg_stmt.excluded.avg_delay_seconds,
-                            "updated_at": func.now(),
-                        },
-                    )
-                    await session.execute(agg_stmt)
-                    count += 1
+        # Count new trips using cache deduplication
+        for stop_id, stats in stop_stats.items():
+            new_trip_count = await self._count_new_trips(
+                bucket_start, stop_id, stats["trips"]
+            )
+            stats["new_trip_count"] = new_trip_count
 
-                current_bucket = bucket_end
+        return dict(stop_stats)
 
-            await session.commit()
-            logger.debug("Updated %d aggregation rows", count)
-            return count
+    async def _count_new_trips(
+        self,
+        bucket_start: datetime,
+        stop_id: str,
+        trip_ids: set[str],
+    ) -> int:
+        """Count trips not seen in this bucket yet using Valkey cache.
 
-    async def cleanup_old_observations(
+        Args:
+            bucket_start: Time bucket start
+            stop_id: Stop ID for the bucket
+            trip_ids: Set of trip IDs to check
+
+        Returns:
+            Number of new (unseen) trips
+        """
+        if not self._cache or not trip_ids:
+            # Without cache, count all as new (less accurate but functional)
+            return len(trip_ids)
+
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        new_count = 0
+
+        for trip_id in trip_ids:
+            # Create a unique cache key for this trip in this bucket
+            cache_key = (
+                f"gtfs_rt_trip:{bucket_key}:{stop_id}:{self._hash_trip_id(trip_id)}"
+            )
+
+            try:
+                # Check if we've seen this trip
+                seen = await self._cache.get(cache_key)
+                if not seen:
+                    # Mark as seen with TTL slightly longer than bucket
+                    await self._cache.set(cache_key, "1", ttl_seconds=7200)  # 2 hours
+                    new_count += 1
+            except Exception as e:
+                logger.debug("Cache operation failed: %s", e)
+                new_count += 1  # Assume new on cache failure
+
+        return new_count
+
+    def _hash_trip_id(self, trip_id: str) -> str:
+        """Create a short hash of trip_id to reduce cache key size."""
+        return hashlib.md5(trip_id.encode(), usedforsecurity=False).hexdigest()[:12]
+
+    async def _upsert_stats(
+        self,
+        session: AsyncSession,
+        bucket_start: datetime,
+        stop_stats: dict[str, dict],
+    ) -> None:
+        """Upsert aggregated stats to database using ON CONFLICT DO UPDATE.
+
+        Args:
+            session: Database session
+            bucket_start: Time bucket start
+            stop_stats: Aggregated stats by stop_id
+        """
+        for stop_id, stats in stop_stats.items():
+            total_delay = sum(stats["delays"]) if stats["delays"] else 0
+
+            stmt = insert(RealtimeStationStats).values(
+                stop_id=stop_id,
+                bucket_start=bucket_start,
+                bucket_width_minutes=60,
+                observation_count=1,
+                trip_count=stats.get("new_trip_count", len(stats["trips"])),
+                total_delay_seconds=total_delay,
+                delayed_count=stats["delayed"],
+                on_time_count=stats["on_time"],
+                cancelled_count=stats["cancelled"],
+            )
+
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_realtime_stats_unique",
+                set_={
+                    "observation_count": RealtimeStationStats.observation_count + 1,
+                    "trip_count": (
+                        RealtimeStationStats.trip_count
+                        + stats.get("new_trip_count", len(stats["trips"]))
+                    ),
+                    "total_delay_seconds": (
+                        RealtimeStationStats.total_delay_seconds + total_delay
+                    ),
+                    "delayed_count": (
+                        RealtimeStationStats.delayed_count + stats["delayed"]
+                    ),
+                    "on_time_count": (
+                        RealtimeStationStats.on_time_count + stats["on_time"]
+                    ),
+                    "cancelled_count": (
+                        RealtimeStationStats.cancelled_count + stats["cancelled"]
+                    ),
+                    "last_updated_at": func.now(),
+                },
+            )
+
+            await session.execute(stmt)
+
+    async def cleanup_old_stats(
         self,
         retention_days: int | None = None,
     ) -> int:
-        """Remove observations older than retention period.
+        """Remove stats older than retention period.
 
         Args:
             retention_days: Days to retain (defaults to config setting)
@@ -369,22 +389,20 @@ class GTFSRTDataHarvester:
             Number of rows deleted.
         """
         days = retention_days or getattr(
-            self.settings, "gtfs_rt_observation_retention_days", 30
+            self.settings, "gtfs_rt_stats_retention_days", 90
         )
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
         async with AsyncSessionFactory() as session:
-            stmt = delete(TripUpdateObservation).where(
-                TripUpdateObservation.feed_timestamp < cutoff
+            stmt = delete(RealtimeStationStats).where(
+                RealtimeStationStats.bucket_start < cutoff
             )
             result = await session.execute(stmt)
             await session.commit()
 
             count = result.rowcount or 0
             if count > 0:
-                logger.info(
-                    "Cleaned up %d observations older than %d days", count, days
-                )
+                logger.info("Cleaned up %d stat rows older than %d days", count, days)
             return count
 
 
@@ -394,7 +412,7 @@ def get_gtfs_rt_harvester(
     """Factory function for GTFSRTDataHarvester.
 
     Args:
-        cache_service: Optional cache service
+        cache_service: Optional cache service for trip deduplication
 
     Returns:
         Configured harvester instance
