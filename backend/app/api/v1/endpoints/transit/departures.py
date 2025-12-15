@@ -32,7 +32,7 @@ def _departure_info_to_response(dep: DepartureInfo) -> TransitDeparture:
     """Convert internal DepartureInfo to API response model."""
     # Convert alert objects to strings
     alerts = []
-    for alert in dep.alerts:
+    for alert in dep.alerts or []:
         if hasattr(alert, "header_text"):
             alerts.append(alert.header_text)
         elif isinstance(alert, str):

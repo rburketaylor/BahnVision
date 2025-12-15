@@ -47,9 +47,11 @@ class TimeRange(BaseModel):
     """Time range specification."""
 
     from_time: datetime = Field(
-        ..., alias="from", description="Start of time range (UTC)."
+        ..., description="Start of time range (UTC).", serialization_alias="from"
     )
-    to_time: datetime = Field(..., alias="to", description="End of time range (UTC).")
+    to_time: datetime = Field(
+        ..., description="End of time range (UTC).", serialization_alias="to"
+    )
 
     model_config = {"populate_by_name": True}
 

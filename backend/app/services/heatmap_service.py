@@ -373,7 +373,7 @@ class HeatmapService:
                     )
                     stop_stats[stop_id]["by_transport"][transport_type][
                         "cancelled"
-                    ] += (row.cancelled_count or 0)
+                    ] += row.cancelled_count or 0
 
             # Convert to HeatmapDataPoint
             data_points = []
@@ -560,9 +560,9 @@ class HeatmapService:
 
         most_affected_line = None
         highest_line_rate = 0.0
-        for line, stats in line_stats.items():
-            if stats["total"] >= 100:  # Minimum threshold
-                rate = stats["cancelled"] / stats["total"]
+        for line, line_stat in line_stats.items():
+            if line_stat["total"] >= 100:  # Minimum threshold
+                rate = line_stat["cancelled"] / line_stat["total"]
                 if rate > highest_line_rate:
                     highest_line_rate = rate
                     most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)

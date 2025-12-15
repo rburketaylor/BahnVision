@@ -107,7 +107,7 @@ class GTFSRTDataHarvester:
             except Exception as e:
                 logger.error("Harvester iteration failed: %s", e)
 
-            await asyncio.sleep(self._harvest_interval)
+            await asyncio.sleep(self._harvest_interval)  # type: ignore[arg-type]
 
     async def harvest_once(self) -> int:
         """Perform a single harvest iteration with streaming aggregation.
@@ -307,10 +307,10 @@ class GTFSRTDataHarvester:
 
             try:
                 # Check if we've seen this trip
-                seen = await self._cache.get(cache_key)
+                seen = await self._cache.get(cache_key)  # type: ignore[attr-defined]
                 if not seen:
                     # Mark as seen with TTL slightly longer than bucket
-                    await self._cache.set(cache_key, "1", ttl_seconds=7200)  # 2 hours
+                    await self._cache.set(cache_key, "1", ttl_seconds=7200)  # type: ignore[attr-defined]  # 2 hours
                     new_count += 1
             except Exception as e:
                 logger.debug("Cache operation failed: %s", e)
@@ -388,9 +388,10 @@ class GTFSRTDataHarvester:
         Returns:
             Number of rows deleted.
         """
-        days = retention_days or getattr(
+        days_value = retention_days or getattr(
             self.settings, "gtfs_rt_stats_retention_days", 90
         )
+        days: int = int(days_value) if days_value is not None else 90
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
         async with AsyncSessionFactory() as session:
