@@ -1,3 +1,6 @@
+## Dev-friendly defaults live in this file so `docker compose up --build` works out of the box.
+## See `.env.example` for configuration options.
+
 services:
   frontend:
     build:
@@ -31,7 +34,7 @@ services:
       VALKEY_URL: ${VALKEY_URL:-valkey://valkey:6379/0}
       VALKEY_CACHE_TTL_SECONDS: ${VALKEY_CACHE_TTL_SECONDS:-30}
       VALKEY_CACHE_TTL_NOT_FOUND_SECONDS: ${VALKEY_CACHE_TTL_NOT_FOUND_SECONDS:-15}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://bahnvision:bahnvision@postgres:5432/bahnvision}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-bahnvision}:${POSTGRES_PASSWORD:-bahnvision}@postgres:5432/${POSTGRES_DB:-bahnvision}}
       GTFS_STORAGE_PATH: /data/gtfs
     volumes:
       - gtfs_data:/data/gtfs
@@ -44,11 +47,11 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: bahnvision
-      POSTGRES_PASSWORD: bahnvision
-      POSTGRES_DB: bahnvision
+      POSTGRES_USER: ${POSTGRES_USER:-bahnvision}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bahnvision}
+      POSTGRES_DB: ${POSTGRES_DB:-bahnvision}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U bahnvision" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bahnvision}" ]
       interval: 10s
       timeout: 5s
       retries: 5
