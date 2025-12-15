@@ -18,13 +18,25 @@ async def test_async_session_factory_executes_simple_query():
     """Test that async session factory can execute queries.
 
     This test requires a running PostgreSQL database.
+    Uses a dedicated engine to avoid connection pool conflicts with other tests.
     """
     skip_if_no_postgres()
 
-    async with database.AsyncSessionFactory() as session:
-        result = await session.execute(text("SELECT 1"))
-        assert result.scalar_one() == 1
-        assert session.bind is database.engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    test_engine = create_async_engine(settings.database_url, pool_size=1)
+    TestSessionFactory = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    try:
+        async with TestSessionFactory() as session:
+            result = await session.execute(text("SELECT 1"))
+            assert result.scalar_one() == 1
+            assert session.bind is test_engine
+    finally:
+        await test_engine.dispose()
 
 
 def test_build_engine_uses_settings(monkeypatch):
