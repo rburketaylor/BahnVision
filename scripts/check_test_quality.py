@@ -61,6 +61,7 @@ def _function_has_assertions(func_node: ast.FunctionDef | ast.AsyncFunctionDef) 
     assert_attrs = {
         # pytest assertions
         "assert",
+        "fail",  # pytest.fail()
         # unittest assertions
         "assertEqual", "assertNotEqual", "assertTrue", "assertFalse",
         "assertIs", "assertIsNot", "assertIsNone", "assertIsNotNone",

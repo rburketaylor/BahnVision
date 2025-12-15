@@ -31,9 +31,9 @@ class FakeCacheService:
 
     def __init__(self) -> None:
         self._cache: dict[str, CacheScenario] = {}
-        self.recorded_sets: list[tuple[str, dict[str, Any], int | None, int | None]] = (
-            []
-        )
+        self.recorded_sets: list[
+            tuple[str, dict[str, Any], int | None, int | None]
+        ] = []
         self._lock_timeout = False
 
     def configure(self, key: str, scenario: CacheScenario) -> None:
