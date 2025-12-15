@@ -83,7 +83,6 @@ cd frontend && npm test
 │       ├── hooks/
 │       └── services/
 ├── docs/                 # Documentation
-└── examples/             # K8s, monitoring configs
 ```
 
 ## Architecture
