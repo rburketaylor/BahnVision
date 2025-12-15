@@ -147,7 +147,9 @@ describe('useHeatmap', () => {
     })
 
     await waitFor(() => {
-      const query = queryClient.getQueryCache().find({ queryKey: ['heatmap', 'cancellations', params] })
+      const query = queryClient
+        .getQueryCache()
+        .find({ queryKey: ['heatmap', 'cancellations', params] })
       expect(query).toBeDefined()
     })
   })

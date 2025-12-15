@@ -3,14 +3,8 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
-    "types": [
-      "node",
-      "@playwright/test"
-    ],
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "@playwright/test"],
     "allowJs": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -19,8 +13,5 @@
     "skipLibCheck": true,
     "strict": true
   },
-  "include": [
-    "playwright.config.ts",
-    "tests/e2e/**/*.ts"
-  ]
+  "include": ["playwright.config.ts", "tests/e2e/**/*.ts"]
 }

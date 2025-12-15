@@ -70,4 +70,3 @@ test.describe('Primary user journeys', () => {
     await expect(page.getByRole('table')).toContainText('Moosach')
   })
 })
-

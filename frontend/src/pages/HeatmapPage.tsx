@@ -99,7 +99,6 @@ export default function HeatmapPage() {
         </div>
       )}
 
-
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Map - takes up 3/4 of the space on large screens */}
@@ -134,7 +133,6 @@ export default function HeatmapPage() {
             </div>
           )}
           */}
-
         </div>
 
         {/* Sidebar - controls, legend, and stats */}
@@ -157,8 +155,15 @@ export default function HeatmapPage() {
       <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
         <p>
           <strong>Data source:</strong> GTFS schedule data from{' '}
-          <a href="https://gtfs.de" className="underline hover:text-foreground" target="_blank" rel="noopener noreferrer">gtfs.de</a>.
-          Updated daily.
+          <a
+            href="https://gtfs.de"
+            className="underline hover:text-foreground"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            gtfs.de
+          </a>
+          . Updated daily.
         </p>
       </div>
     </div>
