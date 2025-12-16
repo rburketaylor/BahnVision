@@ -28,6 +28,14 @@ class FakeCache:
     async def set(self, key: str, value: str, ttl_seconds: int | None = None):
         self._store[key] = value
 
+    async def mget(self, keys: list[str]) -> dict[str, str | None]:
+        """Batch get multiple keys."""
+        return {key: self._store.get(key) for key in keys}
+
+    async def mset(self, items: dict[str, str], ttl_seconds: int | None = None):
+        """Batch set multiple key-value pairs."""
+        self._store.update(items)
+
 
 class TestGTFSRTDataHarvester:
     """Tests for GTFSRTDataHarvester."""
