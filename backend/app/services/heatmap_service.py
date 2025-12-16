@@ -221,7 +221,7 @@ class HeatmapService:
 
         if not stops:
             return HeatmapResponse(
-                time_range=TimeRange(from_time=from_time, to_time=to_time),
+                time_range=TimeRange.model_validate({"from": from_time, "to": to_time}),
                 data_points=[],
                 summary=HeatmapSummary(
                     total_stations=0,
@@ -254,17 +254,22 @@ class HeatmapService:
             logger.info("No historical data available, using simulated data")
             data_points = self._aggregate_station_data_simulated(stops, transport_types)
 
-        # Filter to stations with significant data
+        # Filter to stations with significant data (delays or cancellations)
         data_points = [
             dp
             for dp in data_points
             if dp.total_departures >= MIN_DEPARTURES
-            and dp.cancellation_rate >= MIN_CANCELLATION_RATE
+            and (
+                dp.delay_rate >= 0.05
+                or dp.cancellation_rate >= MIN_CANCELLATION_RATE
+                or dp.total_departures >= 100
+            )
         ]
 
-        # Sort by impact (cancellation rate * departures) and limit
+        # Sort by impact (combined delay + cancellation rate, weighted by departures)
         data_points.sort(
-            key=lambda x: x.cancellation_rate * x.total_departures, reverse=True
+            key=lambda x: (x.delay_rate + x.cancellation_rate) * x.total_departures,
+            reverse=True,
         )
         data_points = data_points[:max_points]
 
@@ -272,7 +277,7 @@ class HeatmapService:
         summary = self._calculate_summary(data_points)
 
         return HeatmapResponse(
-            time_range=TimeRange(from_time=from_time, to_time=to_time),
+            time_range=TimeRange.model_validate({"from": from_time, "to": to_time}),
             data_points=data_points,
             summary=summary,
         )
@@ -354,11 +359,13 @@ class HeatmapService:
                         "stop_info": stop_info,
                         "total_departures": 0,
                         "cancelled_count": 0,
+                        "delayed_count": 0,
                         "by_transport": {},
                     }
 
                 stop_stats[stop_id]["total_departures"] += row.total_departures or 0
                 stop_stats[stop_id]["cancelled_count"] += row.cancelled_count or 0
+                stop_stats[stop_id]["delayed_count"] += row.delayed_count or 0
 
                 # Track by transport type
                 if row.route_type is not None:
@@ -367,6 +374,7 @@ class HeatmapService:
                         stop_stats[stop_id]["by_transport"][transport_type] = {
                             "total": 0,
                             "cancelled": 0,
+                            "delayed": 0,
                         }
                     stop_stats[stop_id]["by_transport"][transport_type]["total"] += (
                         row.total_departures or 0
@@ -374,6 +382,9 @@ class HeatmapService:
                     stop_stats[stop_id]["by_transport"][transport_type][
                         "cancelled"
                     ] += row.cancelled_count or 0
+                    stop_stats[stop_id]["by_transport"][transport_type]["delayed"] += (
+                        row.delayed_count or 0
+                    )
 
             # Convert to HeatmapDataPoint
             data_points = []
@@ -381,10 +392,16 @@ class HeatmapService:
                 stop_info = stats["stop_info"]
                 total = stats["total_departures"]
                 cancelled = stats["cancelled_count"]
-                rate = cancelled / total if total > 0 else 0
+                delayed = stats["delayed_count"]
+                cancellation_rate = cancelled / total if total > 0 else 0
+                delay_rate = delayed / total if total > 0 else 0
 
                 by_transport = {
-                    tt: TransportStats(total=ts["total"], cancelled=ts["cancelled"])
+                    tt: TransportStats(
+                        total=ts["total"],
+                        cancelled=ts["cancelled"],
+                        delayed=ts["delayed"],
+                    )
                     for tt, ts in stats["by_transport"].items()
                 }
 
@@ -396,7 +413,9 @@ class HeatmapService:
                         longitude=stop_info.stop_lon,
                         total_departures=total,
                         cancelled_count=cancelled,
-                        cancellation_rate=rate,
+                        cancellation_rate=cancellation_rate,
+                        delayed_count=delayed,
+                        delay_rate=delay_rate,
                         by_transport=by_transport,
                     )
                 )
@@ -463,41 +482,54 @@ class HeatmapService:
             total_departures = base_departures + (stop_hash % 200)
 
             # Calculate cancellation rate (typically 1-5%, higher for some stations)
-            base_rate = 0.02 + (stop_hash % 100) / 3000
+            base_cancellation_rate = 0.02 + (stop_hash % 100) / 3000
             if stop_hash % 20 == 0:  # Some stations have higher issues
-                base_rate += 0.03
+                base_cancellation_rate += 0.03
 
-            cancelled_count = int(total_departures * min(base_rate, 0.15))
+            cancelled_count = int(total_departures * min(base_cancellation_rate, 0.15))
+
+            # Generate delay rate (typically 5-15%, higher than cancellations)
+            base_delay_rate = 0.08 + (stop_hash % 100) / 2000
+            if stop_hash % 15 == 0:  # Some stations have more delays
+                base_delay_rate += 0.05
+
+            delayed_count = int(total_departures * min(base_delay_rate, 0.25))
 
             # Generate transport breakdown
             by_transport: dict[str, TransportStats] = {}
 
             remaining_departures = total_departures
             remaining_cancellations = cancelled_count
+            remaining_delays = delayed_count
 
             for i, tt in enumerate(active_types):
                 if i == len(active_types) - 1:
                     # Last transport type gets remaining
                     tt_departures = remaining_departures
                     tt_cancellations = remaining_cancellations
+                    tt_delays = remaining_delays
                 else:
                     # Distribute based on hash
                     ratio = ((stop_hash >> (i * 4)) % 10 + 1) / 10
                     tt_departures = int(remaining_departures * ratio * 0.3)
                     tt_cancellations = int(remaining_cancellations * ratio * 0.3)
+                    tt_delays = int(remaining_delays * ratio * 0.3)
 
                     remaining_departures -= tt_departures
                     remaining_cancellations -= tt_cancellations
+                    remaining_delays -= tt_delays
 
                 if tt_departures > 0:
                     by_transport[tt] = TransportStats(
                         total=tt_departures,
                         cancelled=max(0, tt_cancellations),
+                        delayed=max(0, tt_delays),
                     )
 
             cancellation_rate = (
                 cancelled_count / total_departures if total_departures > 0 else 0
             )
+            delay_rate = delayed_count / total_departures if total_departures > 0 else 0
 
             data_points.append(
                 HeatmapDataPoint(
@@ -508,6 +540,8 @@ class HeatmapService:
                     total_departures=total_departures,
                     cancelled_count=cancelled_count,
                     cancellation_rate=cancellation_rate,
+                    delayed_count=delayed_count,
+                    delay_rate=delay_rate,
                     by_transport=by_transport,
                 )
             )
@@ -532,21 +566,30 @@ class HeatmapService:
                 total_departures=0,
                 total_cancellations=0,
                 overall_cancellation_rate=0.0,
+                total_delays=0,
+                overall_delay_rate=0.0,
                 most_affected_station=None,
                 most_affected_line=None,
             )
 
         total_departures = sum(dp.total_departures for dp in data_points)
         total_cancellations = sum(dp.cancelled_count for dp in data_points)
-        overall_rate = (
+        total_delays = sum(dp.delayed_count for dp in data_points)
+        overall_cancellation_rate = (
             total_cancellations / total_departures if total_departures > 0 else 0
         )
+        overall_delay_rate = (
+            total_delays / total_departures if total_departures > 0 else 0
+        )
 
-        # Find most affected station (by rate, with minimum departures threshold)
+        # Find most affected station (by combined delay+cancellation rate)
         affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
         most_affected_station = None
         if affected_stations:
-            most_affected = max(affected_stations, key=lambda x: x.cancellation_rate)
+            most_affected = max(
+                affected_stations,
+                key=lambda x: x.delay_rate + x.cancellation_rate,
+            )
             most_affected_station = most_affected.station_name
 
         # Find most affected line (aggregate by transport type)
@@ -554,24 +597,29 @@ class HeatmapService:
         for dp in data_points:
             for transport, stats in dp.by_transport.items():
                 if transport not in line_stats:
-                    line_stats[transport] = {"total": 0, "cancelled": 0}
+                    line_stats[transport] = {"total": 0, "cancelled": 0, "delayed": 0}
                 line_stats[transport]["total"] += stats.total
                 line_stats[transport]["cancelled"] += stats.cancelled
+                line_stats[transport]["delayed"] += stats.delayed
 
         most_affected_line = None
         highest_line_rate = 0.0
         for line, line_stat in line_stats.items():
             if line_stat["total"] >= 100:  # Minimum threshold
-                rate = line_stat["cancelled"] / line_stat["total"]
-                if rate > highest_line_rate:
-                    highest_line_rate = rate
+                combined_rate = (
+                    line_stat["cancelled"] + line_stat["delayed"]
+                ) / line_stat["total"]
+                if combined_rate > highest_line_rate:
+                    highest_line_rate = combined_rate
                     most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)
 
         return HeatmapSummary(
             total_stations=len(data_points),
             total_departures=total_departures,
             total_cancellations=total_cancellations,
-            overall_cancellation_rate=overall_rate,
+            overall_cancellation_rate=overall_cancellation_rate,
+            total_delays=total_delays,
+            overall_delay_rate=overall_delay_rate,
             most_affected_station=most_affected_station,
             most_affected_line=most_affected_line,
         )
