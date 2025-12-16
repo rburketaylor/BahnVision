@@ -4,14 +4,16 @@
  */
 
 import type { TransportType } from '../../types/api'
-import type { TimeRangePreset } from '../../types/heatmap'
-import { TIME_RANGE_LABELS } from '../../types/heatmap'
+import type { TimeRangePreset, HeatmapMetric } from '../../types/heatmap'
+import { TIME_RANGE_LABELS, HEATMAP_METRIC_LABELS } from '../../types/heatmap'
 
 interface HeatmapControlsProps {
   timeRange: TimeRangePreset
   onTimeRangeChange: (range: TimeRangePreset) => void
   selectedTransportModes: TransportType[]
   onTransportModesChange: (modes: TransportType[]) => void
+  metric: HeatmapMetric
+  onMetricChange: (metric: HeatmapMetric) => void
   isLoading?: boolean
 }
 
@@ -30,6 +32,8 @@ export function HeatmapControls({
   onTimeRangeChange,
   selectedTransportModes,
   onTransportModesChange,
+  metric,
+  onMetricChange,
   isLoading = false,
 }: HeatmapControlsProps) {
   const toggleTransportMode = (mode: TransportType) => {
@@ -68,6 +72,27 @@ export function HeatmapControls({
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {TIME_RANGE_LABELS[range]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Metric Selection */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground">Metric</label>
+        <div className="flex flex-wrap gap-2">
+          {(['cancellations', 'delays'] as HeatmapMetric[]).map(m => (
+            <button
+              key={m}
+              onClick={() => onMetricChange(m)}
+              disabled={isLoading}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                metric === m
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {HEATMAP_METRIC_LABELS[m]}
             </button>
           ))}
         </div>

@@ -7,7 +7,7 @@ import { useState, lazy, Suspense } from 'react'
 import { useHeatmap } from '../hooks/useHeatmap'
 import { HeatmapControls, HeatmapLegend, HeatmapStats } from '../components/heatmap'
 import type { TransportType } from '../types/api'
-import type { TimeRangePreset } from '../types/heatmap'
+import type { TimeRangePreset, HeatmapMetric } from '../types/heatmap'
 import { DEFAULT_ZOOM } from '../types/heatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
@@ -32,6 +32,7 @@ export default function HeatmapPage() {
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
   const [selectedStation, setSelectedStation] = useState<string | null>(null)
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM) // Default zoom
+  const [metric, setMetric] = useState<HeatmapMetric>('cancellations')
 
   const { data, isLoading, error, refetch } = useHeatmap(
     {
@@ -114,6 +115,7 @@ export default function HeatmapPage() {
                 selectedStation={selectedStation}
                 onStationSelect={setSelectedStation}
                 onZoomChange={setZoom}
+                metric={metric}
               />
             </Suspense>
           </div>
@@ -142,12 +144,14 @@ export default function HeatmapPage() {
             onTimeRangeChange={setTimeRange}
             selectedTransportModes={transportModes}
             onTransportModesChange={setTransportModes}
+            metric={metric}
+            onMetricChange={setMetric}
             isLoading={isLoading}
           />
 
-          <HeatmapLegend />
+          <HeatmapLegend metric={metric} />
 
-          <HeatmapStats summary={summary} isLoading={isLoading} />
+          <HeatmapStats summary={summary} isLoading={isLoading} metric={metric} />
         </div>
       </div>
 

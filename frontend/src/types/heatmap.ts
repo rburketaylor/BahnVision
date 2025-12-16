@@ -9,6 +9,15 @@ import type { TransportType } from './api'
 export interface TransportStats {
   total: number
   cancelled: number
+  delayed?: number
+}
+
+/** Heatmap metric types */
+export type HeatmapMetric = 'cancellations' | 'delays'
+
+export const HEATMAP_METRIC_LABELS: Record<HeatmapMetric, string> = {
+  cancellations: 'Cancellations',
+  delays: 'Delays',
 }
 
 /** A single data point representing cancellation data for a station */
@@ -20,6 +29,8 @@ export interface HeatmapDataPoint {
   total_departures: number
   cancelled_count: number
   cancellation_rate: number
+  delayed_count?: number
+  delay_rate?: number
   by_transport: Record<string, TransportStats>
 }
 
@@ -35,6 +46,8 @@ export interface HeatmapSummary {
   total_departures: number
   total_cancellations: number
   overall_cancellation_rate: number
+  total_delays?: number
+  overall_delay_rate?: number
   most_affected_station: string | null
   most_affected_line: string | null
 }

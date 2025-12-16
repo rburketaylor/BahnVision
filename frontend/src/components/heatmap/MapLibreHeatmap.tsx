@@ -1,17 +1,18 @@
 /**
  * MapLibre Heatmap Component
- * Interactive MapLibre GL JS map with heatmap overlay for cancellation data
+ * Interactive MapLibre GL JS map with heatmap overlay for cancellation/delay data
  *
  * Features:
  * - Vector tiles from OpenFreeMap (no API key required)
  * - Native MapLibre heatmap layer (WebGL-based)
  * - GeoJSON clustering for station markers
  * - Smooth zoom and pan
+ * - Support for both cancellation and delay metrics
  */
 
 import { useEffect, useRef, useCallback, useMemo } from 'react'
 import maplibregl from 'maplibre-gl'
-import type { HeatmapDataPoint } from '../../types/heatmap'
+import type { HeatmapDataPoint, HeatmapMetric } from '../../types/heatmap'
 import { GERMANY_CENTER, DEFAULT_ZOOM } from '../../types/heatmap'
 
 // OpenFreeMap style URL - free vector tiles, no API key needed
@@ -19,6 +20,7 @@ const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 
 interface MapLibreHeatmapProps {
   dataPoints: HeatmapDataPoint[]
+  metric: HeatmapMetric
   isLoading?: boolean
   selectedStation?: string | null
   onStationSelect?: (stationId: string | null) => void
@@ -29,7 +31,10 @@ interface MapLibreHeatmapProps {
  * Convert HeatmapDataPoint array to GeoJSON FeatureCollection
  * Note: GeoJSON uses [lng, lat] order, opposite of Leaflet's [lat, lng]
  */
-function toGeoJSON(dataPoints: HeatmapDataPoint[]): GeoJSON.FeatureCollection {
+function toGeoJSON(
+  dataPoints: HeatmapDataPoint[],
+  metric: HeatmapMetric
+): GeoJSON.FeatureCollection {
   // Filter out invalid points and ensure all numeric values are valid
   const validPoints = dataPoints.filter(
     point =>
@@ -41,37 +46,51 @@ function toGeoJSON(dataPoints: HeatmapDataPoint[]): GeoJSON.FeatureCollection {
 
   return {
     type: 'FeatureCollection',
-    features: validPoints.map(point => ({
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [point.longitude, point.latitude], // [lng, lat] for GeoJSON
-      },
-      properties: {
-        station_id: point.station_id ?? '',
-        station_name: point.station_name ?? 'Unknown',
-        cancellation_rate: point.cancellation_rate ?? 0,
-        total_departures: point.total_departures ?? 0,
-        cancelled_count: point.cancelled_count ?? 0,
-        // Pre-calculate intensity for heatmap (0-1 scale)
-        intensity: Math.min((point.cancellation_rate ?? 0) * 10, 1),
-      },
-    })),
+    features: validPoints.map(point => {
+      const cancellationRate = point.cancellation_rate ?? 0
+      const delayRate = point.delay_rate ?? 0
+      const rate = metric === 'delays' ? delayRate : cancellationRate
+
+      // Calculate intensity based on metric-specific scaling
+      // Cancellations: saturate at 10% (rate * 10)
+      // Delays: saturate at 20% (rate * 5)
+      const intensity = metric === 'delays' ? Math.min(rate * 5, 1) : Math.min(rate * 10, 1)
+
+      return {
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [point.longitude, point.latitude], // [lng, lat] for GeoJSON
+        },
+        properties: {
+          station_id: point.station_id ?? '',
+          station_name: point.station_name ?? 'Unknown',
+          cancellation_rate: cancellationRate,
+          delay_rate: delayRate,
+          rate: rate, // Active rate based on selected metric
+          total_departures: point.total_departures ?? 0,
+          cancelled_count: point.cancelled_count ?? 0,
+          delayed_count: point.delayed_count ?? 0,
+          intensity: intensity,
+        },
+      }
+    }),
   }
 }
 
 /**
- * Get marker color based on cancellation severity
+ * Get marker color based on normalized intensity (0..1).
  */
-function getMarkerColor(rate: number): string {
-  if (rate > 0.1) return '#ef4444' // red
-  if (rate > 0.05) return '#f97316' // orange
-  if (rate > 0.03) return '#eab308' // yellow
+function getMarkerColor(intensity: number): string {
+  if (intensity > 0.8) return '#ef4444' // red
+  if (intensity > 0.6) return '#f97316' // orange
+  if (intensity > 0.4) return '#eab308' // yellow
   return '#22c55e' // green
 }
 
 export function MapLibreHeatmap({
   dataPoints,
+  metric,
   isLoading = false,
   onStationSelect,
   onZoomChange,
@@ -79,11 +98,16 @@ export function MapLibreHeatmap({
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
+  const metricRef = useRef(metric)
+
+  useEffect(() => {
+    metricRef.current = metric
+  }, [metric])
 
   // Memoize GeoJSON conversion to avoid recalculating on every render
-  const geoJsonData = useMemo(() => toGeoJSON(dataPoints), [dataPoints])
+  const geoJsonData = useMemo(() => toGeoJSON(dataPoints, metric), [dataPoints, metric])
 
-  // Update map data when dataPoints change
+  // Update map data when dataPoints or metric change
   const updateMapData = useCallback(() => {
     const map = mapRef.current
     if (!map || !map.isStyleLoaded()) return
@@ -210,11 +234,11 @@ export function MapLibreHeatmap({
         paint: {
           'circle-color': [
             'case',
-            ['>', ['get', 'cancellation_rate'], 0.1],
+            ['>', ['get', 'intensity'], 0.8],
             '#ef4444',
-            ['>', ['get', 'cancellation_rate'], 0.05],
+            ['>', ['get', 'intensity'], 0.6],
             '#f97316',
-            ['>', ['get', 'cancellation_rate'], 0.03],
+            ['>', ['get', 'intensity'], 0.4],
             '#eab308',
             '#22c55e',
           ],
@@ -266,18 +290,28 @@ export function MapLibreHeatmap({
       if (geometry.type !== 'Point') return
 
       const coordinates = geometry.coordinates.slice() as [number, number]
-      const rate = props.cancellation_rate as number
-      const color = getMarkerColor(rate)
+      const cancellationRate = props.cancellation_rate as number
+      const delayRate = props.delay_rate as number
+      const intensity = (props.intensity as number) ?? 0
+      const color = getMarkerColor(intensity)
 
-      // Show popup
+      // Show popup with both metrics
+      const isDelaySelected = metricRef.current === 'delays'
+
       const popupContent = `
         <div class="min-w-[200px] p-2">
           <h4 class="font-semibold text-gray-900 mb-2">${props.station_name}</h4>
           <div class="space-y-1 text-sm">
             <div class="flex justify-between">
-              <span class="text-gray-600">Cancellation Rate:</span>
-              <span class="font-medium" style="color: ${color}">
-                ${(rate * 100).toFixed(1)}%
+              <span class="text-gray-600 ${!isDelaySelected ? 'font-medium' : ''}">Cancellation Rate:</span>
+              <span class="font-medium" style="color: ${!isDelaySelected ? color : '#111827'}">
+                ${(cancellationRate * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600 ${isDelaySelected ? 'font-medium' : ''}">Delay Rate:</span>
+              <span class="font-medium" style="color: ${isDelaySelected ? color : '#111827'}">
+                ${(delayRate * 100).toFixed(1)}%
               </span>
             </div>
             <div class="flex justify-between">
@@ -288,6 +322,12 @@ export function MapLibreHeatmap({
               <span class="text-gray-600">Cancellations:</span>
               <span class="font-medium text-red-600">
                 ${(props.cancelled_count as number).toLocaleString()}
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Delays:</span>
+              <span class="font-medium text-orange-600">
+                ${(props.delayed_count as number).toLocaleString()}
               </span>
             </div>
           </div>
@@ -323,7 +363,7 @@ export function MapLibreHeatmap({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update data when dataPoints change
+  // Update data when dataPoints or metric change
   useEffect(() => {
     updateMapData()
   }, [updateMapData])
