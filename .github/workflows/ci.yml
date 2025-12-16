@@ -50,13 +50,13 @@ jobs:
           restore-keys: pip-lint-${{ runner.os }}-
 
       - name: Install linting tools only
-        run: pip install ruff black
+        run: pip install ruff
 
-      - name: Run Ruff
+      - name: Run Ruff linter
         run: ruff check backend/
 
-      - name: Run Black
-        run: black --check backend/
+      - name: Run Ruff formatter
+        run: ruff format --check backend/
 
   # =============================================================================
   # TEST JOBS - Always run (deps can break things)
@@ -341,7 +341,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Start services
-        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+        run: docker compose -f docker-compose.yml up -d
 
       - name: Wait for services to be healthy
         run: |
