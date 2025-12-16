@@ -11,6 +11,8 @@ describe('HeatmapControls', () => {
     onTimeRangeChange: vi.fn(),
     selectedTransportModes: [] as TransportType[],
     onTransportModesChange: vi.fn(),
+    metric: 'cancellations' as const,
+    onMetricChange: vi.fn(),
   }
 
   it('renders time range buttons', () => {
@@ -91,6 +93,10 @@ describe('HeatmapControls', () => {
   it('disables buttons when loading', () => {
     render(<HeatmapControls {...defaultProps} isLoading={true} />)
 
+    // Metric buttons should be disabled
+    expect(screen.getByText('Cancellations')).toBeDisabled()
+    expect(screen.getByText('Delays')).toBeDisabled()
+
     // Time range buttons should be disabled
     expect(screen.getByText('Last hour')).toBeDisabled()
     expect(screen.getByText('Last 24 hours')).toBeDisabled()
@@ -104,5 +110,16 @@ describe('HeatmapControls', () => {
     render(<HeatmapControls {...defaultProps} selectedTransportModes={[]} />)
 
     expect(screen.getByText('Showing all transport types')).toBeInTheDocument()
+  })
+
+  it('renders metric buttons and calls onMetricChange', () => {
+    const onMetricChange = vi.fn()
+    render(<HeatmapControls {...defaultProps} onMetricChange={onMetricChange} />)
+
+    expect(screen.getByText('Cancellations')).toBeInTheDocument()
+    expect(screen.getByText('Delays')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Delays'))
+    expect(onMetricChange).toHaveBeenCalledWith('delays')
   })
 })

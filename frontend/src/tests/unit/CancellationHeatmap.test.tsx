@@ -59,19 +59,19 @@ describe('MapLibreHeatmap Component', () => {
   })
 
   it('should show loading state when isLoading is true', () => {
-    render(<MapLibreHeatmap dataPoints={[]} isLoading={true} />)
+    render(<MapLibreHeatmap dataPoints={[]} isLoading={true} metric="cancellations" />)
 
     expect(screen.getByText('Loading heatmap data...')).toBeInTheDocument()
   })
 
   it('should not show loading overlay when isLoading is false', () => {
-    render(<MapLibreHeatmap dataPoints={[]} isLoading={false} />)
+    render(<MapLibreHeatmap dataPoints={[]} isLoading={false} metric="cancellations" />)
 
     expect(screen.queryByText('Loading heatmap data...')).not.toBeInTheDocument()
   })
 
   it('should render the map container', () => {
-    const { container } = render(<MapLibreHeatmap dataPoints={[]} />)
+    const { container } = render(<MapLibreHeatmap dataPoints={[]} metric="cancellations" />)
 
     // Check that the container div exists
     expect(container.querySelector('.relative')).toBeInTheDocument()

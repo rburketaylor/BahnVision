@@ -10,25 +10,27 @@ describe('HeatmapStats', () => {
     total_departures: 10000,
     total_cancellations: 350,
     overall_cancellation_rate: 0.035,
+    total_delays: 500,
+    overall_delay_rate: 0.05,
     most_affected_station: 'Marienplatz',
     most_affected_line: 'U-Bahn',
   }
 
   it('renders loading state', () => {
-    render(<HeatmapStats summary={null} isLoading={true} />)
+    render(<HeatmapStats summary={null} isLoading={true} metric="cancellations" />)
 
     expect(screen.getByText('Statistics')).toBeInTheDocument()
     // Should show skeleton/loading state
   })
 
   it('renders no data message when summary is null', () => {
-    render(<HeatmapStats summary={null} isLoading={false} />)
+    render(<HeatmapStats summary={null} isLoading={false} metric="cancellations" />)
 
     expect(screen.getByText('No data available')).toBeInTheDocument()
   })
 
   it('renders summary statistics', () => {
-    render(<HeatmapStats summary={mockSummary} />)
+    render(<HeatmapStats summary={mockSummary} metric="cancellations" />)
 
     // Overall rate
     expect(screen.getByText('Overall Rate')).toBeInTheDocument()
@@ -48,14 +50,14 @@ describe('HeatmapStats', () => {
   })
 
   it('renders most affected station', () => {
-    render(<HeatmapStats summary={mockSummary} />)
+    render(<HeatmapStats summary={mockSummary} metric="cancellations" />)
 
     expect(screen.getByText('Most Affected Station')).toBeInTheDocument()
     expect(screen.getByText('Marienplatz')).toBeInTheDocument()
   })
 
   it('renders most affected line', () => {
-    render(<HeatmapStats summary={mockSummary} />)
+    render(<HeatmapStats summary={mockSummary} metric="cancellations" />)
 
     expect(screen.getByText('Most Affected Line')).toBeInTheDocument()
     expect(screen.getByText('U-Bahn')).toBeInTheDocument()
@@ -68,7 +70,7 @@ describe('HeatmapStats', () => {
       most_affected_line: null,
     }
 
-    render(<HeatmapStats summary={summaryWithNulls} />)
+    render(<HeatmapStats summary={summaryWithNulls} metric="cancellations" />)
 
     // Should still render basic stats
     expect(screen.getByText('Total Departures')).toBeInTheDocument()
@@ -83,7 +85,7 @@ describe('HeatmapStats', () => {
       overall_cancellation_rate: 0.08, // 8%
     }
 
-    render(<HeatmapStats summary={highRateSummary} />)
+    render(<HeatmapStats summary={highRateSummary} metric="cancellations" />)
 
     expect(screen.getByText('8.0%')).toBeInTheDocument()
   })
@@ -94,8 +96,15 @@ describe('HeatmapStats', () => {
       overall_cancellation_rate: 0.03, // 3%
     }
 
-    render(<HeatmapStats summary={moderateRateSummary} />)
+    render(<HeatmapStats summary={moderateRateSummary} metric="cancellations" />)
 
     expect(screen.getByText('3.0%')).toBeInTheDocument()
+  })
+
+  it('displays delay rate when metric is delays', () => {
+    render(<HeatmapStats summary={mockSummary} metric="delays" />)
+
+    expect(screen.getByText('5.0%')).toBeInTheDocument()
+    expect(screen.getByText('(delays)')).toBeInTheDocument()
   })
 })
