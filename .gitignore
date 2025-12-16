@@ -42,6 +42,9 @@ build/
 # Code directory
 .code/
 
+# Local KiloCode config
+.kilocode/
+
 # Mutation testing
 mutants/
 .stryker-tmp/
