@@ -8,7 +8,7 @@ import { useHeatmap } from '../hooks/useHeatmap'
 import { HeatmapControls, HeatmapLegend, HeatmapStats } from '../components/heatmap'
 import type { TransportType } from '../types/api'
 import type { TimeRangePreset, HeatmapMetric } from '../types/heatmap'
-import { DEFAULT_ZOOM } from '../types/heatmap'
+import { DEFAULT_ZOOM, HEATMAP_METRIC_LABELS } from '../types/heatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
 const CancellationHeatmap = lazy(() =>
@@ -52,9 +52,13 @@ export default function HeatmapPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Cancellation Heatmap</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            {HEATMAP_METRIC_LABELS[metric]} Heatmap
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Visualize transit cancellation patterns across Germany
+            {metric === 'delays'
+              ? 'Visualize transit delay patterns across Germany'
+              : 'Visualize transit cancellation patterns across Germany'}
           </p>
         </div>
 
@@ -106,7 +110,7 @@ export default function HeatmapPage() {
         <div className="lg:col-span-3">
           <div
             className="bg-card rounded-lg border border-border overflow-hidden"
-            style={{ height: 'calc(100vh - 18rem)' }}
+            style={{ height: 'clamp(420px, 62vh, calc(100vh - 18rem))' }}
           >
             <Suspense fallback={<MapLoadingSkeleton />}>
               <CancellationHeatmap
@@ -138,7 +142,16 @@ export default function HeatmapPage() {
         </div>
 
         {/* Sidebar - controls, legend, and stats */}
-        <div className="lg:col-span-1 space-y-4">
+        <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-24 h-fit">
+          <div className="bg-card rounded-lg border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">Tips</h3>
+            <ul className="mt-2 text-xs text-muted-foreground space-y-1">
+              <li>Click a station dot to see details.</li>
+              <li>Click a cluster to zoom in.</li>
+              <li>Use “Reset view” to return to Germany.</li>
+            </ul>
+          </div>
+
           <HeatmapControls
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}

@@ -88,15 +88,48 @@ export const DEFAULT_ZOOM = 6
 
 /** Default heatmap configuration */
 export const DEFAULT_HEATMAP_CONFIG: HeatmapConfig = {
-  radius: 25,
-  blur: 15,
+  radius: 28,
+  blur: 16,
+  maxZoom: 17,
+  max: 1.0,
+  // Default to a warm "heat" palette. The map layer picks a theme-aware
+  // config at runtime, but other consumers can safely use this as a baseline.
+  gradient: {
+    0.0: 'rgba(0, 0, 0, 0.0)',
+    0.25: 'rgba(255, 168, 0, 0.35)',
+    0.55: 'rgba(255, 98, 0, 0.65)',
+    0.8: 'rgba(255, 20, 60, 0.85)',
+    1.0: 'rgba(190, 0, 60, 1.0)',
+  },
+}
+
+/** Theme-aware heatmap configuration (dark mode = warm glow) */
+export const DARK_HEATMAP_CONFIG: HeatmapConfig = {
+  radius: 32,
+  blur: 18,
   maxZoom: 17,
   max: 1.0,
   gradient: {
-    0.0: 'rgba(0, 255, 0, 0.0)', // Green = no cancellations
-    0.3: 'rgba(255, 255, 0, 0.6)', // Yellow = moderate
-    0.7: 'rgba(255, 165, 0, 0.8)', // Orange = high
-    1.0: 'rgba(255, 0, 0, 1.0)', // Red = severe
+    0.0: 'rgba(0, 0, 0, 0.0)',
+    0.2: 'rgba(255, 168, 0, 0.30)',
+    0.5: 'rgba(255, 98, 0, 0.62)',
+    0.78: 'rgba(255, 20, 60, 0.82)',
+    1.0: 'rgba(190, 0, 60, 1.0)',
+  },
+}
+
+/** Theme-aware heatmap configuration (light mode = cool glow) */
+export const LIGHT_HEATMAP_CONFIG: HeatmapConfig = {
+  radius: 28,
+  blur: 16,
+  maxZoom: 17,
+  max: 1.0,
+  gradient: {
+    0.0: 'rgba(0, 0, 0, 0.0)',
+    0.2: 'rgba(34, 211, 238, 0.26)',
+    0.5: 'rgba(59, 130, 246, 0.50)',
+    0.78: 'rgba(99, 102, 241, 0.72)',
+    1.0: 'rgba(139, 92, 246, 0.95)',
   },
 }
 

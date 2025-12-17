@@ -236,9 +236,11 @@ class HeatmapService:
         # Set max points based on zoom level if not provided
         if max_points is None:
             if zoom_level < 10:
-                max_points = 100
-            elif zoom_level < 12:
+                # At low zoom we still want enough points for stable clustering
+                # and a representative national overview.
                 max_points = 500
+            elif zoom_level < 12:
+                max_points = 1000
             else:
                 max_points = min(2000, MAX_DATA_POINTS)
         else:
@@ -313,6 +315,10 @@ class HeatmapService:
                 route_type_filter = route_types_to_include
 
         try:
+            # Performance note:
+            # Ensure `realtime_station_stats` has an index that supports the
+            # bucket range filter and grouping (e.g. on bucket_start and stop_id).
+
             # Query aggregated data for the time range from realtime_station_stats
             stmt = (
                 select(
@@ -327,6 +333,12 @@ class HeatmapService:
                 .where(RealtimeStationStats.bucket_start >= from_time)
                 .where(RealtimeStationStats.bucket_start < to_time)
             )
+
+            # Pre-filter to the GTFS stop_ids we can actually render (lat/lon present).
+            # This avoids scanning/stitching irrelevant stop_ids.
+            stop_ids = [stop.stop_id for stop in stops]
+            if stop_ids:
+                stmt = stmt.where(RealtimeStationStats.stop_id.in_(stop_ids))
 
             if route_type_filter:
                 stmt = stmt.where(
