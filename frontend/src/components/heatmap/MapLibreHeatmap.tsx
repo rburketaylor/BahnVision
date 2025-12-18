@@ -10,7 +10,7 @@
  * - Support for both cancellation and delay metrics
  */
 
-import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
+import { useEffect, useRef, useCallback, useMemo, useState, type ReactNode } from 'react'
 import maplibregl from 'maplibre-gl'
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec'
 import type { HeatmapDataPoint, HeatmapMetric } from '../../types/heatmap'
@@ -108,6 +108,7 @@ interface MapLibreHeatmapProps {
   selectedStation?: string | null
   onStationSelect?: (stationId: string | null) => void
   onZoomChange?: (zoom: number) => void
+  overlay?: ReactNode
 }
 
 /**
@@ -186,6 +187,7 @@ export function MapLibreHeatmap({
   isLoading = false,
   onStationSelect,
   onZoomChange,
+  overlay,
 }: MapLibreHeatmapProps) {
   const { resolvedTheme } = useTheme()
   const mapContainerRef = useRef<HTMLDivElement>(null)
@@ -828,7 +830,7 @@ export function MapLibreHeatmap({
       <div ref={mapContainerRef} className="absolute inset-0 z-0" />
 
       {/* Map UI helpers */}
-      <div className="absolute left-3 top-3 z-[950] flex items-center gap-2">
+      <div className="absolute right-14 top-3 z-[950] flex items-center gap-2">
         <button
           type="button"
           onClick={resetView}
@@ -839,6 +841,8 @@ export function MapLibreHeatmap({
           Reset view
         </button>
       </div>
+
+      {overlay}
 
       {/* Style-switch fade overlay */}
       <div

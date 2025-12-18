@@ -3,9 +3,14 @@
  * Interactive map visualization of cancellation data across Germany
  */
 
-import { useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { useHeatmap } from '../hooks/useHeatmap'
-import { HeatmapControls, HeatmapLegend, HeatmapStats } from '../components/heatmap'
+import {
+  HeatmapControls,
+  HeatmapLegend,
+  HeatmapOverlayPanel,
+  HeatmapStats,
+} from '../components/heatmap'
 import type { TransportType } from '../types/api'
 import type { TimeRangePreset, HeatmapMetric } from '../types/heatmap'
 import { DEFAULT_ZOOM, HEATMAP_METRIC_LABELS } from '../types/heatmap'
@@ -14,6 +19,8 @@ import { DEFAULT_ZOOM, HEATMAP_METRIC_LABELS } from '../types/heatmap'
 const CancellationHeatmap = lazy(() =>
   import('../components/heatmap/MapLibreHeatmap').then(m => ({ default: m.MapLibreHeatmap }))
 )
+
+const CONTROLS_OPEN_STORAGE_KEY = 'bahnvision-heatmap-controls-open-v1'
 
 // Loading skeleton for the map
 function MapLoadingSkeleton() {
@@ -27,12 +34,22 @@ function MapLoadingSkeleton() {
   )
 }
 
+function isTypingTarget(target: EventTarget | null) {
+  if (!target) return false
+  if (target instanceof HTMLInputElement) return true
+  if (target instanceof HTMLTextAreaElement) return true
+  if (target instanceof HTMLSelectElement) return true
+  if (target instanceof HTMLElement && target.isContentEditable) return true
+  return false
+}
+
 export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
   const [selectedStation, setSelectedStation] = useState<string | null>(null)
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM) // Default zoom
   const [metric, setMetric] = useState<HeatmapMetric>('cancellations')
+  const [controlsOpen, setControlsOpen] = useState(true)
 
   const { data, isLoading, error, refetch } = useHeatmap(
     {
@@ -47,141 +64,136 @@ export default function HeatmapPage() {
   const dataPoints = heatmapData?.data_points ?? []
   const summary = heatmapData?.summary ?? null
 
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(CONTROLS_OPEN_STORAGE_KEY)
+      if (stored === '0') setControlsOpen(false)
+      if (stored === '1') setControlsOpen(true)
+    } catch {
+      // Ignore storage errors (private mode / disabled storage)
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CONTROLS_OPEN_STORAGE_KEY, controlsOpen ? '1' : '0')
+    } catch {
+      // Ignore storage errors (private mode / disabled storage)
+    }
+  }, [controlsOpen])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (isTypingTarget(e.target)) return
+
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault()
+        setControlsOpen(open => !open)
+        return
+      }
+
+      if (e.key === 'Escape' && controlsOpen) {
+        e.preventDefault()
+        setControlsOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [controlsOpen])
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            {HEATMAP_METRIC_LABELS[metric]} Heatmap
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {metric === 'delays'
-              ? 'Visualize transit delay patterns across Germany'
-              : 'Visualize transit cancellation patterns across Germany'}
-          </p>
-        </div>
-
-        <button
-          onClick={() => refetch()}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-        >
-          <svg
-            className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          {isLoading ? 'Loading...' : 'Refresh'}
-        </button>
-      </div>
-
-      {/* Error state */}
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-destructive">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span className="font-medium">Failed to load heatmap data</span>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'An unexpected error occurred'}
-          </p>
-        </div>
-      )}
-
-      {/* Main content grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Map - takes up 3/4 of the space on large screens */}
-        <div className="lg:col-span-3">
-          <div
-            className="bg-card rounded-lg border border-border overflow-hidden"
-            style={{ height: 'clamp(420px, 62vh, calc(100vh - 18rem))' }}
-          >
-            <Suspense fallback={<MapLoadingSkeleton />}>
-              <CancellationHeatmap
-                dataPoints={dataPoints}
-                isLoading={isLoading}
-                selectedStation={selectedStation}
-                onStationSelect={setSelectedStation}
-                onZoomChange={setZoom}
-                metric={metric}
-              />
-            </Suspense>
-          </div>
-
-          {/* Time range info */}
-          {/*
-          {heatmapData?.time_range && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              Data from{' '}
-              <span className="font-medium">
-                {new Date(heatmapData.time_range.from).toLocaleString()}
-              </span>{' '}
-              to{' '}
-              <span className="font-medium">
-                {new Date(heatmapData.time_range.to).toLocaleString()}
-              </span>
-            </div>
-          )}
-          */}
-        </div>
-
-        {/* Sidebar - controls, legend, and stats */}
-        <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-24 h-fit">
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">Tips</h3>
-            <ul className="mt-2 text-xs text-muted-foreground space-y-1">
-              <li>Click a station dot to see details.</li>
-              <li>Click a cluster to zoom in.</li>
-              <li>Use “Reset view” to return to Germany.</li>
-            </ul>
-          </div>
-
-          <HeatmapControls
-            timeRange={timeRange}
-            onTimeRangeChange={setTimeRange}
-            selectedTransportModes={transportModes}
-            onTransportModesChange={setTransportModes}
-            metric={metric}
-            onMetricChange={setMetric}
+    <div className="fixed inset-x-0 top-16 bottom-0">
+      <div className="relative w-full h-full overflow-hidden p-2 sm:p-3">
+        <Suspense fallback={<MapLoadingSkeleton />}>
+          <CancellationHeatmap
+            dataPoints={dataPoints}
             isLoading={isLoading}
+            selectedStation={selectedStation}
+            onStationSelect={setSelectedStation}
+            onZoomChange={setZoom}
+            metric={metric}
+            overlay={
+              <HeatmapOverlayPanel
+                open={controlsOpen}
+                onOpenChange={setControlsOpen}
+                title={`${HEATMAP_METRIC_LABELS[metric]} Heatmap`}
+                description={
+                  metric === 'delays'
+                    ? 'Visualize transit delay patterns across Germany'
+                    : 'Visualize transit cancellation patterns across Germany'
+                }
+                hasError={Boolean(error)}
+                isLoading={isLoading}
+                onRefresh={refetch}
+              >
+                {error && (
+                  <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <span className="text-sm font-medium">Failed to load heatmap data</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {error instanceof Error ? error.message : 'An unexpected error occurred'}
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-muted/40 rounded-lg border border-border/60 p-3">
+                  <h3 className="text-xs font-semibold text-foreground">Tips</h3>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1">
+                    <li>Click a station dot to see details.</li>
+                    <li>Click a cluster to zoom in.</li>
+                    <li>Use “Reset view” to return to Germany.</li>
+                  </ul>
+                </div>
+
+                <HeatmapControls
+                  timeRange={timeRange}
+                  onTimeRangeChange={setTimeRange}
+                  selectedTransportModes={transportModes}
+                  onTransportModesChange={setTransportModes}
+                  metric={metric}
+                  onMetricChange={setMetric}
+                  isLoading={isLoading}
+                />
+
+                <HeatmapLegend metric={metric} />
+
+                <HeatmapStats summary={summary} isLoading={isLoading} metric={metric} />
+
+                <div className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-3">
+                  <p>
+                    <strong>Data source:</strong> GTFS schedule data from{' '}
+                    <a
+                      href="https://gtfs.de"
+                      className="underline hover:text-foreground"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      gtfs.de
+                    </a>
+                    . Updated daily.
+                  </p>
+                </div>
+              </HeatmapOverlayPanel>
+            }
           />
-
-          <HeatmapLegend metric={metric} />
-
-          <HeatmapStats summary={summary} isLoading={isLoading} metric={metric} />
-        </div>
-      </div>
-
-      {/* Data source footer */}
-      <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
-        <p>
-          <strong>Data source:</strong> GTFS schedule data from{' '}
-          <a
-            href="https://gtfs.de"
-            className="underline hover:text-foreground"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            gtfs.de
-          </a>
-          . Updated daily.
-        </p>
+        </Suspense>
       </div>
     </div>
   )
