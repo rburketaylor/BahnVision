@@ -50,3 +50,4 @@ mutants/
 .stryker-tmp/
 **/reports/
 .mutmut-cache
+backend/coverage.xml
