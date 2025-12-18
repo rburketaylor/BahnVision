@@ -207,8 +207,8 @@ class HeatmapService:
             gtfs_stops = await self._gtfs_schedule.get_all_stops(limit=5000)
             stops = [
                 StopInfo(
-                    stop_id=stop.stop_id,
-                    stop_name=stop.stop_name,
+                    stop_id=str(stop.stop_id),
+                    stop_name=str(stop.stop_name),
                     stop_lat=float(stop.stop_lat) if stop.stop_lat else 0.0,
                     stop_lon=float(stop.stop_lon) if stop.stop_lon else 0.0,
                 )

@@ -484,7 +484,7 @@ class GTFSRTDataHarvester:
             result = await session.execute(stmt)
             await session.commit()
 
-            count = result.rowcount or 0
+            count: int = getattr(result, "rowcount", 0) or 0
             if count > 0:
                 logger.info("Cleaned up %d stat rows older than %d days", count, days)
             return count

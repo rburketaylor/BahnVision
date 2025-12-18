@@ -117,7 +117,7 @@ def create_app() -> FastAPI:
     # Configure rate limiting using the shared limiter
     if settings.rate_limit_enabled:
         app.state.limiter = limiter
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
         logger.info("Rate limiting enabled")
 
     # Instrument FastAPI for tracing if enabled
