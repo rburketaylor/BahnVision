@@ -95,7 +95,16 @@ class TestGTFSRTDataHarvester:
         harvester.harvest_once = AsyncMock(return_value=0)
 
         await harvester.start()
-        await harvester.start()  # Should warn and return
+        original_task = harvester._task
+
+        # Second start should warn and return early
+        await harvester.start()
+
+        # Verify the original task is still the same (no new task created)
+        assert harvester._task is original_task, (
+            "Starting twice should not create a new task"
+        )
+        assert harvester._running is True, "Harvester should still be running"
 
         await harvester.stop()
 

@@ -206,8 +206,16 @@ class TestGTFSFeedSchedulerUpdateLogic:
                 )
                 mock_importer.return_value = mock_instance
 
-                # Should not raise
-                await scheduler._update_gtfs_feed()
+                # Should not raise - verify it completes successfully
+                try:
+                    await scheduler._update_gtfs_feed()
+                    completed_without_error = True
+                except Exception:
+                    completed_without_error = False
+
+                assert completed_without_error, (
+                    "Error handling should not propagate exceptions"
+                )
 
 
 class TestGTFSFeedSchedulerJobInfo:

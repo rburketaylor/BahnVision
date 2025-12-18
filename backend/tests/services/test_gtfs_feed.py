@@ -124,13 +124,17 @@ class TestGTFSFeedImporter:
 
     def test_validate_feed_url_https(self, importer):
         """Test that HTTPS URLs are accepted."""
-        # Should not raise
-        importer._validate_feed_url("https://download.gtfs.de/germany/full/latest.zip")
+        # Should not raise - verify it returns None (success)
+        result = importer._validate_feed_url(
+            "https://download.gtfs.de/germany/full/latest.zip"
+        )
+        assert result is None, "HTTPS URL validation should succeed"
 
     def test_validate_feed_url_http(self, importer):
         """Test that HTTP URLs are accepted."""
-        # Should not raise
-        importer._validate_feed_url("http://example.com/gtfs.zip")
+        # Should not raise - verify it returns None (success)
+        result = importer._validate_feed_url("http://example.com/gtfs.zip")
+        assert result is None, "HTTP URL validation should succeed"
 
     def test_validate_feed_url_invalid_protocol(self, importer):
         """Test that invalid protocols are rejected."""
@@ -202,8 +206,9 @@ class TestGTFSFeedImporter:
     async def test_copy_stops_empty_df(self, importer):
         """Test that empty DataFrame is handled gracefully."""
         empty_df = pd.DataFrame()
-        await importer._copy_stops(empty_df, "test_feed")
-        # Should not raise
+        # Should not raise - verify it returns early without error
+        result = await importer._copy_stops(empty_df, "test_feed")
+        assert result is None, "Empty DataFrame should be handled gracefully"
 
     @pytest.mark.asyncio
     async def test_copy_stops_with_data(self, importer, mock_session):
@@ -232,15 +237,17 @@ class TestGTFSFeedImporter:
     async def test_copy_routes_empty_df(self, importer):
         """Test that empty DataFrame is handled gracefully."""
         empty_df = pd.DataFrame()
-        await importer._copy_routes(empty_df, "test_feed")
-        # Should not raise
+        # Should not raise - verify it returns early without error
+        result = await importer._copy_routes(empty_df, "test_feed")
+        assert result is None, "Empty DataFrame should be handled gracefully"
 
     @pytest.mark.asyncio
     async def test_copy_trips_empty_df(self, importer):
         """Test that empty DataFrame is handled gracefully."""
         empty_df = pd.DataFrame()
-        await importer._copy_trips(empty_df, "test_feed")
-        # Should not raise
+        # Should not raise - verify it returns early without error
+        result = await importer._copy_trips(empty_df, "test_feed")
+        assert result is None, "Empty DataFrame should be handled gracefully"
 
     @pytest.mark.asyncio
     async def test_record_feed_info(self, importer, mock_session):
