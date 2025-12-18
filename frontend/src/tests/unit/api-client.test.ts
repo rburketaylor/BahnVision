@@ -94,4 +94,40 @@ describe('ApiClient low-level behaviors', () => {
 
     await expect(client.getMetrics()).rejects.toMatchObject({ statusCode: 503 })
   })
+
+  it('builds heatmap query params and joins transport_modes', async () => {
+    const mockResponse = new Response(
+      JSON.stringify({
+        time_range: { from: '2025-01-01T00:00:00Z', to: '2025-01-02T00:00:00Z' },
+        data_points: [],
+        summary: {
+          total_stations: 0,
+          total_departures: 0,
+          total_cancellations: 0,
+          overall_cancellation_rate: 0,
+          most_affected_station: null,
+          most_affected_line: null,
+        },
+      }),
+      {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
+    fetchMock.mockResolvedValueOnce(mockResponse)
+
+    await client.getHeatmapData({
+      time_range: '24h',
+      transport_modes: ['BUS', 'TRAM'],
+      zoom: 6,
+    })
+
+    const [calledUrl] = fetchMock.mock.calls[0]
+    expect(String(calledUrl)).toContain('/api/v1/heatmap/cancellations?')
+    expect(String(calledUrl)).toContain('time_range=24h')
+    expect(String(calledUrl)).toContain('zoom=6')
+    expect(String(calledUrl)).toContain('transport_modes=BUS%2CTRAM')
+    expect(String(calledUrl)).not.toContain('bucket_width=')
+  })
 })
