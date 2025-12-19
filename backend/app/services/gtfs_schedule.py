@@ -77,7 +77,7 @@ class GTFSScheduleService:
     ) -> List[ScheduledDeparture]:
         """Get scheduled departures for a stop."""
         # First verify stop exists
-        stop = await self._get_stop(stop_id)
+        stop = await self.get_stop_by_id(stop_id)
         if not stop:
             raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
 
@@ -301,7 +301,7 @@ class GTFSScheduleService:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def _get_stop(self, stop_id: str) -> Optional[GTFSStop]:
+    async def get_stop_by_id(self, stop_id: str) -> Optional[GTFSStop]:
         """Get stop by ID."""
         stmt = select(GTFSStop).where(GTFSStop.stop_id == stop_id)
         result = await self.session.execute(stmt)
