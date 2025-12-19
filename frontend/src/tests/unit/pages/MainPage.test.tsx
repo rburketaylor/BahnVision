@@ -24,22 +24,22 @@ vi.mock('../../../components/StationSearch', () => ({
 }))
 
 describe('MainPage', () => {
-  it('navigates to departures when a stop is selected', async () => {
+  it('navigates to station details when a stop is selected', async () => {
     const user = userEvent.setup()
     const queryClient = new QueryClient()
 
     render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/']}>
+        <MemoryRouter initialEntries={['/search']}>
           <Routes>
-            <Route path="/" element={<MainPage />} />
-            <Route path="/departures/:stationId" element={<div data-testid="departures-view" />} />
+            <Route path="/search" element={<MainPage />} />
+            <Route path="/station/:stationId" element={<div data-testid="station-view" />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
     )
 
     await user.click(screen.getByText('Select Station'))
-    expect(screen.getByTestId('departures-view')).toBeInTheDocument()
+    expect(screen.getByTestId('station-view')).toBeInTheDocument()
   })
 })

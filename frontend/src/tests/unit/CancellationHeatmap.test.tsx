@@ -357,7 +357,9 @@ describe('MapLibreHeatmap Component', () => {
     expect(onStationSelect).toHaveBeenCalledWith(null)
   })
 
-  it('switches basemap style when theme toggles', async () => {
+  it('recreates map instance when theme toggles', async () => {
+    // The component recreates the map when theme changes (resolvedTheme in useEffect deps)
+    // rather than calling setStyle
     render(
       <ThemeProvider defaultTheme="light">
         <ThemeToggler />
@@ -370,8 +372,19 @@ describe('MapLibreHeatmap Component', () => {
     )
     const map = getMockMapInstance()
     map._emit('load')
+    map._emit('style.load')
 
+    // Click to toggle theme from light to dark
     fireEvent.click(screen.getByRole('button', { name: 'Toggle theme' }))
-    expect(map.setStyle).toHaveBeenCalled()
+
+    // Wait for the map to be recreated (useEffect cleanup and re-init)
+    await waitFor(() => {
+      expect(
+        (maplibregl as unknown as { Map: { mock: { calls: unknown[][] } } }).Map.mock.calls.length
+      ).toBe(2)
+    })
+
+    // Verify the old map was removed
+    expect(map.remove).toHaveBeenCalled()
   })
 })
