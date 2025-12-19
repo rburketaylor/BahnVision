@@ -79,7 +79,7 @@ describe('useHeatmap', () => {
     })
 
     expect(mockGetHeatmapData).toHaveBeenCalledTimes(1)
-    expect(result.current.data?.data).toEqual(mockHeatmapResponse)
+    expect(result.current.data).toEqual(mockHeatmapResponse)
   })
 
   it('passes params to API client', async () => {

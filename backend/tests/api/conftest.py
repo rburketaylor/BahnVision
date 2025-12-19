@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, List, Optional
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,31 @@ from app.persistence.dependencies import get_station_repository
 from app.persistence.repositories import StationPayload
 from app.services.cache import CacheService, get_cache_service
 from app.api.v1.endpoints.heatmap import get_gtfs_schedule
+from app.core.database import get_session
+
+
+class FakeAsyncSession:
+    """Fake async database session for testing.
+
+    Returns empty results for queries to avoid hitting the real database.
+    """
+
+    async def execute(self, stmt):
+        """Return empty result set for any query."""
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar_one_or_none.return_value = None
+        return mock_result
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
+
+    async def close(self):
+        pass
 
 
 @dataclass
@@ -198,6 +224,8 @@ def api_client(
     app.dependency_overrides[get_cache_service] = lambda: fake_cache
     app.dependency_overrides[get_station_repository] = lambda: fake_station_repository
     app.dependency_overrides[get_gtfs_schedule] = lambda: fake_gtfs_schedule
+    # Override get_session to use fake session that returns empty results
+    app.dependency_overrides[get_session] = lambda: FakeAsyncSession()
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()

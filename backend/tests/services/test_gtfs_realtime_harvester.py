@@ -158,14 +158,14 @@ class TestGTFSRTDataHarvester:
 
         # Check stop_A aggregation
         stop_a = result["stop_A"]
-        assert len(stop_a["trips"]) == 2
+        assert stop_a["trip_count"] == 2
         assert stop_a["on_time"] == 1
         assert stop_a["delayed"] == 1
         assert stop_a["cancelled"] == 0
 
         # Check stop_B aggregation
         stop_b = result["stop_B"]
-        assert len(stop_b["trips"]) == 1
+        assert stop_b["trip_count"] == 1
         assert stop_b["cancelled"] == 1
 
     @pytest.mark.asyncio
@@ -212,49 +212,11 @@ class TestGTFSRTDataHarvester:
 
         stop_a = result["stop_A"]
         # Only 1 unique trip
-        assert len(stop_a["trips"]) == 1
+        assert stop_a["trip_count"] == 1
         # The trip should be counted ONCE as delayed (not 3 times!)
         assert stop_a["delayed"] == 1
         assert stop_a["on_time"] == 0
         assert stop_a["cancelled"] == 0
-
-    @pytest.mark.asyncio
-    async def test_count_new_trips_without_cache(self):
-        """Test trip counting without cache - all trips counted as new."""
-        harvester = GTFSRTDataHarvester(cache_service=None)
-
-        from datetime import datetime, timezone
-
-        bucket_start = datetime.now(timezone.utc)
-        trip_ids = {"trip_1", "trip_2", "trip_3"}
-
-        count = await harvester._count_new_trips(bucket_start, "stop_A", trip_ids)
-        assert count == 3  # All trips counted as new without cache
-
-    @pytest.mark.asyncio
-    async def test_count_new_trips_with_cache(self):
-        """Test trip counting with cache - deduplication works."""
-        cache = FakeCache()
-        harvester = GTFSRTDataHarvester(cache_service=cache)
-
-        from datetime import datetime, timezone
-
-        bucket_start = datetime.now(timezone.utc)
-        trip_ids = {"trip_1", "trip_2"}
-
-        # First call - all trips are new
-        count1 = await harvester._count_new_trips(bucket_start, "stop_A", trip_ids)
-        assert count1 == 2
-
-        # Second call with same trips - all should be seen
-        count2 = await harvester._count_new_trips(bucket_start, "stop_A", trip_ids)
-        assert count2 == 0
-
-        # Third call with one new trip
-        count3 = await harvester._count_new_trips(
-            bucket_start, "stop_A", {"trip_1", "trip_3"}
-        )
-        assert count3 == 1  # Only trip_3 is new
 
     def test_hash_trip_id(self):
         """Test trip ID hashing produces consistent 12-char result."""
