@@ -6,7 +6,7 @@ export function MainPage() {
   const navigate = useNavigate()
 
   const handleStationSelect = (stop: TransitStop) => {
-    navigate(`/departures/${stop.id}`)
+    navigate(`/station/${stop.id}`)
   }
 
   return (
@@ -19,7 +19,7 @@ export function MainPage() {
               BahnVision
             </h1>
             <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto">
-              Your real-time companion for Munich public transport.
+              Search for any station across Germany's transit network.
             </p>
           </header>
 
