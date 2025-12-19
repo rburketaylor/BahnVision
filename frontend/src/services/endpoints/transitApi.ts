@@ -12,6 +12,10 @@ import type {
   TransitStop,
   TransitStopSearchParams,
   TransitStopSearchResponse,
+  StationStats,
+  StationStatsParams,
+  StationTrends,
+  StationTrendsParams,
 } from '../../types/gtfs'
 import { ApiError, type ApiResponse } from '../apiTypes'
 import { httpClient } from '../httpClient'
@@ -91,6 +95,34 @@ class TransitApiClient {
     const queryString = buildQueryString(params as unknown as Record<string, unknown>)
     return httpClient.request<TransitDeparturesResponse>(
       `/api/v1/transit/departures${queryString}`,
+      {
+        timeout: 10000,
+      }
+    )
+  }
+
+  /**
+   * Get station statistics (cancellation/delay rates)
+   */
+  async getStationStats(params: StationStatsParams): Promise<ApiResponse<StationStats>> {
+    const { stop_id, ...queryParams } = params
+    const queryString = buildQueryString(queryParams as Record<string, unknown>)
+    return httpClient.request<StationStats>(
+      `/api/v1/transit/stops/${encodeURIComponent(stop_id)}/stats${queryString}`,
+      {
+        timeout: 10000,
+      }
+    )
+  }
+
+  /**
+   * Get station trends (historical performance data)
+   */
+  async getStationTrends(params: StationTrendsParams): Promise<ApiResponse<StationTrends>> {
+    const { stop_id, ...queryParams } = params
+    const queryString = buildQueryString(queryParams as Record<string, unknown>)
+    return httpClient.request<StationTrends>(
+      `/api/v1/transit/stops/${encodeURIComponent(stop_id)}/trends${queryString}`,
       {
         timeout: 10000,
       }
