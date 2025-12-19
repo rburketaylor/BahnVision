@@ -47,6 +47,16 @@ logger = logging.getLogger(__name__)
 # Delay thresholds (in seconds)
 DELAY_THRESHOLD_SECONDS = 300  # 5 minutes = delayed
 ON_TIME_THRESHOLD_SECONDS = 60  # 1 minute = on time
+STATUS_UNKNOWN = "unknown"
+STATUS_ON_TIME = "on_time"
+STATUS_DELAYED = "delayed"
+STATUS_CANCELLED = "cancelled"
+STATUS_RANK = {
+    STATUS_UNKNOWN: 0,
+    STATUS_ON_TIME: 1,
+    STATUS_DELAYED: 2,
+    STATUS_CANCELLED: 3,
+}
 
 
 def _escape_tsv(val) -> str:
@@ -134,6 +144,8 @@ class GTFSRTDataHarvester:
             return 0
 
         try:
+            logger.info("Starting GTFS-RT harvest cycle")
+
             # Fetch trip updates from feed
             trip_updates = await self._fetch_trip_updates()
 
@@ -141,14 +153,20 @@ class GTFSRTDataHarvester:
                 logger.debug("No trip updates received")
                 return 0
 
+            logger.info(f"Received {len(trip_updates)} trip updates from GTFS-RT feed")
+
             # Calculate current time bucket (hourly)
             now = datetime.now(timezone.utc)
             bucket_start = now.replace(minute=0, second=0, microsecond=0)
+            logger.debug(
+                f"Processing data for bucket starting at {bucket_start.isoformat()}"
+            )
 
             # Group updates by stop_id and aggregate
             stop_stats = await self._aggregate_by_stop(trip_updates, bucket_start)
 
             if not stop_stats:
+                logger.debug("No stop statistics generated from trip updates")
                 return 0
 
             # Upsert aggregations to database
@@ -172,14 +190,18 @@ class GTFSRTDataHarvester:
             List of parsed trip update dictionaries.
         """
         if not FeedMessage:
+            logger.warning("GTFS-RT FeedMessage not available")
             return []
 
         try:
+            logger.debug(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
                 headers={"User-Agent": "BahnVision-GTFS-RT-Harvester/1.0"},
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
+
+            logger.debug(f"Received response with status {response.status_code}")
             response.raise_for_status()
 
             feed = FeedMessage()
@@ -246,7 +268,8 @@ class GTFSRTDataHarvester:
         """Aggregate trip updates by stop_id with deduplication.
 
         Counts delays/cancellations per UNIQUE TRIP, not per stop_time_update.
-        Each trip is classified once based on its worst status across all stops.
+        Each trip is classified once per bucket, with cache-backed upgrades to
+        worse statuses across harvest cycles.
 
         Args:
             trip_updates: List of parsed trip updates
@@ -280,91 +303,156 @@ class GTFSRTDataHarvester:
                 existing["delay"] = max(existing["delay"], delay)
                 existing["cancelled"] = existing["cancelled"] or is_cancelled
 
-        # Second pass: aggregate by stop_id, counting each trip only once
+        # Second pass: aggregate by stop_id using per-trip status with deduplication.
         stop_stats: dict[str, dict] = defaultdict(
             lambda: {
-                "trips": set(),
-                "delays": [],
-                "delayed": 0,
-                "on_time": 0,
-                "cancelled": 0,
+                "trip_statuses": {},
             }
         )
 
         for (stop_id, trip_id), status in trip_status_by_stop.items():
-            stats = stop_stats[stop_id]
+            stop_stats[stop_id]["trip_statuses"][trip_id] = {
+                "delay": status["delay"],
+                "status": self._classify_status(status["delay"], status["cancelled"]),
+            }
 
-            # Track unique trips
-            stats["trips"].add(trip_id)
-
-            # Store delay for average calculation
-            stats["delays"].append(status["delay"])
-
-            # Classify the trip (each trip counted ONCE per stop)
-            if status["cancelled"]:
-                stats["cancelled"] += 1
-            elif status["delay"] > DELAY_THRESHOLD_SECONDS:
-                stats["delayed"] += 1
-            elif abs(status["delay"]) < ON_TIME_THRESHOLD_SECONDS:
-                stats["on_time"] += 1
-
-        # Count new trips using cache deduplication
         for stop_id, stats in stop_stats.items():
-            new_trip_count = await self._count_new_trips(
-                bucket_start, stop_id, stats["trips"]
+            deltas = await self._apply_trip_statuses(
+                bucket_start, stop_id, stats["trip_statuses"]
             )
-            stats["new_trip_count"] = new_trip_count
+            stats.update(deltas)
+            stats.pop("trip_statuses", None)
 
         return dict(stop_stats)
 
-    async def _count_new_trips(
+    def _classify_status(self, delay: int, cancelled: bool) -> str:
+        """Classify a trip status based on delay and cancellation."""
+        if cancelled:
+            return STATUS_CANCELLED
+        if delay > DELAY_THRESHOLD_SECONDS:
+            return STATUS_DELAYED
+        if abs(delay) < ON_TIME_THRESHOLD_SECONDS:
+            return STATUS_ON_TIME
+        return STATUS_UNKNOWN
+
+    def _normalize_cached_status(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value in STATUS_RANK:
+            return value
+        return STATUS_UNKNOWN
+
+    async def _apply_trip_statuses(
         self,
         bucket_start: datetime,
         stop_id: str,
-        trip_ids: set[str],
-    ) -> int:
-        """Count trips not seen in this bucket yet using Valkey cache.
+        trip_statuses: dict[str, dict],
+    ) -> dict[str, int]:
+        """Apply per-trip status deltas with cache-backed deduplication.
 
-        Uses batch operations (mget/mset) for efficiency.
-
-        Args:
-            bucket_start: Time bucket start
-            stop_id: Stop ID for the bucket
-            trip_ids: Set of trip IDs to check
-
-        Returns:
-            Number of new (unseen) trips
+        Ensures each trip contributes at most once per bucket while allowing
+        upgrades to worse statuses (on_time -> delayed -> cancelled).
         """
-        if not self._cache or not trip_ids:
-            # Without cache, count all as new (less accurate but functional)
-            return len(trip_ids)
+        trip_count = 0
+        total_delay_seconds = 0
+        delayed = 0
+        on_time = 0
+        cancelled = 0
+
+        if not trip_statuses:
+            return {
+                "trip_count": trip_count,
+                "total_delay_seconds": total_delay_seconds,
+                "delayed": delayed,
+                "on_time": on_time,
+                "cancelled": cancelled,
+            }
 
         bucket_key = bucket_start.strftime("%Y%m%d%H")
-
-        # Build cache keys for all trips
         cache_keys = {
             trip_id: f"gtfs_rt_trip:{bucket_key}:{stop_id}:{self._hash_trip_id(trip_id)}"
-            for trip_id in trip_ids
+            for trip_id in trip_statuses
         }
 
+        if not self._cache:
+            for status in trip_statuses.values():
+                trip_count += 1
+                total_delay_seconds += status["delay"]
+                if status["status"] == STATUS_DELAYED:
+                    delayed += 1
+                elif status["status"] == STATUS_ON_TIME:
+                    on_time += 1
+                elif status["status"] == STATUS_CANCELLED:
+                    cancelled += 1
+            return {
+                "trip_count": trip_count,
+                "total_delay_seconds": total_delay_seconds,
+                "delayed": delayed,
+                "on_time": on_time,
+                "cancelled": cancelled,
+            }
+
         try:
-            # Batch lookup all trips at once
             existing = await self._cache.mget(list(cache_keys.values()))
+            updates: dict[str, str] = {}
 
-            # Find new trips (not in cache)
-            new_trips: dict[str, str] = {}
-            for trip_id, cache_key in cache_keys.items():
-                if not existing.get(cache_key):
-                    new_trips[cache_key] = "1"
+            for trip_id, info in trip_statuses.items():
+                cache_key = cache_keys[trip_id]
+                prev_status = self._normalize_cached_status(existing.get(cache_key))
+                new_status = info["status"] or STATUS_UNKNOWN
 
-            # Batch write new trips to cache
-            if new_trips:
-                await self._cache.mset(new_trips, ttl_seconds=7200)  # 2 hours
+                if prev_status is None:
+                    trip_count += 1
+                    total_delay_seconds += info["delay"]
+                    if new_status == STATUS_DELAYED:
+                        delayed += 1
+                    elif new_status == STATUS_ON_TIME:
+                        on_time += 1
+                    elif new_status == STATUS_CANCELLED:
+                        cancelled += 1
+                    updates[cache_key] = new_status
+                    continue
 
-            return len(new_trips)
-        except Exception as e:
-            logger.debug("Batch cache operation failed: %s", e)
-            return len(trip_ids)  # Assume all new on cache failure
+                prev_rank = STATUS_RANK.get(prev_status, 0)
+                new_rank = STATUS_RANK.get(new_status, 0)
+                if new_rank > prev_rank:
+                    if prev_status == STATUS_DELAYED:
+                        delayed -= 1
+                    elif prev_status == STATUS_ON_TIME:
+                        on_time -= 1
+                    elif prev_status == STATUS_CANCELLED:
+                        cancelled -= 1
+
+                    if new_status == STATUS_DELAYED:
+                        delayed += 1
+                    elif new_status == STATUS_ON_TIME:
+                        on_time += 1
+                    elif new_status == STATUS_CANCELLED:
+                        cancelled += 1
+                    updates[cache_key] = new_status
+
+            if updates:
+                await self._cache.mset(updates, ttl_seconds=7200)  # 2 hours
+
+        except Exception as exc:
+            logger.debug("Batch cache operation failed: %s", exc)
+            for status in trip_statuses.values():
+                trip_count += 1
+                total_delay_seconds += status["delay"]
+                if status["status"] == STATUS_DELAYED:
+                    delayed += 1
+                elif status["status"] == STATUS_ON_TIME:
+                    on_time += 1
+                elif status["status"] == STATUS_CANCELLED:
+                    cancelled += 1
+
+        return {
+            "trip_count": trip_count,
+            "total_delay_seconds": total_delay_seconds,
+            "delayed": delayed,
+            "on_time": on_time,
+            "cancelled": cancelled,
+        }
 
     def _hash_trip_id(self, trip_id: str) -> str:
         """Create a short hash of trip_id to reduce cache key size."""
@@ -420,15 +508,14 @@ class GTFSRTDataHarvester:
         bucket_str = bucket_start.isoformat()
         lines = []
         for stop_id, stats in stop_stats.items():
-            total_delay = sum(stats["delays"]) if stats["delays"] else 0
             line = "\t".join(
                 [
                     _escape_tsv(stop_id),
                     _escape_tsv(bucket_str),
                     _escape_tsv(60),  # bucket_width_minutes
                     _escape_tsv(1),  # observation_count
-                    _escape_tsv(stats.get("new_trip_count", len(stats["trips"]))),
-                    _escape_tsv(total_delay),
+                    _escape_tsv(stats["trip_count"]),
+                    _escape_tsv(stats["total_delay_seconds"]),
                     _escape_tsv(stats["delayed"]),
                     _escape_tsv(stats["on_time"]),
                     _escape_tsv(stats["cancelled"]),
