@@ -10,6 +10,7 @@ import {
   HeatmapLegend,
   HeatmapOverlayPanel,
   HeatmapStats,
+  HeatmapSearchOverlay,
 } from '../components/heatmap'
 import type { TransportType } from '../types/api'
 import type { TimeRangePreset, HeatmapMetric } from '../types/heatmap'
@@ -153,6 +154,31 @@ export default function HeatmapPage() {
                   </div>
                 )}
 
+                {!error && !isLoading && dataPoints.length === 0 && (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <span className="text-sm font-medium">No data available yet</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Real-time transit data is being collected. Check back in a few minutes as the
+                      system gathers delay and cancellation information from GTFS-RT feeds.
+                    </p>
+                  </div>
+                )}
+
                 <div className="bg-muted/40 rounded-lg border border-border/60 p-3">
                   <h3 className="text-xs font-semibold text-foreground">Tips</h3>
                   <ul className="mt-2 text-xs text-muted-foreground space-y-1">
@@ -194,6 +220,7 @@ export default function HeatmapPage() {
             }
           />
         </Suspense>
+        <HeatmapSearchOverlay />
       </div>
     </div>
   )

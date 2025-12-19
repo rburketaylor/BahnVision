@@ -255,6 +255,39 @@ html.dark .bv-map-popup__label {
   font-weight: 600;
 }
 
+.bv-map-popup__link {
+  display: block;
+  margin-top: 12px;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #0065ae;
+  border-radius: 8px;
+  text-decoration: none;
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s ease;
+}
+
+.bv-map-popup__link:hover {
+  background-color: #0054a0;
+  transform: translateY(-1px);
+}
+
+.bv-map-popup__link:active {
+  transform: translateY(0);
+}
+
+html.dark .bv-map-popup__link {
+  background-color: #1d4ed8;
+}
+
+html.dark .bv-map-popup__link:hover {
+  background-color: #1e40af;
+}
+
 body {
   min-height: 100vh;
   background-color: #121212;

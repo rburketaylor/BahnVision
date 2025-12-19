@@ -325,27 +325,39 @@ export function MapLibreHeatmap({
     }, 250)
   }, [])
 
-  // Initialize map
+  // Initialize map - recreate when theme changes for reliable style switching
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return
+    if (!mapContainerRef.current) return
+
+    // Clean up existing map before creating a new one (e.g., on theme change)
+    if (mapRef.current) {
+      if (zoomDebounceTimerRef.current) window.clearTimeout(zoomDebounceTimerRef.current)
+      if (saveViewTimerRef.current) window.clearTimeout(saveViewTimerRef.current)
+      if (hotspotUpdateTimerRef.current) window.clearTimeout(hotspotUpdateTimerRef.current)
+      clearHotspotMarkers()
+      popupRef.current?.remove()
+      mapRef.current.remove()
+      mapRef.current = null
+    }
 
     const saved = loadSavedView()
     const initialCenter: [number, number] = saved?.center ?? [GERMANY_CENTER[1], GERMANY_CENTER[0]]
     const initialZoom = saved?.zoom ?? DEFAULT_ZOOM
 
-    const initialTheme: HeatmapResolvedTheme = resolvedThemeRef.current
+    // Use the current theme from props, not from ref, since this effect should run on theme change
+    const currentTheme: HeatmapResolvedTheme = resolvedTheme
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: getBasemapStyleForTheme(initialTheme),
+      style: getBasemapStyleForTheme(currentTheme),
       center: initialCenter, // [lng, lat] for MapLibre
       zoom: initialZoom,
     })
 
-    styleUrlRef.current = getBasemapStyleForTheme(initialTheme)
+    styleUrlRef.current = getBasemapStyleForTheme(currentTheme)
 
     // Add navigation controls
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
+    map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
 
     // Create popup instance for reuse
     popupRef.current = new maplibregl.Popup({
@@ -362,7 +374,7 @@ export function MapLibreHeatmap({
     }
 
     const ensureLayers = () => {
-      const theme: HeatmapResolvedTheme = resolvedThemeRef.current
+      const theme: HeatmapResolvedTheme = currentTheme
       const config = getHeatmapConfigForTheme(theme)
       const isDark = theme === 'dark'
 
@@ -701,6 +713,7 @@ export function MapLibreHeatmap({
       // Show popup with both metrics
       const isDelaySelected = metricRef.current === 'delays'
 
+      const stationId = escapeHtml(String(props.station_id ?? ''))
       const popupContent = `
         <div class="bv-map-popup">
           <h4 class="bv-map-popup__title">${stationName}</h4>
@@ -734,6 +747,9 @@ export function MapLibreHeatmap({
               </span>
             </div>
           </div>
+          <a href="/station/${stationId}" class="bv-map-popup__link">
+            View Details →
+          </a>
         </div>
       `
 
@@ -776,8 +792,14 @@ export function MapLibreHeatmap({
       map.remove()
       mapRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- geoJsonData accessed via ref; map initialization is one-time
-  }, [clearHotspotMarkers, scheduleHotspotUpdate, scheduleViewSave, scheduleZoomCallback])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- geoJsonData accessed via ref; resolvedTheme triggers map recreation
+  }, [
+    clearHotspotMarkers,
+    resolvedTheme,
+    scheduleHotspotUpdate,
+    scheduleViewSave,
+    scheduleZoomCallback,
+  ])
 
   const resetView = useCallback(() => {
     const map = mapRef.current
@@ -799,27 +821,6 @@ export function MapLibreHeatmap({
     })
   }, [])
 
-  // Switch basemap style when theme changes (with a soft fade to hide style flash)
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    const nextTheme: HeatmapResolvedTheme = resolvedTheme
-    const nextStyle = getBasemapStyleForTheme(nextTheme)
-
-    if (styleUrlRef.current === nextStyle) return
-
-    setIsStyleTransitioning(true)
-
-    try {
-      clearHotspotMarkers()
-      styleUrlRef.current = nextStyle
-      map.setStyle(nextStyle)
-    } catch {
-      setIsStyleTransitioning(false)
-    }
-  }, [clearHotspotMarkers, resolvedTheme])
-
   // Update data when dataPoints or metric change
   useEffect(() => {
     updateMapData()
@@ -830,7 +831,7 @@ export function MapLibreHeatmap({
       <div ref={mapContainerRef} className="absolute inset-0 z-0" />
 
       {/* Map UI helpers */}
-      <div className="absolute right-14 top-3 z-[950] flex items-center gap-2">
+      <div className="absolute right-4 top-16 z-[950] flex items-center gap-2">
         <button
           type="button"
           onClick={resetView}
