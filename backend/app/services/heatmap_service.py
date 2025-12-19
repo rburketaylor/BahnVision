@@ -2,13 +2,11 @@
 Heatmap service for cancellation data aggregation.
 
 Aggregates departure cancellation data across stations for heatmap visualization.
-Uses real GTFS-RT data from the station_aggregations table when available,
-falling back to simulated data when historical data is not yet collected.
+Uses real GTFS-RT data from the realtime_station_stats table.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -251,10 +249,9 @@ class HeatmapService:
             stops, transport_types, from_time, to_time
         )
 
-        # If no data from DB, fall back to simulated data
+        # Log when no real data is available (no more fake/simulated fallback)
         if not data_points:
-            logger.info("No historical data available, using simulated data")
-            data_points = self._aggregate_station_data_simulated(stops, transport_types)
+            logger.info("No historical data available for the requested time range")
 
         # Filter to stations with significant data (delays or cancellations)
         data_points = [
@@ -440,125 +437,6 @@ class HeatmapService:
         except Exception as exc:
             logger.warning("Failed to query aggregation data, falling back: %s", exc)
             return []
-
-    def _aggregate_station_data_simulated(
-        self,
-        stops: list[StopInfo],
-        transport_types: list[str] | None,
-    ) -> list[HeatmapDataPoint]:
-        """Generate simulated cancellation data for each station.
-
-        Used as fallback when historical data is not yet available.
-
-        Args:
-            stops: List of stops to generate data for
-            transport_types: Filter to specific transport types
-
-        Returns:
-            List of HeatmapDataPoint with simulated statistics
-        """
-        data_points: list[HeatmapDataPoint] = []
-
-        # Default transport types if not specified
-        all_transport_types = ["UBAHN", "SBAHN", "TRAM", "BUS", "BAHN"]
-        active_types = transport_types or all_transport_types
-
-        # Generate realistic-looking data based on station characteristics
-        for stop in stops:
-            # Use stop ID hash for reproducible "random" data
-            # Using SHA256 instead of MD5 for security compliance
-            stop_hash = int(hashlib.sha256(stop.stop_id.encode()).hexdigest()[:8], 16)
-
-            # Generate realistic departure counts based on station importance
-            # Central stations have more departures
-            is_major_station = any(
-                name in stop.stop_name.lower()
-                for name in [
-                    "hauptbahnhof",
-                    "hbf",
-                    "marienplatz",
-                    "sendlinger",
-                    "stachus",
-                    "odeonsplatz",
-                    "münchner freiheit",
-                    "ostbahnhof",
-                    "pasing",
-                    "giesing",
-                    "moosach",
-                    "zentrum",
-                    "bahnhof",
-                ]
-            )
-
-            base_departures = 500 if is_major_station else 100
-            total_departures = base_departures + (stop_hash % 200)
-
-            # Calculate cancellation rate (typically 1-5%, higher for some stations)
-            base_cancellation_rate = 0.02 + (stop_hash % 100) / 3000
-            if stop_hash % 20 == 0:  # Some stations have higher issues
-                base_cancellation_rate += 0.03
-
-            cancelled_count = int(total_departures * min(base_cancellation_rate, 0.15))
-
-            # Generate delay rate (typically 5-15%, higher than cancellations)
-            base_delay_rate = 0.08 + (stop_hash % 100) / 2000
-            if stop_hash % 15 == 0:  # Some stations have more delays
-                base_delay_rate += 0.05
-
-            delayed_count = int(total_departures * min(base_delay_rate, 0.25))
-
-            # Generate transport breakdown
-            by_transport: dict[str, TransportStats] = {}
-
-            remaining_departures = total_departures
-            remaining_cancellations = cancelled_count
-            remaining_delays = delayed_count
-
-            for i, tt in enumerate(active_types):
-                if i == len(active_types) - 1:
-                    # Last transport type gets remaining
-                    tt_departures = remaining_departures
-                    tt_cancellations = remaining_cancellations
-                    tt_delays = remaining_delays
-                else:
-                    # Distribute based on hash
-                    ratio = ((stop_hash >> (i * 4)) % 10 + 1) / 10
-                    tt_departures = int(remaining_departures * ratio * 0.3)
-                    tt_cancellations = int(remaining_cancellations * ratio * 0.3)
-                    tt_delays = int(remaining_delays * ratio * 0.3)
-
-                    remaining_departures -= tt_departures
-                    remaining_cancellations -= tt_cancellations
-                    remaining_delays -= tt_delays
-
-                if tt_departures > 0:
-                    by_transport[tt] = TransportStats(
-                        total=tt_departures,
-                        cancelled=max(0, tt_cancellations),
-                        delayed=max(0, tt_delays),
-                    )
-
-            cancellation_rate = (
-                cancelled_count / total_departures if total_departures > 0 else 0
-            )
-            delay_rate = delayed_count / total_departures if total_departures > 0 else 0
-
-            data_points.append(
-                HeatmapDataPoint(
-                    station_id=stop.stop_id,
-                    station_name=stop.stop_name,
-                    latitude=stop.stop_lat,
-                    longitude=stop.stop_lon,
-                    total_departures=total_departures,
-                    cancelled_count=cancelled_count,
-                    cancellation_rate=cancellation_rate,
-                    delayed_count=delayed_count,
-                    delay_rate=delay_rate,
-                    by_transport=by_transport,
-                )
-            )
-
-        return data_points
 
     def _calculate_summary(
         self,

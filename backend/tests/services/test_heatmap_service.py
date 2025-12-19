@@ -173,7 +173,11 @@ class TestHeatmapService:
 
     @pytest.mark.asyncio
     async def test_get_cancellation_heatmap_basic(self, sample_stops):
-        """Test basic heatmap generation."""
+        """Test basic heatmap generation returns empty without DB session.
+
+        Without a database session, the service cannot query real data and
+        returns empty results (no more simulated/fake data fallback).
+        """
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache)
@@ -181,8 +185,9 @@ class TestHeatmapService:
         result = await service.get_cancellation_heatmap()
 
         assert isinstance(result, HeatmapResponse)
-        assert len(result.data_points) > 0
-        assert result.summary.total_stations > 0
+        # No DB session means no data points (no fake data fallback)
+        assert len(result.data_points) == 0
+        assert result.summary.total_stations == 0
 
     @pytest.mark.asyncio
     async def test_get_cancellation_heatmap_with_time_range(self, sample_stops):
@@ -223,44 +228,43 @@ class TestHeatmapService:
         assert len(result.data_points) == 0
         assert result.summary.total_stations == 0
 
+    def test_data_point_structure(self):
+        """Test that HeatmapDataPoint has correct structure."""
+        point = HeatmapDataPoint(
+            station_id="de:09162:6",
+            station_name="Marienplatz",
+            latitude=48.137,
+            longitude=11.575,
+            total_departures=100,
+            cancelled_count=5,
+            cancellation_rate=0.05,
+            delayed_count=10,
+            delay_rate=0.10,
+            by_transport={},
+        )
+
+        assert isinstance(point.station_id, str)
+        assert isinstance(point.station_name, str)
+        assert isinstance(point.latitude, float)
+        assert isinstance(point.longitude, float)
+        assert isinstance(point.total_departures, int)
+        assert isinstance(point.cancelled_count, int)
+        assert isinstance(point.cancellation_rate, float)
+        assert 0 <= point.cancellation_rate <= 1
+
     @pytest.mark.asyncio
-    async def test_data_point_structure(self, sample_stops):
-        """Test that data points have correct structure."""
+    async def test_summary_statistics_empty_without_db(self, sample_stops):
+        """Test that summary statistics are empty without DB session."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache)
 
         result = await service.get_cancellation_heatmap()
 
-        for point in result.data_points:
-            assert isinstance(point.station_id, str)
-            assert isinstance(point.station_name, str)
-            assert isinstance(point.latitude, float)
-            assert isinstance(point.longitude, float)
-            assert isinstance(point.total_departures, int)
-            assert isinstance(point.cancelled_count, int)
-            assert isinstance(point.cancellation_rate, float)
-            assert 0 <= point.cancellation_rate <= 1
-
-    @pytest.mark.asyncio
-    async def test_summary_statistics(self, sample_stops):
-        """Test that summary statistics are calculated correctly."""
-        gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
-        cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
-
-        result = await service.get_cancellation_heatmap()
-
-        # Summary should aggregate data points
-        total_deps = sum(p.total_departures for p in result.data_points)
-        total_cancelled = sum(p.cancelled_count for p in result.data_points)
-
-        assert result.summary.total_departures == total_deps
-        assert result.summary.total_cancellations == total_cancelled
-
-        if total_deps > 0:
-            expected_rate = total_cancelled / total_deps
-            assert abs(result.summary.overall_cancellation_rate - expected_rate) < 0.001
+        # Without DB session, no data is available
+        assert result.summary.total_departures == 0
+        assert result.summary.total_cancellations == 0
+        assert result.summary.overall_cancellation_rate == 0.0
 
 
 class TestCalculateSummary:
