@@ -31,6 +31,33 @@ class FakeCache:
         pass
 
 
+class FakeResult:
+    """Fake SQLAlchemy result for testing."""
+
+    def __init__(self, rows: list[object]):
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
+
+
+class FakeAsyncSession:
+    """Fake async database session for testing."""
+
+    def __init__(
+        self,
+        rows: list[object] | None = None,
+        raise_on_execute: Exception | None = None,
+    ):
+        self._rows = rows or []
+        self._raise_on_execute = raise_on_execute
+
+    async def execute(self, stmt) -> FakeResult:
+        if self._raise_on_execute:
+            raise self._raise_on_execute
+        return FakeResult(self._rows)
+
+
 @dataclass
 class FakeGTFSStop:
     """Fake GTFS stop for testing."""
@@ -79,6 +106,12 @@ def sample_stops() -> list[FakeGTFSStop]:
             stop_lon=11.567,
         ),
     ]
+
+
+@pytest.fixture
+def fake_session_empty() -> FakeAsyncSession:
+    """Fake session that returns no rows."""
+    return FakeAsyncSession()
 
 
 class TestParseTimeRange:
@@ -172,29 +205,28 @@ class TestHeatmapService:
     """Tests for HeatmapService."""
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_basic(self, sample_stops):
-        """Test basic heatmap generation returns empty without DB session.
-
-        Without a database session, the service cannot query real data and
-        returns empty results (no more simulated/fake data fallback).
-        """
+    async def test_get_cancellation_heatmap_basic(
+        self, sample_stops, fake_session_empty
+    ):
+        """Test basic heatmap generation returns empty when DB has no rows."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap()
 
         assert isinstance(result, HeatmapResponse)
-        # No DB session means no data points (no fake data fallback)
         assert len(result.data_points) == 0
         assert result.summary.total_stations == 0
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_with_time_range(self, sample_stops):
+    async def test_get_cancellation_heatmap_with_time_range(
+        self, sample_stops, fake_session_empty
+    ):
         """Test heatmap with specific time range."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap(time_range="1h")
 
@@ -203,11 +235,11 @@ class TestHeatmapService:
         assert abs(delta.total_seconds() - 3600) < 1
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_empty_stops(self):
-        """Test heatmap with no stops."""
+    async def test_get_cancellation_heatmap_empty_stops(self, fake_session_empty):
+        """Test heatmap with no rows and no stops."""
         gtfs_schedule = FakeGTFSScheduleService(stops=[])
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap()
 
@@ -216,17 +248,25 @@ class TestHeatmapService:
         assert result.summary.overall_cancellation_rate == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_stop_failure(self):
-        """Test heatmap handles stop fetch failure."""
+    async def test_get_cancellation_heatmap_without_session_raises(self):
+        """Test heatmap fails without a database session."""
         gtfs_schedule = FakeGTFSScheduleService()
-        gtfs_schedule.fail_stops = True
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache)
 
-        result = await service.get_cancellation_heatmap()
+        with pytest.raises(RuntimeError, match="database session"):
+            await service.get_cancellation_heatmap()
 
-        assert len(result.data_points) == 0
-        assert result.summary.total_stations == 0
+    @pytest.mark.asyncio
+    async def test_get_cancellation_heatmap_db_error_raises(self):
+        """Test heatmap fails when the database query fails."""
+        gtfs_schedule = FakeGTFSScheduleService()
+        cache = FakeCache()
+        session = FakeAsyncSession(raise_on_execute=RuntimeError("db down"))
+        service = HeatmapService(gtfs_schedule, cache, session=session)
+
+        with pytest.raises(RuntimeError, match="db down"):
+            await service.get_cancellation_heatmap()
 
     def test_data_point_structure(self):
         """Test that HeatmapDataPoint has correct structure."""
@@ -253,15 +293,16 @@ class TestHeatmapService:
         assert 0 <= point.cancellation_rate <= 1
 
     @pytest.mark.asyncio
-    async def test_summary_statistics_empty_without_db(self, sample_stops):
-        """Test that summary statistics are empty without DB session."""
+    async def test_summary_statistics_empty_without_db(
+        self, sample_stops, fake_session_empty
+    ):
+        """Test that summary statistics are empty when DB has no rows."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap()
 
-        # Without DB session, no data is available
         assert result.summary.total_departures == 0
         assert result.summary.total_cancellations == 0
         assert result.summary.overall_cancellation_rate == 0.0
