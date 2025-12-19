@@ -6,14 +6,19 @@ Provides an endpoint to retrieve cancellation heatmap data for map visualization
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_session
+from app.core.database import AsyncSessionFactory, get_session
 from app.models.heatmap import HeatmapResponse, TimeRangePreset
 from app.services.cache import CacheService, get_cache_service
 from app.services.gtfs_schedule import GTFSScheduleService
 from app.services.heatmap_service import HeatmapService
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -99,31 +104,75 @@ async def get_cancellation_heatmap(
     The response is cached for 5 minutes to balance freshness with performance.
     When historical data is available, real GTFS-RT observations are used.
     """
-    # Generate cache key
-    cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}:{zoom}:{max_points or 'default'}"
-
-    # Try to get from cache
-    cached_data = await cache.get_json(cache_key)
-    if cached_data:
-        response.headers["X-Cache-Status"] = "hit"
-        return HeatmapResponse.model_validate(cached_data)
-
-    # Generate fresh data with database session for real aggregations
-    service = HeatmapService(gtfs_schedule, cache, session=db)
-    result = await service.get_cancellation_heatmap(
-        time_range=time_range,
-        transport_modes=transport_modes,
-        bucket_width_minutes=bucket_width,
-        zoom_level=zoom,
-        max_points=max_points,
+    logger.info(
+        f"Heatmap request: time_range={time_range}, transport_modes={transport_modes}, "
+        f"bucket_width={bucket_width}, zoom={zoom}, max_points={max_points}"
     )
 
-    # Cache the result
-    await cache.set_json(
-        cache_key,
-        result.model_dump(mode="json"),
-        ttl_seconds=_HEATMAP_CACHE_TTL_SECONDS,
-    )
+    try:
+        # Generate cache key
+        cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}:{zoom}:{max_points or 'default'}"
 
-    response.headers["X-Cache-Status"] = "miss"
-    return result
+        # Try to get from cache
+        cached_data = await cache.get_json(cache_key)
+        if cached_data:
+            response.headers["X-Cache-Status"] = "hit"
+            logger.debug("Cache hit for heatmap data")
+            return HeatmapResponse.model_validate(cached_data)
+
+        logger.info("Cache miss - generating fresh heatmap data")
+
+        # Generate fresh data with database session for real aggregations
+        service = HeatmapService(gtfs_schedule, cache, session=db)
+        result = await service.get_cancellation_heatmap(
+            time_range=time_range,
+            transport_modes=transport_modes,
+            bucket_width_minutes=bucket_width,
+            zoom_level=zoom,
+            max_points=max_points,
+        )
+
+        # Cache the result
+        await cache.set_json(
+            cache_key,
+            result.model_dump(mode="json"),
+            ttl_seconds=_HEATMAP_CACHE_TTL_SECONDS,
+        )
+
+        response.headers["X-Cache-Status"] = "miss"
+        logger.info(f"Generated heatmap with {len(result.data_points)} data points")
+        return result
+
+    except Exception as e:
+        logger.error(f"Heatmap generation failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate heatmap: {str(e)}"
+        )
+
+
+@router.get("/health")
+async def heatmap_health_check():
+    """Health check endpoint for heatmap service."""
+    try:
+        # Test database connectivity
+        async with AsyncSessionFactory() as session:
+            result = await session.execute(text("SELECT 1"))
+            # Validate connection by fetching the scalar result
+            result.scalar_one_or_none()
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "message": "Heatmap service is operational",
+        }
+
+    except Exception as e:
+        logger.error(f"Heatmap health check failed: {str(e)}")
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+
+
+# Test the health endpoint directly
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
