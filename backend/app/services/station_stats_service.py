@@ -141,9 +141,9 @@ class StationStatsService:
                     display_name=display_name,
                     total_departures=deps,
                     cancelled_count=cancelled,
-                    cancellation_rate=cancelled / deps if deps > 0 else 0,
+                    cancellation_rate=min(cancelled / deps, 1.0) if deps > 0 else 0,
                     delayed_count=delayed,
-                    delay_rate=delayed / deps if deps > 0 else 0,
+                    delay_rate=min(delayed / deps, 1.0) if deps > 0 else 0,
                 )
             )
 
@@ -152,10 +152,10 @@ class StationStatsService:
 
         # Calculate overall rates
         overall_cancellation_rate = (
-            total_cancelled / total_departures if total_departures > 0 else 0
+            min(total_cancelled / total_departures, 1.0) if total_departures > 0 else 0
         )
         overall_delay_rate = (
-            total_delayed / total_departures if total_departures > 0 else 0
+            min(total_delayed / total_departures, 1.0) if total_departures > 0 else 0
         )
 
         # Get network averages for comparison
@@ -247,8 +247,8 @@ class StationStatsService:
             cancelled = row.cancelled_count or 0
             delayed = row.delayed_count or 0
 
-            cancel_rate = cancelled / deps if deps > 0 else 0
-            delay_rate = delayed / deps if deps > 0 else 0
+            cancel_rate = min(cancelled / deps, 1.0) if deps > 0 else 0
+            delay_rate = min(delayed / deps, 1.0) if deps > 0 else 0
 
             total_cancellation_rate += cancel_rate
             total_delay_rate += delay_rate
@@ -317,6 +317,6 @@ class StationStatsService:
             return {"cancellation_rate": 0.0, "delay_rate": 0.0}
 
         return {
-            "cancellation_rate": (row.cancelled or 0) / row.total,
-            "delay_rate": (row.delayed or 0) / row.total,
+            "cancellation_rate": min((row.cancelled or 0) / row.total, 1.0),
+            "delay_rate": min((row.delayed or 0) / row.total, 1.0),
         }
