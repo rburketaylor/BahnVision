@@ -245,6 +245,9 @@ class GTFSRTDataHarvester:
     ) -> dict[str, dict]:
         """Aggregate trip updates by stop_id with deduplication.
 
+        Counts delays/cancellations per UNIQUE TRIP, not per stop_time_update.
+        Each trip is classified once based on its worst status across all stops.
+
         Args:
             trip_updates: List of parsed trip updates
             bucket_start: Start of the current time bucket
@@ -252,6 +255,32 @@ class GTFSRTDataHarvester:
         Returns:
             Dict mapping stop_id -> aggregated statistics
         """
+        # First pass: determine the status of each unique trip at each stop
+        # Key: (stop_id, trip_id) -> {"delay": max_delay, "cancelled": bool}
+        trip_status_by_stop: dict[tuple[str, str], dict] = {}
+
+        for update in trip_updates:
+            stop_id = update["stop_id"]
+            trip_id = update["trip_id"]
+            key = (stop_id, trip_id)
+
+            delay = update.get("departure_delay_seconds") or 0
+            is_cancelled = (
+                update["schedule_relationship"] == ScheduleRelationship.CANCELED
+            )
+
+            if key not in trip_status_by_stop:
+                trip_status_by_stop[key] = {
+                    "delay": delay,
+                    "cancelled": is_cancelled,
+                }
+            else:
+                # Keep the worst status for this trip at this stop
+                existing = trip_status_by_stop[key]
+                existing["delay"] = max(existing["delay"], delay)
+                existing["cancelled"] = existing["cancelled"] or is_cancelled
+
+        # Second pass: aggregate by stop_id, counting each trip only once
         stop_stats: dict[str, dict] = defaultdict(
             lambda: {
                 "trips": set(),
@@ -262,24 +291,22 @@ class GTFSRTDataHarvester:
             }
         )
 
-        for update in trip_updates:
-            stop_id = update["stop_id"]
-            trip_id = update["trip_id"]
+        for (stop_id, trip_id), status in trip_status_by_stop.items():
+            stats = stop_stats[stop_id]
 
             # Track unique trips
-            stop_stats[stop_id]["trips"].add(trip_id)
+            stats["trips"].add(trip_id)
 
-            # Get delay value
-            delay = update.get("departure_delay_seconds") or 0
-            stop_stats[stop_id]["delays"].append(delay)
+            # Store delay for average calculation
+            stats["delays"].append(status["delay"])
 
-            # Classify the observation
-            if update["schedule_relationship"] == ScheduleRelationship.CANCELED:
-                stop_stats[stop_id]["cancelled"] += 1
-            elif delay > DELAY_THRESHOLD_SECONDS:
-                stop_stats[stop_id]["delayed"] += 1
-            elif abs(delay) < ON_TIME_THRESHOLD_SECONDS:
-                stop_stats[stop_id]["on_time"] += 1
+            # Classify the trip (each trip counted ONCE per stop)
+            if status["cancelled"]:
+                stats["cancelled"] += 1
+            elif status["delay"] > DELAY_THRESHOLD_SECONDS:
+                stats["delayed"] += 1
+            elif abs(status["delay"]) < ON_TIME_THRESHOLD_SECONDS:
+                stats["on_time"] += 1
 
         # Count new trips using cache deduplication
         for stop_id, stats in stop_stats.items():

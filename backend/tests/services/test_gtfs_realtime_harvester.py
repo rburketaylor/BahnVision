@@ -169,6 +169,56 @@ class TestGTFSRTDataHarvester:
         assert stop_b["cancelled"] == 1
 
     @pytest.mark.asyncio
+    async def test_aggregate_by_stop_deduplicates_per_trip(self):
+        """Test that a single trip with multiple stop_time_updates is counted once.
+
+        This was a critical bug where delayed_count was massively inflated because
+        each stop a trip visited was being counted separately.
+        """
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+        # Simulate trip_1 visiting stop_A with multiple updates (different delays)
+        # This could happen if the feed is polled multiple times or the trip
+        # reports delays at different stops along its route
+        trip_updates = [
+            {
+                "trip_id": "trip_1",
+                "stop_id": "stop_A",
+                "departure_delay_seconds": 100,  # Minor delay
+                "schedule_relationship": ScheduleRelationship.SCHEDULED,
+            },
+            {
+                "trip_id": "trip_1",
+                "stop_id": "stop_A",
+                "departure_delay_seconds": 400,  # Later update shows more delay
+                "schedule_relationship": ScheduleRelationship.SCHEDULED,
+            },
+            {
+                "trip_id": "trip_1",
+                "stop_id": "stop_A",
+                "departure_delay_seconds": 500,  # Even more delay
+                "schedule_relationship": ScheduleRelationship.SCHEDULED,
+            },
+        ]
+
+        result = await harvester._aggregate_by_stop(trip_updates, bucket_start)
+
+        stop_a = result["stop_A"]
+        # Only 1 unique trip
+        assert len(stop_a["trips"]) == 1
+        # The trip should be counted ONCE as delayed (not 3 times!)
+        assert stop_a["delayed"] == 1
+        assert stop_a["on_time"] == 0
+        assert stop_a["cancelled"] == 0
+
+    @pytest.mark.asyncio
     async def test_count_new_trips_without_cache(self):
         """Test trip counting without cache - all trips counted as new."""
         harvester = GTFSRTDataHarvester(cache_service=None)
