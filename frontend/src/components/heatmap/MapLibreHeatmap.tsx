@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useCallback, useMemo, useState, type ReactNode } from 'react'
 import maplibregl from 'maplibre-gl'
+import React from 'react'
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec'
 import type { HeatmapDataPoint, HeatmapMetric } from '../../types/heatmap'
 import {
@@ -21,6 +22,60 @@ import {
   LIGHT_HEATMAP_CONFIG,
 } from '../../types/heatmap'
 import { useTheme } from '../../contexts/ThemeContext'
+
+// Error Boundary for Heatmap component
+interface HeatmapErrorBoundaryProps {
+  children: ReactNode
+  onReset: () => void
+}
+
+interface HeatmapErrorBoundaryState {
+  hasError: boolean
+}
+
+class HeatmapErrorBoundary extends React.Component<
+  HeatmapErrorBoundaryProps,
+  HeatmapErrorBoundaryState
+> {
+  constructor(props: HeatmapErrorBoundaryProps) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(): HeatmapErrorBoundaryState {
+    return { hasError: true }
+  }
+
+  componentDidCatch(): void {
+    // Error is already logged by React
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-destructive/10">
+          <div className="text-center p-6 bg-card rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold text-destructive mb-2">Heatmap Error</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Failed to load heatmap visualization
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false })
+                this.props.onReset()
+              }}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
 
 // Basemap styles (no API key required)
 const LIGHT_MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
@@ -105,10 +160,39 @@ interface MapLibreHeatmapProps {
   dataPoints: HeatmapDataPoint[]
   metric: HeatmapMetric
   isLoading?: boolean
-  selectedStation?: string | null
   onStationSelect?: (stationId: string | null) => void
   onZoomChange?: (zoom: number) => void
   overlay?: ReactNode
+}
+
+/**
+ * Validate heatmap data points and filter out invalid entries
+ */
+function validateHeatmapData(dataPoints: HeatmapDataPoint[]): HeatmapDataPoint[] {
+  if (!Array.isArray(dataPoints)) {
+    console.error('Invalid dataPoints: not an array', dataPoints)
+    return []
+  }
+
+  return dataPoints.filter((point, index) => {
+    const isValid =
+      typeof point?.latitude === 'number' &&
+      typeof point?.longitude === 'number' &&
+      !isNaN(point.latitude) &&
+      !isNaN(point.longitude) &&
+      typeof point?.total_departures === 'number' &&
+      typeof point?.cancelled_count === 'number' &&
+      typeof point?.delayed_count === 'number'
+
+    if (!isValid) {
+      console.warn(`Invalid data point filtered at index ${index}:`, {
+        latitude: point?.latitude,
+        longitude: point?.longitude,
+        total_departures: point?.total_departures,
+      })
+    }
+    return isValid
+  })
 }
 
 /**
@@ -119,14 +203,17 @@ function toGeoJSON(
   dataPoints: HeatmapDataPoint[],
   metric: HeatmapMetric
 ): GeoJSON.FeatureCollection {
-  // Filter out invalid points and ensure all numeric values are valid
-  const validPoints = dataPoints.filter(
-    point =>
-      typeof point.latitude === 'number' &&
-      typeof point.longitude === 'number' &&
-      !isNaN(point.latitude) &&
-      !isNaN(point.longitude)
-  )
+  // Validate and filter data first
+  const validPoints = validateHeatmapData(dataPoints)
+
+  // Provide fallback for empty data
+  if (validPoints.length === 0) {
+    console.info('No valid heatmap data - returning empty feature collection')
+    return {
+      type: 'FeatureCollection',
+      features: [],
+    }
+  }
 
   return {
     type: 'FeatureCollection',
@@ -181,6 +268,26 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;')
 }
 
+/**
+ * Suppress WebGL deprecation warnings in development
+ */
+function setupWebGLWarningSuppression() {
+  // Only suppress warnings in development mode
+  if (import.meta.env.MODE === 'development') {
+    const originalConsoleWarn = console.warn
+    console.warn = (...args) => {
+      if (
+        typeof args[0] === 'string' &&
+        args[0].includes('texImage') &&
+        args[0].includes('deprecated')
+      ) {
+        return // Skip WebGL deprecation warnings
+      }
+      originalConsoleWarn(...args)
+    }
+  }
+}
+
 export function MapLibreHeatmap({
   dataPoints,
   metric,
@@ -189,6 +296,11 @@ export function MapLibreHeatmap({
   onZoomChange,
   overlay,
 }: MapLibreHeatmapProps) {
+  // Setup WebGL warning suppression
+  useEffect(() => {
+    setupWebGLWarningSuppression()
+  }, [])
+
   const { resolvedTheme } = useTheme()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -203,6 +315,7 @@ export function MapLibreHeatmap({
   const hotspotMarkersRef = useRef<Map<number, maplibregl.Marker>>(new Map())
   const hotspotUpdateTimerRef = useRef<number | null>(null)
   const [isStyleTransitioning, setIsStyleTransitioning] = useState(false)
+  const [mapKey, setMapKey] = useState(Date.now())
 
   useEffect(() => {
     metricRef.current = metric
@@ -827,40 +940,55 @@ export function MapLibreHeatmap({
   }, [updateMapData])
 
   return (
-    <div className="relative w-full h-full rounded-lg overflow-hidden border border-border">
-      <div ref={mapContainerRef} className="absolute inset-0 z-0" />
-
-      {/* Map UI helpers */}
-      <div className="absolute right-4 top-16 z-[950] flex items-center gap-2">
-        <button
-          type="button"
-          onClick={resetView}
-          className="bg-card border border-border text-foreground px-3 py-2 rounded-lg text-xs font-medium shadow-sm hover:bg-muted transition-colors"
-          aria-label="Reset map view"
-          title="Reset map view"
-        >
-          Reset view
-        </button>
-      </div>
-
-      {overlay}
-
-      {/* Style-switch fade overlay */}
+    <HeatmapErrorBoundary
+      onReset={() => {
+        // Reset the map state
+        if (mapRef.current) {
+          mapRef.current.remove()
+          mapRef.current = null
+        }
+        // Force re-render by toggling a key
+        setMapKey(Date.now())
+      }}
+    >
       <div
-        className={`absolute inset-0 z-[900] pointer-events-none transition-opacity duration-300 ${
-          isStyleTransitioning ? 'opacity-100' : 'opacity-0'
-        } ${resolvedTheme === 'dark' ? 'bg-[#0b0f14]' : 'bg-white'}`}
-      />
+        className="relative w-full h-full rounded-lg overflow-hidden border border-border"
+        key={mapKey}
+      >
+        <div ref={mapContainerRef} className="absolute inset-0 z-0" />
 
-      {/* Loading overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 bg-background/30 z-[1000] flex items-center justify-center pointer-events-none">
-          <div className="text-center bg-card p-4 rounded-lg shadow-lg backdrop-blur-sm">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">Loading heatmap data...</p>
-          </div>
+        {/* Map UI helpers */}
+        <div className="absolute right-4 top-16 z-[950] flex items-center gap-2">
+          <button
+            type="button"
+            onClick={resetView}
+            className="bg-card border border-border text-foreground px-3 py-2 rounded-lg text-xs font-medium shadow-sm hover:bg-muted transition-colors"
+            aria-label="Reset map view"
+            title="Reset map view"
+          >
+            Reset view
+          </button>
         </div>
-      )}
-    </div>
+
+        {overlay}
+
+        {/* Style-switch fade overlay */}
+        <div
+          className={`absolute inset-0 z-[900] pointer-events-none transition-opacity duration-300 ${
+            isStyleTransitioning ? 'opacity-100' : 'opacity-0'
+          } ${resolvedTheme === 'dark' ? 'bg-[#0b0f14]' : 'bg-white'}`}
+        />
+
+        {/* Loading overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-background/30 z-[1000] flex items-center justify-center pointer-events-none">
+            <div className="text-center bg-card p-4 rounded-lg shadow-lg backdrop-blur-sm">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Loading heatmap data...</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </HeatmapErrorBoundary>
   )
 }

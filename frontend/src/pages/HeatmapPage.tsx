@@ -47,7 +47,6 @@ function isTypingTarget(target: EventTarget | null) {
 export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
-  const [selectedStation, setSelectedStation] = useState<string | null>(null)
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM) // Default zoom
   const [metric, setMetric] = useState<HeatmapMetric>('cancellations')
   const [controlsOpen, setControlsOpen] = useState(true)
@@ -61,9 +60,8 @@ export default function HeatmapPage() {
     { autoRefresh: true }
   )
 
-  const heatmapData = data?.data
-  const dataPoints = heatmapData?.data_points ?? []
-  const summary = heatmapData?.summary ?? null
+  const dataPoints = data?.data_points ?? []
+  const summary = data?.summary ?? null
 
   useEffect(() => {
     try {
@@ -112,8 +110,6 @@ export default function HeatmapPage() {
           <CancellationHeatmap
             dataPoints={dataPoints}
             isLoading={isLoading}
-            selectedStation={selectedStation}
-            onStationSelect={setSelectedStation}
             onZoomChange={setZoom}
             metric={metric}
             overlay={
