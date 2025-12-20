@@ -98,7 +98,7 @@ describe('useHeatmap', () => {
     expect(mockGetHeatmapData).toHaveBeenCalledWith(params)
   })
 
-  it('respects autoRefresh option', async () => {
+  it('configures auto-refresh interval when enabled', async () => {
     mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
 
     const { result } = renderHook(() => useHeatmap({}, { autoRefresh: true }), {
@@ -109,8 +109,10 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Verify the hook was called - auto-refresh behavior is configured
-    expect(mockGetHeatmapData).toHaveBeenCalled()
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['heatmap', 'cancellations', {}],
+    })
+    expect(query?.options.refetchInterval).toBe(5 * 60 * 1000)
   })
 
   it('disables auto-refresh when specified', async () => {
@@ -124,8 +126,10 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Verify the hook was called successfully
-    expect(mockGetHeatmapData).toHaveBeenCalled()
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['heatmap', 'cancellations', {}],
+    })
+    expect(query?.options.refetchInterval).toBe(false)
   })
 
   it('can be disabled', async () => {
@@ -169,9 +173,8 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Query should have 5 minute stale time (5 * 60 * 1000 = 300000)
     const query = queryClient.getQueryCache().find({ queryKey: ['heatmap', 'cancellations', {}] })
-    expect(query?.state.dataUpdatedAt).toBeGreaterThan(0)
+    expect(query?.options.staleTime).toBe(5 * 60 * 1000)
   })
 
   it('handles API error gracefully', async () => {
@@ -211,7 +214,9 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Verify successful fetch with default options
-    expect(mockGetHeatmapData).toHaveBeenCalledWith({})
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['heatmap', 'cancellations', {}],
+    })
+    expect(query?.options.refetchInterval).toBe(5 * 60 * 1000)
   })
 })

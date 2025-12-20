@@ -17,10 +17,13 @@ describe('HeatmapStats', () => {
   }
 
   it('renders loading state', () => {
-    render(<HeatmapStats summary={null} isLoading={true} metric="cancellations" />)
+    const { container } = render(
+      <HeatmapStats summary={null} isLoading={true} metric="cancellations" />
+    )
 
     expect(screen.getByText('Statistics')).toBeInTheDocument()
-    // Should show skeleton/loading state
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
+    expect(container.querySelectorAll('.bg-muted')).toHaveLength(5)
   })
 
   it('renders no data message when summary is null', () => {
@@ -87,7 +90,9 @@ describe('HeatmapStats', () => {
 
     render(<HeatmapStats summary={highRateSummary} metric="cancellations" />)
 
-    expect(screen.getByText('8.0%')).toBeInTheDocument()
+    const rateValue = screen.getByText('8.0%')
+    expect(rateValue).toBeInTheDocument()
+    expect(rateValue).toHaveClass('text-red-500')
   })
 
   it('shows moderate rate with yellow color', () => {
@@ -98,13 +103,17 @@ describe('HeatmapStats', () => {
 
     render(<HeatmapStats summary={moderateRateSummary} metric="cancellations" />)
 
-    expect(screen.getByText('3.0%')).toBeInTheDocument()
+    const rateValue = screen.getByText('3.0%')
+    expect(rateValue).toBeInTheDocument()
+    expect(rateValue).toHaveClass('text-yellow-500')
   })
 
   it('displays delay rate when metric is delays', () => {
     render(<HeatmapStats summary={mockSummary} metric="delays" />)
 
-    expect(screen.getByText('5.0%')).toBeInTheDocument()
+    const rateValue = screen.getByText('5.0%')
+    expect(rateValue).toBeInTheDocument()
+    expect(rateValue).toHaveClass('text-green-500')
     expect(screen.getByText('(delays)')).toBeInTheDocument()
   })
 })

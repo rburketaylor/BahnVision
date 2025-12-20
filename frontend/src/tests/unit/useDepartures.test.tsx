@@ -95,10 +95,10 @@ describe('useDepartures', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    // In live mode, query should have been called
     const query = queryClient.getQueryCache().find({ queryKey: ['departures', params] })
     expect(query).toBeDefined()
-    // Verify the hook returned successfully and data is available
+    expect(query?.options.refetchInterval).toBe(30 * 1000)
+    expect(query?.options.staleTime).toBe(30 * 1000)
     expect(result.current.data).toEqual(mockResponse)
   })
 
@@ -129,10 +129,10 @@ describe('useDepartures', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    // In manual mode, query should still be cached
     const query = queryClient.getQueryCache().find({ queryKey: ['departures', params] })
     expect(query).toBeDefined()
-    // Verify the hook returned successfully and data is available
+    expect(query?.options.refetchInterval).toBe(false)
+    expect(query?.options.staleTime).toBe(0)
     expect(result.current.data).toEqual(mockResponse)
   })
 

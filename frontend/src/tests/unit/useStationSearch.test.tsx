@@ -65,7 +65,19 @@ describe('useStationSearch', () => {
 
     const query = queryClient.getQueryCache().find({ queryKey: ['stops', 'search', params] })
     expect(query).toBeDefined()
-    // The query was successfully created and executed
-    expect(mockSearchStops).toHaveBeenCalledWith(params)
+    expect(query?.options.staleTime).toBe(5 * 60 * 1000)
+    expect(query?.options.gcTime).toBe(10 * 60 * 1000)
+
+    const retryFn = query?.options.retry as (failureCount: number, error: Error) => boolean
+    expect(retryFn(0, Object.assign(new Error('Rate limit'), { statusCode: 429 }))).toBe(false)
+    expect(retryFn(0, Object.assign(new Error('Bad request'), { statusCode: 400 }))).toBe(false)
+    expect(retryFn(0, Object.assign(new Error('Timeout'), { statusCode: 408 }))).toBe(true)
+    expect(retryFn(1, new Error('Network error'))).toBe(true)
+    expect(retryFn(2, new Error('Network error'))).toBe(false)
+
+    const retryDelayFn = query?.options.retryDelay as (attemptIndex: number) => number
+    expect(retryDelayFn(0)).toBe(1000)
+    expect(retryDelayFn(1)).toBe(2000)
+    expect(retryDelayFn(2)).toBe(3000)
   })
 })
