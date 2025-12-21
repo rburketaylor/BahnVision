@@ -832,7 +832,7 @@ export function MapLibreHeatmap({
           <h4 class="bv-map-popup__title">${stationName}</h4>
           <div class="bv-map-popup__rows">
             <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label ${!isDelaySelected ? 'bv-map-popup__label--active' : ''}">Cancellation Rate:</span>
+              <span class="bv-map-popup__label ${!isDelaySelected ? 'bv-map-popup__label--active' : ''}">Cancel Rate:</span>
               <span class="bv-map-popup__value" style="color: ${!isDelaySelected ? color : 'currentColor'}">
                 ${(cancellationRate * 100).toFixed(1)}%
               </span>
@@ -844,24 +844,24 @@ export function MapLibreHeatmap({
               </span>
             </div>
             <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label">Total Departures:</span>
+              <span class="bv-map-popup__label">Departures:</span>
               <span class="bv-map-popup__value">${(props.total_departures as number).toLocaleString()}</span>
             </div>
             <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label">Cancellations:</span>
+              <span class="bv-map-popup__label">Cancelled:</span>
               <span class="bv-map-popup__value text-red-600">
                 ${(props.cancelled_count as number).toLocaleString()}
               </span>
             </div>
             <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label">Delays:</span>
+              <span class="bv-map-popup__label">Delayed:</span>
               <span class="bv-map-popup__value text-orange-600">
                 ${(props.delayed_count as number).toLocaleString()}
               </span>
             </div>
           </div>
           <a href="/station/${stationId}" class="bv-map-popup__link">
-            View Details →
+            Details →
           </a>
         </div>
       `

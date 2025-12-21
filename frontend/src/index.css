@@ -217,30 +217,42 @@ html:not(.dark) .maplibregl-popup-anchor-right .maplibregl-popup-tip {
 /* Popup content layout (injected via MapLibre setHTML) */
 .bv-map-popup {
   min-width: 200px;
+  max-width: 280px;
   padding-right: 28px; /* reserve space for the close button */
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .bv-map-popup__title {
   margin: 0 0 8px;
   font-weight: 600;
   font-size: 14px;
+  word-break: break-word;
+  hyphens: auto;
 }
 
 .bv-map-popup__rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   font-size: 13px;
 }
 
 .bv-map-popup__row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  min-height: 20px;
+  align-items: center;
 }
 
 .bv-map-popup__label {
   color: #6b7280;
+  flex-shrink: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 html.dark .bv-map-popup__label {
@@ -253,6 +265,8 @@ html.dark .bv-map-popup__label {
 
 .bv-map-popup__value {
   font-weight: 600;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .bv-map-popup__link {
@@ -269,6 +283,9 @@ html.dark .bv-map-popup__label {
   transition:
     background-color 0.2s ease,
     transform 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bv-map-popup__link:hover {
