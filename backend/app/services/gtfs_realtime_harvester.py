@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory
+from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
 from app.persistence.models import RealtimeStationStats, ScheduleRelationship
 
 if TYPE_CHECKING:
@@ -93,6 +94,13 @@ class GTFSRTDataHarvester:
         """
         self.settings = get_settings()
         self._cache = cache_service
+        self._heatmap_cache_warmer: HeatmapCacheWarmer | None = (
+            HeatmapCacheWarmer(cache_service)
+            if cache_service is not None
+            and hasattr(cache_service, "get_json")
+            and hasattr(cache_service, "set_json")
+            else None
+        )
         self._harvest_interval = harvest_interval_seconds or getattr(
             self.settings, "gtfs_rt_harvest_interval_seconds", 300
         )
@@ -146,7 +154,7 @@ class GTFSRTDataHarvester:
         try:
             logger.info("Starting GTFS-RT harvest cycle")
 
-            # Fetch trip updates from feed
+            # 1. Fetch trip updates from feed
             trip_updates = await self._fetch_trip_updates()
 
             if not trip_updates:
@@ -155,29 +163,41 @@ class GTFSRTDataHarvester:
 
             logger.info(f"Received {len(trip_updates)} trip updates from GTFS-RT feed")
 
-            # Calculate current time bucket (hourly)
-            now = datetime.now(timezone.utc)
-            bucket_start = now.replace(minute=0, second=0, microsecond=0)
-            logger.debug(
-                f"Processing data for bucket starting at {bucket_start.isoformat()}"
-            )
-
-            # Group updates by stop_id and aggregate
-            stop_stats = await self._aggregate_by_stop(trip_updates, bucket_start)
-
-            if not stop_stats:
-                logger.debug("No stop statistics generated from trip updates")
-                return 0
-
-            # Upsert aggregations to database
+            updated_count = 0
             async with AsyncSessionFactory() as session:
+                # 2. Fetch route_id -> route_type mapping for transport mode grouping
+                route_type_map = await self._get_route_type_map(session)
+
+                # 3. Calculate current time bucket (hourly)
+                now = datetime.now(timezone.utc)
+                bucket_start = now.replace(minute=0, second=0, microsecond=0)
+                logger.debug(
+                    f"Processing data for bucket starting at {bucket_start.isoformat()}"
+                )
+
+                # 4. Group updates by stop_id and route_type and aggregate
+                stop_stats = await self._aggregate_by_stop_and_route(
+                    trip_updates, bucket_start, route_type_map
+                )
+
+                if not stop_stats:
+                    logger.debug("No stop statistics generated from trip updates")
+                    return 0
+
+                # 5. Upsert aggregations to database
                 await self._upsert_stats(session, bucket_start, stop_stats)
                 await session.commit()
+                updated_count = len(stop_stats)
 
             logger.info(
-                "Harvested and aggregated stats for %d stations", len(stop_stats)
+                "Harvested and aggregated stats for %d station-route combinations",
+                updated_count,
             )
-            return len(stop_stats)
+
+            if updated_count > 0 and self._heatmap_cache_warmer is not None:
+                self._heatmap_cache_warmer.trigger(reason="gtfs-rt harvest")
+
+            return updated_count
 
         except Exception as e:
             logger.error("Failed to harvest GTFS-RT data: %s", e)
@@ -257,8 +277,19 @@ class GTFSRTDataHarvester:
             1: ScheduleRelationship.SKIPPED,
             2: ScheduleRelationship.NO_DATA,
             3: ScheduleRelationship.UNSCHEDULED,
+            4: ScheduleRelationship.CANCELED,
         }
         return mapping.get(relationship, ScheduleRelationship.SCHEDULED)
+
+    async def _get_route_type_map(self, session: AsyncSession) -> dict[str, int]:
+        """Fetch route_id -> route_type mapping from gtfs_routes table."""
+        try:
+            stmt = text("SELECT route_id, route_type FROM gtfs_routes")
+            result = await session.execute(stmt)
+            return {str(row[0]): int(row[1]) for row in result.all()}
+        except Exception as e:
+            logger.warning(f"Failed to fetch route type map: {e}")
+            return {}
 
     async def _aggregate_by_stop(
         self,
@@ -267,18 +298,16 @@ class GTFSRTDataHarvester:
     ) -> dict[str, dict]:
         """Aggregate trip updates by stop_id with deduplication.
 
-        Counts delays/cancellations per UNIQUE TRIP, not per stop_time_update.
-        Each trip is classified once per bucket, with cache-backed upgrades to
-        worse statuses across harvest cycles.
-
-        Args:
-            trip_updates: List of parsed trip updates
-            bucket_start: Start of the current time bucket
+        This method exists primarily for backwards compatibility with earlier
+        versions of the harvester (and for unit tests). Newer code paths use
+        `_aggregate_by_stop_and_route` for per-route_type stats, but heatmap
+        generation only needs stop-level totals and the DB layer can still roll
+        up per-route_type rows later.
 
         Returns:
-            Dict mapping stop_id -> aggregated statistics
+            Dict mapping stop_id -> aggregated deltas.
         """
-        # First pass: determine the status of each unique trip at each stop
+        # Determine the status of each unique trip at each stop.
         # Key: (stop_id, trip_id) -> {"delay": max_delay, "cancelled": bool}
         trip_status_by_stop: dict[tuple[str, str], dict] = {}
 
@@ -298,32 +327,88 @@ class GTFSRTDataHarvester:
                     "cancelled": is_cancelled,
                 }
             else:
-                # Keep the worst status for this trip at this stop
                 existing = trip_status_by_stop[key]
                 existing["delay"] = max(existing["delay"], delay)
                 existing["cancelled"] = existing["cancelled"] or is_cancelled
 
-        # Second pass: aggregate by stop_id using per-trip status with deduplication.
-        stop_stats: dict[str, dict] = defaultdict(
-            lambda: {
-                "trip_statuses": {},
-            }
-        )
-
+        # Aggregate per stop using cache-backed deduplication logic.
+        trip_statuses_per_stop: dict[str, dict[str, dict]] = defaultdict(dict)
         for (stop_id, trip_id), status in trip_status_by_stop.items():
-            stop_stats[stop_id]["trip_statuses"][trip_id] = {
+            trip_statuses_per_stop[stop_id][trip_id] = {
                 "delay": status["delay"],
                 "status": self._classify_status(status["delay"], status["cancelled"]),
             }
 
-        for stop_id, stats in stop_stats.items():
-            deltas = await self._apply_trip_statuses(
-                bucket_start, stop_id, stats["trip_statuses"]
+        final_stats: dict[str, dict] = {}
+        for stop_id, trip_statuses in trip_statuses_per_stop.items():
+            final_stats[stop_id] = await self._apply_trip_statuses(
+                bucket_start, stop_id, trip_statuses
             )
-            stats.update(deltas)
-            stats.pop("trip_statuses", None)
 
-        return dict(stop_stats)
+        return final_stats
+
+    async def _aggregate_by_stop_and_route(
+        self,
+        trip_updates: list[dict],
+        bucket_start: datetime,
+        route_type_map: dict[str, int],
+    ) -> dict[tuple[str, int | None], dict]:
+        """Aggregate trip updates by (stop_id, route_type) with deduplication.
+
+        Counts delays/cancellations per UNIQUE TRIP, not per stop_time_update.
+        Each trip is classified once per bucket.
+
+        Returns:
+            Dict mapping (stop_id, route_type) -> aggregated statistics
+        """
+        # First pass: determine the status of each unique trip at each stop
+        # Key: (stop_id, route_type, trip_id) -> {"delay": max_delay, "cancelled": bool}
+        trip_status_by_stop: dict[tuple[str, int | None, str], dict] = {}
+
+        for update in trip_updates:
+            stop_id = update["stop_id"]
+            trip_id = update["trip_id"]
+            route_id = update.get("route_id")
+            route_type = route_type_map.get(route_id) if route_id else None
+
+            key = (stop_id, route_type, trip_id)
+
+            delay = update.get("departure_delay_seconds") or 0
+            is_cancelled = (
+                update["schedule_relationship"] == ScheduleRelationship.CANCELED
+            )
+
+            if key not in trip_status_by_stop:
+                trip_status_by_stop[key] = {
+                    "delay": delay,
+                    "cancelled": is_cancelled,
+                }
+            else:
+                existing = trip_status_by_stop[key]
+                existing["delay"] = max(existing["delay"], delay)
+                existing["cancelled"] = existing["cancelled"] or is_cancelled
+
+        # Second pass: aggregate by (stop_id, route_type)
+        stats_by_key: dict[tuple[str, int | None], dict] = defaultdict(
+            lambda: {"trip_statuses": {}}
+        )
+
+        for trip_key, status in trip_status_by_stop.items():
+            s_id, r_type, t_id = trip_key
+            stats_by_key[(s_id, r_type)]["trip_statuses"][t_id] = {
+                "delay": status["delay"],
+                "status": self._classify_status(status["delay"], status["cancelled"]),
+            }
+
+        final_stats: dict[tuple[str, int | None], dict] = {}
+        for agg_key, stats in stats_by_key.items():
+            stop_id_val, route_type_val = agg_key
+            deltas = await self._apply_trip_statuses(
+                bucket_start, f"{stop_id_val}:{route_type_val}", stats["trip_statuses"]
+            )
+            final_stats[agg_key] = deltas
+
+        return final_stats
 
     def _classify_status(self, delay: int, cancelled: bool) -> str:
         """Classify a trip status based on delay and cancellation."""
@@ -468,7 +553,7 @@ class GTFSRTDataHarvester:
         self,
         session: AsyncSession,
         bucket_start: datetime,
-        stop_stats: dict[str, dict],
+        stop_stats: dict[tuple[str, int | None], dict],
     ) -> None:
         """Upsert aggregated stats using COPY to temp table + single INSERT.
 
@@ -498,7 +583,8 @@ class GTFSRTDataHarvester:
                     total_delay_seconds BIGINT NOT NULL,
                     delayed_count INTEGER NOT NULL,
                     on_time_count INTEGER NOT NULL,
-                    cancelled_count INTEGER NOT NULL
+                    cancelled_count INTEGER NOT NULL,
+                    route_type INTEGER
                 ) ON COMMIT DROP
                 """
             )
@@ -507,7 +593,8 @@ class GTFSRTDataHarvester:
         # 2. Build TSV data for COPY
         bucket_str = bucket_start.isoformat()
         lines = []
-        for stop_id, stats in stop_stats.items():
+        for key, stats in stop_stats.items():
+            stop_id, route_type = key
             line = "\t".join(
                 [
                     _escape_tsv(stop_id),
@@ -519,6 +606,7 @@ class GTFSRTDataHarvester:
                     _escape_tsv(stats["delayed"]),
                     _escape_tsv(stats["on_time"]),
                     _escape_tsv(stats["cancelled"]),
+                    _escape_tsv(route_type),
                 ]
             )
             lines.append(line)
@@ -540,6 +628,7 @@ class GTFSRTDataHarvester:
                 "delayed_count",
                 "on_time_count",
                 "cancelled_count",
+                "route_type",
             ],
             format="text",
         )
@@ -551,12 +640,12 @@ class GTFSRTDataHarvester:
                 INSERT INTO realtime_station_stats (
                     stop_id, bucket_start, bucket_width_minutes,
                     observation_count, trip_count, total_delay_seconds,
-                    delayed_count, on_time_count, cancelled_count
+                    delayed_count, on_time_count, cancelled_count, route_type
                 )
                 SELECT
                     stop_id, bucket_start, bucket_width_minutes,
                     observation_count, trip_count, total_delay_seconds,
-                    delayed_count, on_time_count, cancelled_count
+                    delayed_count, on_time_count, cancelled_count, route_type
                 FROM temp_rt_stats
                 ON CONFLICT ON CONSTRAINT uq_realtime_stats_unique
                 DO UPDATE SET
