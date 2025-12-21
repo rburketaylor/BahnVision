@@ -16,8 +16,11 @@
 - Local Node toolchain lives at `.node/bin/`; prepend it when running frontend commands if `npm`/`node` is missing, e.g. `PATH=".node/bin:$PATH" npm run test`.
 - Docker stack: `docker compose up --build` (starts cache warmup, backend on `:8000`, frontend on `:3000`).
 - Local Python virtualenv lives in `backend/.venv`; activate with `source backend/.venv/bin/activate` before backend commands.
-- Backend tests: `pytest backend/tests`.
+- Backend tests: `source backend/.venv/bin/activate && pytest backend/tests`.
 - Frontend tests: `npm run test -- --run` (Vitest in single-run mode; avoid watch mode which hangs), `npm run test:coverage` for coverage, `npm run test:e2e` for Playwright.
+- Frontend lint + format check: `cd frontend && npm run lint`.
+- Frontend typecheck: `cd frontend && npm run type-check`.
+- Backend lint + format (preferred): `source backend/.venv/bin/activate && pre-commit run --all-files`.
 
 ## Coding Style & Naming Conventions
 - Python: PEP 8, 4-space indent, snake_case modules; prefer typed signatures and Pydantic models; keep services stateless and cache logic centralized.
@@ -28,6 +31,7 @@
 ## Testing Guidelines
 - Mirror code structure in tests; add regression tests for bugs and unit/integration for new features.
 - Backend: use FastAPI TestClient, Fake Valkey/GTFS doubles for deterministic tests.
+- Backend test markers: `pytest backend/tests -m "not integration"` for fast unit tests; `pytest backend/tests -m integration` for service-backed tests.
 - Frontend: RTL + MSW for API mocking; keep tests colocated under `src`; name test files `*.test.ts[x]`.
 - Run targeted tests before PRs; aim for coverage via `npm run test:coverage` when touching frontend logic.
 
@@ -43,5 +47,14 @@
 
 ## Security & Configuration Tips
 - Store secrets (DB/Valkey URLs, API tokens) in env vars or `.env` excluded from VCS; do not hardcode credentials.
+- Prefer copying `.env.example` to `.env` (repo root) for local development if it doesn't exist; keep `.env` out of commits.
 - Default local DB URL: `postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`; configure Valkey via `CACHE_*` envs; prefer `docker compose` for parity.
 - Respect cache behavior: writes populate Valkey and fallback store; watch `X-Cache-Status` and Prometheus metrics (`/metrics`) for validation.
+
+## Database & Migrations
+- Alembic config lives at `backend/alembic.ini` with migrations under `backend/alembic/`.
+- If a change affects schemas, include an Alembic migration (and mention it in the PR description).
+- Common commands: `source backend/.venv/bin/activate && alembic -c backend/alembic.ini upgrade head` and `source backend/.venv/bin/activate && alembic -c backend/alembic.ini revision --autogenerate -m "..."`.
+
+## Docs & API Changes
+- When changing backend routes or response shapes, update relevant backend docs under `backend/docs/` and any impacted frontend API/client code under `frontend/src/services/`.
