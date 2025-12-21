@@ -93,6 +93,11 @@ class Settings(BaseSettings):
         default=900, alias="TRANSIT_ROUTE_CACHE_STALE_TTL_SECONDS"
     )
 
+    # Heatmap: longer TTL (expensive aggregation, refreshed in background)
+    heatmap_cache_ttl_seconds: int = Field(
+        default=300, alias="HEATMAP_CACHE_TTL_SECONDS", ge=0
+    )
+
     # ==========================================================================
     # Cache Behavior
     # ==========================================================================
@@ -122,6 +127,29 @@ class Settings(BaseSettings):
     )
     cache_warmup_departure_offset_minutes: int = Field(
         default=0, alias="CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES", ge=0, le=240
+    )
+
+    heatmap_cache_warmup_enabled: bool = Field(
+        default=True,
+        alias="HEATMAP_CACHE_WARMUP_ENABLED",
+        description="Warm heatmap cache after each GTFS-RT harvest cycle.",
+    )
+    heatmap_cache_warmup_time_ranges: list[str] = Field(
+        default_factory=lambda: ["24h"],
+        alias="HEATMAP_CACHE_WARMUP_TIME_RANGES",
+        description="Comma-separated list of heatmap time_range presets to prewarm (e.g. 1h,6h,24h).",
+    )
+    heatmap_cache_warmup_zoom_levels: list[int] = Field(
+        default_factory=lambda: [6, 10],
+        alias="HEATMAP_CACHE_WARMUP_ZOOM_LEVELS",
+        description="Comma-separated list of zoom levels to prewarm (e.g. 6,10,12).",
+    )
+    heatmap_cache_warmup_bucket_width_minutes: int = Field(
+        default=60,
+        alias="HEATMAP_CACHE_WARMUP_BUCKET_WIDTH_MINUTES",
+        ge=15,
+        le=1440,
+        description="Bucket width minutes to prewarm for heatmap cache.",
     )
 
     # ==========================================================================
@@ -279,6 +307,48 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return list(value) if value else []
+
+    @field_validator("heatmap_cache_warmup_time_ranges", mode="before")
+    @classmethod
+    def parse_heatmap_time_ranges(cls, value: Any) -> list[str]:
+        """Parse comma-separated time range presets."""
+        allowed = {"1h", "6h", "24h", "7d", "30d"}
+        if isinstance(value, str):
+            parsed = [item.strip() for item in value.split(",") if item.strip()]
+        else:
+            parsed = list(value) if value else []
+
+        normalized: list[str] = []
+        for item in parsed:
+            item_str = str(item).strip()
+            if not item_str:
+                continue
+            if item_str not in allowed:
+                raise ValueError(
+                    f"Invalid heatmap time range preset: {item_str}. Allowed: {sorted(allowed)}"
+                )
+            normalized.append(item_str)
+
+        return normalized or ["24h"]
+
+    @field_validator("heatmap_cache_warmup_zoom_levels", mode="before")
+    @classmethod
+    def parse_heatmap_zoom_levels(cls, value: Any) -> list[int]:
+        """Parse comma-separated zoom level list."""
+        if isinstance(value, str):
+            raw_items = [item.strip() for item in value.split(",") if item.strip()]
+        else:
+            raw_items = list(value) if value else []
+
+        zoom_levels: list[int] = []
+        for item in raw_items:
+            zoom = int(item)
+            if zoom < 1 or zoom > 18:
+                raise ValueError(f"Invalid heatmap zoom level: {zoom}. Allowed: 1..18")
+            if zoom not in zoom_levels:
+                zoom_levels.append(zoom)
+
+        return zoom_levels or [6, 10]
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":

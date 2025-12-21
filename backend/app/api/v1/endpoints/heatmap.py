@@ -10,9 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_session
 from app.models.heatmap import HeatmapResponse, TimeRangePreset
 from app.services.cache import CacheService, get_cache_service
+from app.services.heatmap_cache import heatmap_cancellations_cache_key
 from app.services.gtfs_schedule import GTFSScheduleService
 from app.services.heatmap_service import HeatmapService
 
@@ -21,10 +23,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# Cache configuration for heatmap
-_CACHE_HEATMAP = "heatmap"
-_HEATMAP_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
 async def get_gtfs_schedule(
@@ -110,8 +108,16 @@ async def get_cancellation_heatmap(
     )
 
     try:
+        settings = get_settings()
+
         # Generate cache key
-        cache_key = f"heatmap:cancellations:{time_range}:{transport_modes or 'all'}:{bucket_width}:{zoom}:{max_points or 'default'}"
+        cache_key = heatmap_cancellations_cache_key(
+            time_range=time_range,
+            transport_modes=transport_modes,
+            bucket_width_minutes=bucket_width,
+            zoom_level=zoom,
+            max_points=max_points,
+        )
 
         # Try to get from cache
         cached_data = await cache.get_json(cache_key)
@@ -136,7 +142,7 @@ async def get_cancellation_heatmap(
         await cache.set_json(
             cache_key,
             result.model_dump(mode="json"),
-            ttl_seconds=_HEATMAP_CACHE_TTL_SECONDS,
+            ttl_seconds=settings.heatmap_cache_ttl_seconds,
         )
 
         response.headers["X-Cache-Status"] = "miss"
