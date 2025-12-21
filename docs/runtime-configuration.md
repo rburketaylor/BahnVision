@@ -26,9 +26,14 @@ Place variables in the root `.env` or export them in the shell. Defaults are sho
 - `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS` (5.0) — Wait time for lock.
 - `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS` (0.05) — Retry delay while waiting.
 - `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS` (2.0) — Serve stale window when cache is unhealthy.
+- `HEATMAP_CACHE_TTL_SECONDS` (300) — Cache TTL for heatmap aggregations.
 - `CACHE_WARMUP_DEPARTURE_STATIONS` — Optional comma-separated list of station names/IDs to prewarm departures cache keys.
 - `CACHE_WARMUP_DEPARTURE_LIMIT` (10) — Number of departures requested per warmup station.
 - `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES` (0) — Offset minutes applied to warmup departures.
+- `HEATMAP_CACHE_WARMUP_ENABLED` (true) — Enable/disable heatmap cache warmup after each GTFS-RT harvest.
+- `HEATMAP_CACHE_WARMUP_TIME_RANGES` (24h) — Comma-separated list of heatmap `time_range` presets to prewarm.
+- `HEATMAP_CACHE_WARMUP_ZOOM_LEVELS` (6,10) — Comma-separated list of zoom levels to prewarm.
+- `HEATMAP_CACHE_WARMUP_BUCKET_WIDTH_MINUTES` (60) — Bucket width minutes to prewarm.
 - `CORS_ALLOW_ORIGINS` — Comma-separated list of allowed origins (no `*`).
 - `CORS_ALLOW_ORIGIN_REGEX` — Optional regex for origins.
 - `DATABASE_URL` (postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision) — Async SQLAlchemy DSN.
