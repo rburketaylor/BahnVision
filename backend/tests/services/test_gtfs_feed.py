@@ -7,12 +7,11 @@ Tests feed download, parsing, and persistence functionality.
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-import pandas as pd
+import polars as pl
 
 from app.services.gtfs_feed import (
     GTFSFeedImporter,
     _clean_value,
-    _escape_tsv,
 )
 
 
@@ -28,7 +27,7 @@ class TestCleanValue:
         import numpy as np
 
         assert _clean_value(np.nan) is None
-        assert _clean_value(pd.NA) is None
+        assert _clean_value(float("nan")) is None
 
     def test_clean_value_numpy_int(self):
         """Test numpy int conversion."""
@@ -49,39 +48,6 @@ class TestCleanValue:
         assert _clean_value(42) == 42
         assert _clean_value("text") == "text"
         assert _clean_value(3.14) == 3.14
-
-
-class TestEscapeTsv:
-    """Tests for _escape_tsv helper function."""
-
-    def test_escape_tsv_none(self):
-        """Test that None returns \\N."""
-        assert _escape_tsv(None) == "\\N"
-
-    def test_escape_tsv_backslash(self):
-        """Test backslash escaping."""
-        assert _escape_tsv("path\\to\\file") == "path\\\\to\\\\file"
-
-    def test_escape_tsv_tab(self):
-        """Test tab escaping."""
-        assert _escape_tsv("col1\tcol2") == "col1\\tcol2"
-
-    def test_escape_tsv_newline(self):
-        """Test newline escaping."""
-        assert _escape_tsv("line1\nline2") == "line1\\nline2"
-
-    def test_escape_tsv_carriage_return(self):
-        """Test carriage return escaping."""
-        assert _escape_tsv("line1\rline2") == "line1\\rline2"
-
-    def test_escape_tsv_normal_string(self):
-        """Test normal string without special characters."""
-        assert _escape_tsv("München Hbf") == "München Hbf"
-
-    def test_escape_tsv_number(self):
-        """Test number conversion."""
-        assert _escape_tsv(42) == "42"
-        assert _escape_tsv(3.14) == "3.14"
 
 
 class TestGTFSFeedImporter:
@@ -205,7 +171,7 @@ class TestGTFSFeedImporter:
     @pytest.mark.asyncio
     async def test_copy_stops_empty_df(self, importer):
         """Test that empty DataFrame is handled gracefully."""
-        empty_df = pd.DataFrame()
+        empty_df = pl.DataFrame()
         # Should not raise - verify it returns early without error
         result = await importer._copy_stops(empty_df, "test_feed")
         assert result is None, "Empty DataFrame should be handled gracefully"
@@ -213,7 +179,7 @@ class TestGTFSFeedImporter:
     @pytest.mark.asyncio
     async def test_copy_stops_with_data(self, importer, mock_session):
         """Test copying stops with valid data."""
-        stops_df = pd.DataFrame(
+        stops_df = pl.DataFrame(
             {
                 "stop_id": ["stop1", "stop2"],
                 "stop_name": ["Stop One", "Stop Two"],
@@ -236,7 +202,7 @@ class TestGTFSFeedImporter:
     @pytest.mark.asyncio
     async def test_copy_routes_empty_df(self, importer):
         """Test that empty DataFrame is handled gracefully."""
-        empty_df = pd.DataFrame()
+        empty_df = pl.DataFrame()
         # Should not raise - verify it returns early without error
         result = await importer._copy_routes(empty_df, "test_feed")
         assert result is None, "Empty DataFrame should be handled gracefully"
@@ -244,21 +210,50 @@ class TestGTFSFeedImporter:
     @pytest.mark.asyncio
     async def test_copy_trips_empty_df(self, importer):
         """Test that empty DataFrame is handled gracefully."""
-        empty_df = pd.DataFrame()
+        empty_df = pl.DataFrame()
         # Should not raise - verify it returns early without error
         result = await importer._copy_trips(empty_df, "test_feed")
         assert result is None, "Empty DataFrame should be handled gracefully"
 
     @pytest.mark.asyncio
+    async def test_copy_trips_missing_direction_id_casts_int16(self, importer):
+        """Ensure missing direction_id becomes nullable Int16 for COPY."""
+        trips_df = pl.DataFrame(
+            {
+                "trip_id": ["trip1"],
+                "route_id": ["route1"],
+                "service_id": ["service1"],
+                "trip_headsign": ["Headsign"],
+            }
+        )
+        captured = {}
+
+        async def fake_copy(df, table_name, columns):
+            captured["df"] = df
+            captured["table_name"] = table_name
+            captured["columns"] = columns
+
+        importer._copy_polars_df = AsyncMock(side_effect=fake_copy)
+
+        await importer._copy_trips(trips_df, "test_feed")
+
+        assert captured["table_name"] == "gtfs_trips"
+        assert "direction_id" in captured["columns"]
+        assert captured["df"].schema["direction_id"] == pl.Int16
+        assert captured["df"]["direction_id"].null_count() == 1
+
+    @pytest.mark.asyncio
     async def test_record_feed_info(self, importer, mock_session):
         """Test recording feed metadata."""
-        mock_feed = MagicMock()
-        mock_feed.stops = pd.DataFrame({"stop_id": ["s1", "s2"]})
-        mock_feed.routes = pd.DataFrame({"route_id": ["r1"]})
-        mock_feed.trips = pd.DataFrame({"trip_id": ["t1", "t2", "t3"]})
-        mock_feed.feed_info = {}
-
-        await importer._record_feed_info(mock_feed, "test_feed", "https://example.com")
+        await importer._record_feed_info(
+            feed_id="test_feed",
+            feed_url="https://example.com",
+            feed_start_date=None,
+            feed_end_date=None,
+            stop_count=2,
+            route_count=1,
+            trip_count=3,
+        )
 
         mock_session.execute.assert_called()
         mock_session.commit.assert_called()

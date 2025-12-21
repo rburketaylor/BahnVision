@@ -1,13 +1,12 @@
-import io
 import logging
-from datetime import datetime, timezone
+import tempfile
+import zipfile
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
-import gtfs_kit as gk
 import httpx
-import pandas as pd
-from pandas import DataFrame
+import polars as pl
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,34 +20,27 @@ logger = logging.getLogger(__name__)
 
 
 def _clean_value(val):
-    """Convert pandas NA/NaN values and numpy types to Python native types for PostgreSQL."""
+    """Convert common NA/NaN values and numpy scalars to Python native types."""
     if val is None:
         return None
-    if pd.isna(val):
-        return None
-    # Convert numpy types to Python native types
+
+    try:
+        if val != val:  # noqa: PLR0124 - NaN != NaN
+            return None
+    except Exception:
+        pass
+
+    # Convert numpy scalar types to Python native types when present.
     if hasattr(val, "item"):
-        return val.item()
+        try:
+            return val.item()
+        except Exception:
+            return val
     return val
 
 
-def _escape_tsv(val) -> str:
-    """Escape value for TSV format. Returns \\N for NULL."""
-    if val is None:
-        return "\\N"
-    # Escape tabs, newlines, backslashes
-    s = str(val)
-    s = (
-        s.replace("\\", "\\\\")
-        .replace("\t", "\\t")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-    )
-    return s
-
-
 class GTFSFeedImporter:
-    """Import GTFS feed into PostgreSQL using gtfs-kit + COPY for speed."""
+    """Import GTFS feed into PostgreSQL using Polars + PostgreSQL COPY."""
 
     def __init__(self, session: AsyncSession, settings: Settings):
         self.session = session
@@ -77,27 +69,68 @@ class GTFSFeedImporter:
 
     async def _import_from_path(self, feed_path: Path, feed_url: str) -> str:
         """Internal method to import feed from path using fast COPY."""
-        # 1. Load with gtfs-kit (in-memory Pandas DataFrames)
         logger.info(f"Loading GTFS feed from {feed_path}")
-        feed = gk.read_feed(feed_path, dist_units="km")
 
-        # 2. Generate feed_id for tracking
+        if not feed_path.exists():
+            raise FileNotFoundError(f"GTFS feed not found: {feed_path}")
+
+        is_zip = feed_path.is_file() and zipfile.is_zipfile(feed_path)
+        if not is_zip and not feed_path.is_dir():
+            raise ValueError("GTFS feed must be a .zip file or a directory")
+
+        # Generate feed_id for tracking
         feed_id = f"gtfs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        # 3. Truncate all GTFS tables for clean import
+        # Truncate all GTFS tables for clean import
         logger.info("Truncating existing GTFS data...")
         await self._truncate_all_tables()
 
-        # 4. Persist using fast COPY
-        logger.info(f"Persisting GTFS feed {feed_id} to database using COPY...")
-        await self._copy_stops(feed.stops, feed_id)
-        await self._copy_routes(feed.routes, feed_id)
-        await self._copy_trips(feed.trips, feed_id)
-        await self._copy_stop_times(feed.stop_times, feed_id)
-        await self._copy_calendar(feed.calendar, feed.calendar_dates, feed_id)
+        if is_zip:
+            with zipfile.ZipFile(feed_path) as zf:
+                stops_df = self._read_gtfs_table(zf, "stops.txt")
+                routes_df = self._read_gtfs_table(zf, "routes.txt")
+                trips_df = self._read_gtfs_table(zf, "trips.txt")
+                calendar_df = self._read_gtfs_table(zf, "calendar.txt")
+                calendar_dates_df = self._read_gtfs_table(zf, "calendar_dates.txt")
+                feed_info_df = self._read_gtfs_table(zf, "feed_info.txt")
 
-        # 5. Record feed metadata
-        await self._record_feed_info(feed, feed_id, feed_url)
+                logger.info(f"Persisting GTFS feed {feed_id} to database using COPY...")
+                await self._copy_stops(stops_df, feed_id)
+                await self._copy_routes(routes_df, feed_id)
+                await self._copy_trips(trips_df, feed_id)
+                await self._copy_stop_times_from_zip(zf, feed_id)
+                await self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
+        else:
+            stops_df = self._read_gtfs_table(feed_path, "stops.txt")
+            routes_df = self._read_gtfs_table(feed_path, "routes.txt")
+            trips_df = self._read_gtfs_table(feed_path, "trips.txt")
+            calendar_df = self._read_gtfs_table(feed_path, "calendar.txt")
+            calendar_dates_df = self._read_gtfs_table(feed_path, "calendar_dates.txt")
+            feed_info_df = self._read_gtfs_table(feed_path, "feed_info.txt")
+
+            logger.info(f"Persisting GTFS feed {feed_id} to database using COPY...")
+            await self._copy_stops(stops_df, feed_id)
+            await self._copy_routes(routes_df, feed_id)
+            await self._copy_trips(trips_df, feed_id)
+            await self._copy_stop_times_from_path(feed_path, feed_id)
+            await self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
+
+        feed_start_date, feed_end_date = self._resolve_feed_dates(
+            feed_info_df, calendar_df
+        )
+        stop_count = 0 if stops_df is None else stops_df.height
+        route_count = 0 if routes_df is None else routes_df.height
+        trip_count = 0 if trips_df is None else trips_df.height
+
+        await self._record_feed_info(
+            feed_id=feed_id,
+            feed_url=feed_url,
+            feed_start_date=feed_start_date,
+            feed_end_date=feed_end_date,
+            stop_count=stop_count,
+            route_count=route_count,
+            trip_count=trip_count,
+        )
 
         logger.info(f"Successfully imported GTFS feed {feed_id}")
         return feed_id
@@ -171,36 +204,157 @@ class GTFSFeedImporter:
         # SQLAlchemy wraps asyncpg, need to get the actual driver connection
         return dbapi_conn.driver_connection
 
-    async def _copy_stops(self, stops_df: DataFrame, feed_id: str):
-        """Bulk insert stops using PostgreSQL COPY."""
-        if stops_df is None or stops_df.empty:
+    def _read_gtfs_table(
+        self, source: zipfile.ZipFile | Path, filename: str
+    ) -> pl.DataFrame | None:
+        if isinstance(source, Path):
+            path = source / filename
+            if not path.exists():
+                return None
+            return pl.read_csv(path, null_values=[""], infer_schema_length=1000)
+
+        member_name = filename
+        try:
+            source.getinfo(member_name)
+        except KeyError:
+            alt_member = next(
+                (name for name in source.namelist() if name.endswith(f"/{filename}")),
+                None,
+            )
+            if alt_member is None:
+                return None
+            member_name = alt_member
+
+        with source.open(member_name) as f:
+            return pl.read_csv(f, null_values=[""], infer_schema_length=1000)
+
+    def _parse_gtfs_date_value(self, val) -> date | None:
+        cleaned = _clean_value(val)
+        if cleaned is None:
+            return None
+
+        if isinstance(cleaned, date):
+            return cleaned
+
+        # Sometimes datetime.datetime appears in test doubles; normalize to date.
+        if hasattr(cleaned, "date") and not isinstance(cleaned, str):
+            try:
+                return cleaned.date()
+            except Exception:
+                pass
+
+        text_val = str(cleaned).strip()
+        for fmt in ("%Y%m%d", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text_val, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def _resolve_feed_dates(
+        self, feed_info_df: pl.DataFrame | None, calendar_df: pl.DataFrame | None
+    ) -> tuple[date | None, date | None]:
+        if feed_info_df is not None and not feed_info_df.is_empty():
+            start_col = (
+                "feed_start_date"
+                if "feed_start_date" in feed_info_df.columns
+                else "start_date"
+            )
+            end_col = (
+                "feed_end_date"
+                if "feed_end_date" in feed_info_df.columns
+                else "end_date"
+            )
+            feed_start = (
+                self._parse_gtfs_date_value(feed_info_df[start_col].to_list()[0])
+                if start_col in feed_info_df.columns and feed_info_df.height >= 1
+                else None
+            )
+            feed_end = (
+                self._parse_gtfs_date_value(feed_info_df[end_col].to_list()[0])
+                if end_col in feed_info_df.columns and feed_info_df.height >= 1
+                else None
+            )
+            if feed_start or feed_end:
+                return feed_start, feed_end
+
+        if calendar_df is None or calendar_df.is_empty():
+            return None, None
+
+        start_val = calendar_df.select(pl.col("start_date").min()).to_series().to_list()
+        end_val = calendar_df.select(pl.col("end_date").max()).to_series().to_list()
+        feed_start = self._parse_gtfs_date_value(start_val[0]) if start_val else None
+        feed_end = self._parse_gtfs_date_value(end_val[0]) if end_val else None
+        return feed_start, feed_end
+
+    async def _copy_polars_df(
+        self, df: pl.DataFrame, table_name: str, columns: list[str]
+    ) -> None:
+        if df.is_empty():
             return
 
-        logger.info(f"Preparing {len(stops_df)} stops for COPY...")
-
-        # Build TSV data
-        lines = []
-        for row in stops_df.itertuples():
-            line = "\t".join(
-                [
-                    _escape_tsv(row.stop_id),
-                    _escape_tsv(row.stop_name),
-                    _escape_tsv(_clean_value(getattr(row, "stop_lat", None))),
-                    _escape_tsv(_clean_value(getattr(row, "stop_lon", None))),
-                    _escape_tsv(_clean_value(getattr(row, "location_type", None)) or 0),
-                    _escape_tsv(_clean_value(getattr(row, "parent_station", None))),
-                    _escape_tsv(_clean_value(getattr(row, "platform_code", None))),
-                    _escape_tsv(feed_id),
-                ]
-            )
-            lines.append(line)
-
-        tsv_data = "\n".join(lines)
-
         asyncpg_conn = await self._get_asyncpg_conn()
-        await asyncpg_conn.copy_to_table(
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".csv", delete=False
+            ) as tmp:
+                tmp_path = tmp.name
+
+            df.write_csv(
+                tmp_path,
+                include_header=False,
+                separator=",",
+                quote_style="necessary",
+            )
+
+            with open(tmp_path, "rb") as f:
+                await asyncpg_conn.copy_to_table(
+                    table_name,
+                    source=f,
+                    columns=columns,
+                    format="csv",
+                )
+        finally:
+            if tmp_path is not None:
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    logger.warning("Failed to delete temp file: %s", tmp_path)
+
+    async def _copy_stops(self, stops_df: pl.DataFrame | None, feed_id: str):
+        """Bulk insert stops using PostgreSQL COPY."""
+        if stops_df is None or stops_df.is_empty():
+            return
+
+        logger.info(f"Preparing {stops_df.height} stops for COPY...")
+
+        df = stops_df
+        if "location_type" not in df.columns:
+            df = df.with_columns(pl.lit(0).alias("location_type"))
+        for col in ["parent_station", "platform_code"]:
+            if col not in df.columns:
+                df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias(col))
+
+        export_df = df.with_columns(
+            pl.col("location_type").fill_null(0).cast(pl.Int16),
+            pl.lit(feed_id).alias("feed_id"),
+        ).select(
+            [
+                "stop_id",
+                "stop_name",
+                "stop_lat",
+                "stop_lon",
+                "location_type",
+                "parent_station",
+                "platform_code",
+                "feed_id",
+            ]
+        )
+
+        await self._copy_polars_df(
+            export_df,
             "gtfs_stops",
-            source=io.BytesIO(tsv_data.encode("utf-8")),
             columns=[
                 "stop_id",
                 "stop_name",
@@ -211,39 +365,37 @@ class GTFSFeedImporter:
                 "platform_code",
                 "feed_id",
             ],
-            format="text",
         )
 
-        logger.info(f"Copied {len(stops_df)} stops")
+        logger.info(f"Copied {stops_df.height} stops")
 
-    async def _copy_routes(self, routes_df: DataFrame, feed_id: str):
+    async def _copy_routes(self, routes_df: pl.DataFrame | None, feed_id: str):
         """Bulk insert routes using PostgreSQL COPY."""
-        if routes_df is None or routes_df.empty:
+        if routes_df is None or routes_df.is_empty():
             return
 
-        logger.info(f"Preparing {len(routes_df)} routes for COPY...")
+        logger.info(f"Preparing {routes_df.height} routes for COPY...")
 
-        lines = []
-        for row in routes_df.itertuples():
-            line = "\t".join(
-                [
-                    _escape_tsv(row.route_id),
-                    _escape_tsv(_clean_value(getattr(row, "agency_id", None))),
-                    _escape_tsv(_clean_value(getattr(row, "route_short_name", None))),
-                    _escape_tsv(_clean_value(getattr(row, "route_long_name", None))),
-                    _escape_tsv(_clean_value(row.route_type)),
-                    _escape_tsv(_clean_value(getattr(row, "route_color", None))),
-                    _escape_tsv(feed_id),
-                ]
-            )
-            lines.append(line)
+        df = routes_df
+        for col in ["agency_id", "route_short_name", "route_long_name", "route_color"]:
+            if col not in df.columns:
+                df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias(col))
 
-        tsv_data = "\n".join(lines)
+        export_df = df.with_columns(pl.lit(feed_id).alias("feed_id")).select(
+            [
+                "route_id",
+                "agency_id",
+                "route_short_name",
+                "route_long_name",
+                "route_type",
+                "route_color",
+                "feed_id",
+            ]
+        )
 
-        asyncpg_conn = await self._get_asyncpg_conn()
-        await asyncpg_conn.copy_to_table(
+        await self._copy_polars_df(
+            export_df,
             "gtfs_routes",
-            source=io.BytesIO(tsv_data.encode("utf-8")),
             columns=[
                 "route_id",
                 "agency_id",
@@ -253,38 +405,39 @@ class GTFSFeedImporter:
                 "route_color",
                 "feed_id",
             ],
-            format="text",
         )
 
-        logger.info(f"Copied {len(routes_df)} routes")
+        logger.info(f"Copied {routes_df.height} routes")
 
-    async def _copy_trips(self, trips_df: DataFrame, feed_id: str):
+    async def _copy_trips(self, trips_df: pl.DataFrame | None, feed_id: str):
         """Bulk insert trips using PostgreSQL COPY."""
-        if trips_df is None or trips_df.empty:
+        if trips_df is None or trips_df.is_empty():
             return
 
-        logger.info(f"Preparing {len(trips_df)} trips for COPY...")
+        logger.info(f"Preparing {trips_df.height} trips for COPY...")
 
-        lines = []
-        for row in trips_df.itertuples():
-            line = "\t".join(
-                [
-                    _escape_tsv(row.trip_id),
-                    _escape_tsv(row.route_id),
-                    _escape_tsv(row.service_id),
-                    _escape_tsv(_clean_value(getattr(row, "trip_headsign", None))),
-                    _escape_tsv(_clean_value(getattr(row, "direction_id", None))),
-                    _escape_tsv(feed_id),
-                ]
-            )
-            lines.append(line)
+        df = trips_df
+        if "trip_headsign" not in df.columns:
+            df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias("trip_headsign"))
+        if "direction_id" not in df.columns:
+            df = df.with_columns(pl.lit(None).cast(pl.Int16).alias("direction_id"))
+        else:
+            df = df.with_columns(pl.col("direction_id").cast(pl.Int16, strict=False))
 
-        tsv_data = "\n".join(lines)
+        export_df = df.with_columns(pl.lit(feed_id).alias("feed_id")).select(
+            [
+                "trip_id",
+                "route_id",
+                "service_id",
+                "trip_headsign",
+                "direction_id",
+                "feed_id",
+            ]
+        )
 
-        asyncpg_conn = await self._get_asyncpg_conn()
-        await asyncpg_conn.copy_to_table(
+        await self._copy_polars_df(
+            export_df,
             "gtfs_trips",
-            source=io.BytesIO(tsv_data.encode("utf-8")),
             columns=[
                 "trip_id",
                 "route_id",
@@ -293,55 +446,27 @@ class GTFSFeedImporter:
                 "direction_id",
                 "feed_id",
             ],
-            format="text",
         )
 
-        logger.info(f"Copied {len(trips_df)} trips")
+        logger.info(f"Copied {trips_df.height} trips")
 
-    async def _copy_stop_times(self, stop_times_df: DataFrame, feed_id: str):
-        """Bulk insert stop times using PostgreSQL COPY via temp file for large datasets."""
-        if stop_times_df is None or stop_times_df.empty:
+    async def _copy_stop_times_batch(self, stop_times_df: pl.DataFrame, feed_id: str):
+        if stop_times_df.is_empty():
             return
 
-        logger.info(f"Preparing {len(stop_times_df)} stop times for COPY...")
+        df = stop_times_df
+        for col in ["pickup_type", "drop_off_type"]:
+            if col not in df.columns:
+                df = df.with_columns(pl.lit(0).alias(col))
 
-        # Prepare DataFrame for TSV export - much faster than row-by-row
-        df = stop_times_df.copy()
-
-        # Clean string columns - escape special characters for TSV
-        def clean_for_tsv(val):
-            if pd.isna(val):
-                return None
-            val = _clean_value(val)  # Convert numpy types
-            if isinstance(val, str):
-                # Escape backslashes, tabs, newlines for TSV format
-                return (
-                    val.replace("\\", "\\\\")
-                    .replace("\t", "\\t")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r")
-                )
-            return val
-
-        df["trip_id"] = df["trip_id"].apply(clean_for_tsv)
-        df["stop_id"] = df["stop_id"].apply(clean_for_tsv)
-
-        # Convert time columns to interval format
-        df["arrival_time"] = df["arrival_time"].apply(
-            lambda x: self._convert_time_to_interval(_clean_value(x))
-        )
-        df["departure_time"] = df["departure_time"].apply(
-            lambda x: self._convert_time_to_interval(_clean_value(x))
-        )
-
-        # Clean and set defaults for optional columns
-        df["pickup_type"] = df.get("pickup_type", 0).fillna(0).astype(int)
-        df["drop_off_type"] = df.get("drop_off_type", 0).fillna(0).astype(int)
-        df["stop_sequence"] = df["stop_sequence"].apply(_clean_value)
-        df["feed_id"] = feed_id
-
-        # Select and order columns for COPY
-        export_df = df[
+        export_df = df.with_columns(
+            pl.col("arrival_time").cast(pl.Utf8).str.strip_chars().replace("", None),
+            pl.col("departure_time").cast(pl.Utf8).str.strip_chars().replace("", None),
+            pl.col("stop_sequence").cast(pl.Int32),
+            pl.col("pickup_type").fill_null(0).cast(pl.Int8),
+            pl.col("drop_off_type").fill_null(0).cast(pl.Int8),
+            pl.lit(feed_id).alias("feed_id"),
+        ).select(
             [
                 "trip_id",
                 "stop_id",
@@ -352,103 +477,209 @@ class GTFSFeedImporter:
                 "drop_off_type",
                 "feed_id",
             ]
-        ]
+        )
 
-        logger.info(f"Writing {len(export_df)} stop times to TSV buffer for COPY...")
+        await self._copy_polars_df(
+            export_df,
+            "gtfs_stop_times",
+            columns=[
+                "trip_id",
+                "stop_id",
+                "arrival_time",
+                "departure_time",
+                "stop_sequence",
+                "pickup_type",
+                "drop_off_type",
+                "feed_id",
+            ],
+        )
 
-        if export_df.empty:
-            logger.info("No stop_times rows to copy; restoring indexes/FKs only")
-        else:
-            lines = []
-            for row in export_df.itertuples(index=False):
-                lines.append(
-                    "\t".join(
-                        [
-                            _escape_tsv(row.trip_id),
-                            _escape_tsv(row.stop_id),
-                            _escape_tsv(row.arrival_time),
-                            _escape_tsv(row.departure_time),
-                            _escape_tsv(row.stop_sequence),
-                            _escape_tsv(row.pickup_type),
-                            _escape_tsv(row.drop_off_type),
-                            _escape_tsv(row.feed_id),
-                        ]
-                    )
-                )
+    def _read_csv_batched(self, source, *, batch_size: int):
+        schema = {
+            "trip_id": pl.Utf8,
+            "stop_id": pl.Utf8,
+            "arrival_time": pl.Utf8,
+            "departure_time": pl.Utf8,
+            "stop_sequence": pl.Int32,
+            "pickup_type": pl.Int8,
+            "drop_off_type": pl.Int8,
+        }
 
-            tsv_data = "\n".join(lines)
+        try:
+            return pl.read_csv_batched(
+                source,
+                batch_size=batch_size,
+                null_values=[""],
+                infer_schema_length=1000,
+                schema_overrides=schema,
+            )
+        except TypeError:
+            return pl.read_csv_batched(
+                source,
+                batch_size=batch_size,
+                null_values=[""],
+                infer_schema_length=1000,
+                dtypes=schema,
+            )
 
-            asyncpg_conn = await self._get_asyncpg_conn()
-            try:
-                await asyncpg_conn.copy_to_table(
-                    "gtfs_stop_times",
-                    source=io.BytesIO(tsv_data.encode("utf-8")),
-                    columns=[
-                        "trip_id",
-                        "stop_id",
-                        "arrival_time",
-                        "departure_time",
-                        "stop_sequence",
-                        "pickup_type",
-                        "drop_off_type",
-                        "feed_id",
-                    ],
-                    format="text",
-                )
-                logger.info(f"Copied {len(export_df)} stop times via asyncpg COPY")
-            except Exception as exc:
-                logger.error("COPY failed: %s", exc)
-                raise
+    async def _copy_stop_times_from_zip(
+        self, zf: zipfile.ZipFile, feed_id: str, *, batch_size: int = 500_000
+    ):
+        member_name = "stop_times.txt"
+        try:
+            zf.getinfo(member_name)
+        except KeyError:
+            alt_member = next(
+                (name for name in zf.namelist() if name.endswith("/stop_times.txt")),
+                None,
+            )
+            if alt_member is None:
+                logger.info("No stop_times.txt found in GTFS feed")
+                await self._recreate_stop_times_indexes_and_fks()
+                return
+            member_name = alt_member
 
-        # Recreate indexes and foreign keys after bulk load (even if empty)
+        batch_count = 0
+        with zf.open(member_name) as f:
+            reader = self._read_csv_batched(f, batch_size=batch_size)
+            while True:
+                batches = reader.next_batches(1)
+                if not batches:
+                    break
+                batch_count += 1
+                await self._copy_stop_times_batch(batches[0], feed_id)
+                if batch_count % 10 == 0:
+                    logger.info("Copied %s stop_times batches...", batch_count)
+
+        await self._recreate_stop_times_indexes_and_fks()
+
+    async def _copy_stop_times_from_path(
+        self, feed_path: Path, feed_id: str, *, batch_size: int = 500_000
+    ):
+        stop_times_path = feed_path / "stop_times.txt"
+        if not stop_times_path.exists():
+            logger.info("No stop_times.txt found at %s", stop_times_path)
+            await self._recreate_stop_times_indexes_and_fks()
+            return
+
+        batch_count = 0
+        reader = self._read_csv_batched(str(stop_times_path), batch_size=batch_size)
+        while True:
+            batches = reader.next_batches(1)
+            if not batches:
+                break
+            batch_count += 1
+            await self._copy_stop_times_batch(batches[0], feed_id)
+            if batch_count % 10 == 0:
+                logger.info("Copied %s stop_times batches...", batch_count)
+
+        await self._recreate_stop_times_indexes_and_fks()
+
+    async def _recreate_stop_times_indexes_and_fks(self) -> None:
         logger.info("Recreating indexes and foreign keys on stop_times...")
+
+        await self.session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop ON gtfs_stop_times(stop_id)"
+            )
+        )
+        await self.session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip ON gtfs_stop_times(trip_id)"
+            )
+        )
+        await self.session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_time)"
+            )
+        )
+
         await self.session.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop ON gtfs_stop_times(stop_id);
-                CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip ON gtfs_stop_times(trip_id);
-                CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_time);
-                ALTER TABLE gtfs_stop_times ADD CONSTRAINT IF NOT EXISTS gtfs_stop_times_stop_id_fkey FOREIGN KEY (stop_id) REFERENCES gtfs_stops(stop_id);
-                ALTER TABLE gtfs_stop_times ADD CONSTRAINT IF NOT EXISTS gtfs_stop_times_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES gtfs_trips(trip_id);
+                DO $$
+                BEGIN
+                    ALTER TABLE gtfs_stop_times ADD CONSTRAINT gtfs_stop_times_stop_id_fkey
+                        FOREIGN KEY (stop_id) REFERENCES gtfs_stops(stop_id);
+                EXCEPTION WHEN duplicate_object THEN
+                    NULL;
+                END $$;
+                """
+            )
+        )
+        await self.session.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    ALTER TABLE gtfs_stop_times ADD CONSTRAINT gtfs_stop_times_trip_id_fkey
+                        FOREIGN KEY (trip_id) REFERENCES gtfs_trips(trip_id);
+                EXCEPTION WHEN duplicate_object THEN
+                    NULL;
+                END $$;
                 """
             )
         )
         await self.session.commit()
 
     async def _copy_calendar(
-        self, calendar_df: DataFrame, calendar_dates_df: DataFrame, feed_id: str
+        self,
+        calendar_df: pl.DataFrame | None,
+        calendar_dates_df: pl.DataFrame | None,
+        feed_id: str,
     ):
         """Bulk insert calendar data using PostgreSQL COPY."""
-        asyncpg_conn = await self._get_asyncpg_conn()
+        if calendar_df is not None and not calendar_df.is_empty():
+            logger.info(f"Preparing {calendar_df.height} calendar records for COPY...")
 
-        # Calendar
-        if calendar_df is not None and not calendar_df.empty:
-            logger.info(f"Preparing {len(calendar_df)} calendar records for COPY...")
-
-            lines = []
-            for row in calendar_df.itertuples():
-                line = "\t".join(
+            export_df = calendar_df.with_columns(
+                pl.col("monday").cast(pl.Int8),
+                pl.col("tuesday").cast(pl.Int8),
+                pl.col("wednesday").cast(pl.Int8),
+                pl.col("thursday").cast(pl.Int8),
+                pl.col("friday").cast(pl.Int8),
+                pl.col("saturday").cast(pl.Int8),
+                pl.col("sunday").cast(pl.Int8),
+                pl.coalesce(
                     [
-                        _escape_tsv(row.service_id),
-                        _escape_tsv(_clean_value(row.monday)),
-                        _escape_tsv(_clean_value(row.tuesday)),
-                        _escape_tsv(_clean_value(row.wednesday)),
-                        _escape_tsv(_clean_value(row.thursday)),
-                        _escape_tsv(_clean_value(row.friday)),
-                        _escape_tsv(_clean_value(row.saturday)),
-                        _escape_tsv(_clean_value(row.sunday)),
-                        _escape_tsv(row.start_date),
-                        _escape_tsv(row.end_date),
-                        _escape_tsv(feed_id),
+                        pl.col("start_date")
+                        .cast(pl.Utf8)
+                        .str.strptime(pl.Date, "%Y%m%d", strict=False),
+                        pl.col("start_date")
+                        .cast(pl.Utf8)
+                        .str.strptime(pl.Date, "%Y-%m-%d", strict=False),
                     ]
-                )
-                lines.append(line)
+                ).alias("start_date"),
+                pl.coalesce(
+                    [
+                        pl.col("end_date")
+                        .cast(pl.Utf8)
+                        .str.strptime(pl.Date, "%Y%m%d", strict=False),
+                        pl.col("end_date")
+                        .cast(pl.Utf8)
+                        .str.strptime(pl.Date, "%Y-%m-%d", strict=False),
+                    ]
+                ).alias("end_date"),
+                pl.lit(feed_id).alias("feed_id"),
+            ).select(
+                [
+                    "service_id",
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                    "start_date",
+                    "end_date",
+                    "feed_id",
+                ]
+            )
 
-            tsv_data = "\n".join(lines)
-
-            await asyncpg_conn.copy_to_table(
+            await self._copy_polars_df(
+                export_df,
                 "gtfs_calendar",
-                source=io.BytesIO(tsv_data.encode("utf-8")),
                 columns=[
                     "service_id",
                     "monday",
@@ -462,39 +693,37 @@ class GTFSFeedImporter:
                     "end_date",
                     "feed_id",
                 ],
-                format="text",
             )
 
-            logger.info(f"Copied {len(calendar_df)} calendar records")
+            logger.info(f"Copied {calendar_df.height} calendar records")
 
-        # Calendar dates
-        if calendar_dates_df is not None and not calendar_dates_df.empty:
+        if calendar_dates_df is not None and not calendar_dates_df.is_empty():
             logger.info(
-                f"Preparing {len(calendar_dates_df)} calendar date records for COPY..."
+                f"Preparing {calendar_dates_df.height} calendar date records for COPY..."
             )
 
-            lines = []
-            for row in calendar_dates_df.itertuples():
-                line = "\t".join(
+            export_df = calendar_dates_df.with_columns(
+                pl.coalesce(
                     [
-                        _escape_tsv(row.service_id),
-                        _escape_tsv(row.date),
-                        _escape_tsv(_clean_value(row.exception_type)),
-                        _escape_tsv(feed_id),
+                        pl.col("date")
+                        .cast(pl.Utf8)
+                        .str.strptime(pl.Date, "%Y%m%d", strict=False),
+                        pl.col("date")
+                        .cast(pl.Utf8)
+                        .str.strptime(pl.Date, "%Y-%m-%d", strict=False),
                     ]
-                )
-                lines.append(line)
+                ).alias("date"),
+                pl.col("exception_type").cast(pl.Int16),
+                pl.lit(feed_id).alias("feed_id"),
+            ).select(["service_id", "date", "exception_type", "feed_id"])
 
-            tsv_data = "\n".join(lines)
-
-            await asyncpg_conn.copy_to_table(
+            await self._copy_polars_df(
+                export_df,
                 "gtfs_calendar_dates",
-                source=io.BytesIO(tsv_data.encode("utf-8")),
                 columns=["service_id", "date", "exception_type", "feed_id"],
-                format="text",
             )
 
-            logger.info(f"Copied {len(calendar_dates_df)} calendar date records")
+            logger.info(f"Copied {calendar_dates_df.height} calendar date records")
 
     async def _download_feed(self, feed_url: str) -> Path:
         """Download GTFS feed ZIP file."""
@@ -515,17 +744,27 @@ class GTFSFeedImporter:
         logger.info(f"Downloaded GTFS feed to {feed_path}")
         return feed_path
 
-    async def _record_feed_info(self, feed: gk.Feed, feed_id: str, feed_url: str):
+    async def _record_feed_info(
+        self,
+        *,
+        feed_id: str,
+        feed_url: str,
+        feed_start_date: date | None,
+        feed_end_date: date | None,
+        stop_count: int,
+        route_count: int,
+        trip_count: int,
+    ):
         """Record feed metadata."""
         feed_info = {
             "feed_id": feed_id,
             "feed_url": feed_url,
-            "downloaded_at": datetime.now(timezone.utc),
-            "feed_start_date": getattr(feed, "feed_info", {}).get("start_date"),
-            "feed_end_date": getattr(feed, "feed_info", {}).get("end_date"),
-            "stop_count": len(feed.stops) if feed.stops is not None else 0,
-            "route_count": len(feed.routes) if feed.routes is not None else 0,
-            "trip_count": len(feed.trips) if feed.trips is not None else 0,
+            "downloaded_at": datetime.utcnow(),
+            "feed_start_date": feed_start_date,
+            "feed_end_date": feed_end_date,
+            "stop_count": stop_count,
+            "route_count": route_count,
+            "trip_count": trip_count,
         }
 
         await self.session.execute(insert(GTFSFeedInfo).values(feed_info))
