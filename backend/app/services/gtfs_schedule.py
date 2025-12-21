@@ -85,133 +85,51 @@ class GTFSScheduleService:
         today = from_time.date()
         weekday = today.strftime("%A").lower()  # 'monday', 'tuesday', etc.
 
-        # Use separate static SQL queries for each weekday to avoid SQL injection
-        # The weekday column name is validated via allowlist lookup
-        weekday_queries = {
-            "monday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.monday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
-            "tuesday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.tuesday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
-            "wednesday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.wednesday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
-            "thursday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.thursday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
-            "friday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.friday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
-            "saturday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.saturday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
-            "sunday": text(
-                """
-                SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                       r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                       s.stop_name, t.trip_id, r.route_id
-                FROM gtfs_stop_times st
-                JOIN gtfs_trips t ON st.trip_id = t.trip_id
-                JOIN gtfs_routes r ON t.route_id = r.route_id
-                JOIN gtfs_stops s ON st.stop_id = s.stop_id
-                JOIN gtfs_calendar c ON t.service_id = c.service_id
-                LEFT JOIN gtfs_calendar_dates cd ON t.service_id = cd.service_id AND cd.date = :today
-                WHERE st.stop_id = :stop_id AND c.start_date <= :today AND c.end_date >= :today
-                  AND ((c.sunday = true AND (cd.exception_type IS NULL OR cd.exception_type != 2)) OR cd.exception_type = 1)
-                  AND st.departure_time >= :from_interval
-                ORDER BY st.departure_time LIMIT :limit
-            """
-            ),
+        # Some GTFS feeds omit calendar.txt and rely only on calendar_dates.txt.
+        # In that case, a strict INNER JOIN to gtfs_calendar yields no results.
+        # We use a LEFT JOIN and treat calendar_dates exception_type=1 as an
+        # explicit inclusion even when there is no calendar row.
+        weekday_columns = {
+            "monday": "monday",
+            "tuesday": "tuesday",
+            "wednesday": "wednesday",
+            "thursday": "thursday",
+            "friday": "friday",
+            "saturday": "saturday",
+            "sunday": "sunday",
         }
-
-        query = weekday_queries.get(weekday)
-        if query is None:
+        weekday_column = weekday_columns.get(weekday)
+        if weekday_column is None:
             raise ValueError(f"Invalid weekday: {weekday}")
+
+        query = text(
+            f"""
+            SELECT st.departure_time, st.arrival_time, t.trip_headsign,
+                   r.route_short_name, r.route_long_name, r.route_type, r.route_color,
+                   s.stop_name, t.trip_id, r.route_id
+            FROM gtfs_stop_times st
+            JOIN gtfs_trips t ON st.trip_id = t.trip_id
+            JOIN gtfs_routes r ON t.route_id = r.route_id
+            JOIN gtfs_stops s ON st.stop_id = s.stop_id
+            LEFT JOIN gtfs_calendar c ON t.service_id = c.service_id
+            LEFT JOIN gtfs_calendar_dates cd
+                   ON t.service_id = cd.service_id AND cd.date = :today
+            WHERE st.stop_id = :stop_id
+              AND st.departure_time >= :from_interval
+              AND (
+                    (
+                      c.service_id IS NOT NULL
+                      AND c.start_date <= :today
+                      AND c.end_date >= :today
+                      AND c.{weekday_column} = true
+                      AND (cd.exception_type IS NULL OR cd.exception_type != 2)
+                    )
+                    OR cd.exception_type = 1
+                  )
+            ORDER BY st.departure_time
+            LIMIT :limit
+            """
+        )
 
         result = await self.session.execute(
             query,

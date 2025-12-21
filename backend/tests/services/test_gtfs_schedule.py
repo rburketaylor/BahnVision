@@ -493,6 +493,31 @@ class TestGetStopDepartures:
         )
 
     @pytest.mark.asyncio
+    async def test_get_stop_departures_supports_calendar_dates_only(
+        self, service, mock_session
+    ):
+        """Ensure SQL supports feeds without calendar.txt (calendar_dates-only)."""
+        mock_stop = self._mock_stop_exists(mock_session)
+        mock_stop_result = MagicMock()
+        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
+
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_stop_result, mock_departure_result]
+        )
+
+        query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)  # Monday
+        await service.get_stop_departures("de:09162:6", query_time, limit=10)
+
+        # Second execute() call is the departures query (sqlalchemy.text TextClause)
+        query_obj = mock_session.execute.call_args_list[1][0][0]
+        sql = getattr(query_obj, "text", str(query_obj))
+        assert "LEFT JOIN gtfs_calendar c" in sql
+        assert "OR cd.exception_type = 1" in sql
+
+    @pytest.mark.asyncio
     async def test_get_stop_departures_overnight_service(self, service, mock_session):
         """Test departures with times > 24:00 (overnight service spanning midnight)."""
         # GTFS times can exceed 24:00 for overnight services
