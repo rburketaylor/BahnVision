@@ -291,6 +291,8 @@ jobs:
           push: false
           load: true
           tags: bahnvision-frontend:test
+          build-args: |
+            APK_CACHE_DATE=${{ github.run_id }}
           cache-from: type=gha,scope=frontend-image
           cache-to: type=gha,mode=max,scope=frontend-image
 
@@ -464,5 +466,7 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            APK_CACHE_DATE=${{ github.run_id }}
           cache-from: type=gha,scope=frontend-image
           cache-to: type=gha,mode=max,scope=frontend-image
