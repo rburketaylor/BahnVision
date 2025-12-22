@@ -105,6 +105,80 @@ async def search_stops(
 
 
 @router.get(
+    "/stops/nearby",
+    response_model=list[TransitStop],
+    summary="Find stops near a location",
+    description="Find transit stops within a radius of a given location.",
+)
+@limiter.limit("30/minute")
+async def get_nearby_stops(
+    request: Request,
+    latitude: Annotated[
+        float,
+        Query(
+            ge=-90,
+            le=90,
+            description="Latitude of the center point.",
+        ),
+    ],
+    longitude: Annotated[
+        float,
+        Query(
+            ge=-180,
+            le=180,
+            description="Longitude of the center point.",
+        ),
+    ],
+    response: Response,
+    radius_meters: Annotated[
+        int,
+        Query(
+            ge=100,
+            le=10000,
+            description="Search radius in meters (default: 500).",
+        ),
+    ] = 500,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=50,
+            description="Maximum number of results to return (default: 10).",
+        ),
+    ] = 10,
+    cache: CacheService = Depends(get_cache_service),
+    db: AsyncSession = Depends(get_session),
+) -> list[TransitStop]:
+    """Find transit stops near a location."""
+    settings = get_settings()
+    gtfs_schedule = GTFSScheduleService(db)
+
+    radius_km = radius_meters / 1000.0
+
+    stops = await gtfs_schedule.get_nearby_stops(latitude, longitude, radius_km, limit)
+
+    # Convert to response models
+    results = [
+        TransitStop(
+            id=str(stop.stop_id),
+            name=str(stop.stop_name),
+            latitude=float(stop.stop_lat) if stop.stop_lat else 0.0,
+            longitude=float(stop.stop_lon) if stop.stop_lon else 0.0,
+            zone_id=None,
+            wheelchair_boarding=0,
+        )
+        for stop in stops
+    ]
+
+    # Set cache headers
+    response.headers["Cache-Control"] = (
+        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
+    )
+
+    return results
+
+
+@router.get(
     "/stops/{stop_id}",
     response_model=TransitStop,
     summary="Get stop details",
@@ -208,77 +282,3 @@ async def get_station_trends(
     response.headers["Cache-Control"] = "public, max-age=300"
 
     return trends
-
-
-@router.get(
-    "/stops/nearby",
-    response_model=list[TransitStop],
-    summary="Find stops near a location",
-    description="Find transit stops within a radius of a given location.",
-)
-@limiter.limit("30/minute")
-async def get_nearby_stops(
-    request: Request,
-    latitude: Annotated[
-        float,
-        Query(
-            ge=-90,
-            le=90,
-            description="Latitude of the center point.",
-        ),
-    ],
-    longitude: Annotated[
-        float,
-        Query(
-            ge=-180,
-            le=180,
-            description="Longitude of the center point.",
-        ),
-    ],
-    response: Response,
-    radius_meters: Annotated[
-        int,
-        Query(
-            ge=100,
-            le=10000,
-            description="Search radius in meters (default: 500).",
-        ),
-    ] = 500,
-    limit: Annotated[
-        int,
-        Query(
-            ge=1,
-            le=50,
-            description="Maximum number of results to return (default: 10).",
-        ),
-    ] = 10,
-    cache: CacheService = Depends(get_cache_service),
-    db: AsyncSession = Depends(get_session),
-) -> list[TransitStop]:
-    """Find transit stops near a location."""
-    settings = get_settings()
-    gtfs_schedule = GTFSScheduleService(db)
-
-    radius_km = radius_meters / 1000.0
-
-    stops = await gtfs_schedule.get_nearby_stops(latitude, longitude, radius_km, limit)
-
-    # Convert to response models
-    results = [
-        TransitStop(
-            id=str(stop.stop_id),
-            name=str(stop.stop_name),
-            latitude=float(stop.stop_lat) if stop.stop_lat else 0.0,
-            longitude=float(stop.stop_lon) if stop.stop_lon else 0.0,
-            zone_id=None,
-            wheelchair_boarding=0,
-        )
-        for stop in stops
-    ]
-
-    # Set cache headers
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
-    )
-
-    return results

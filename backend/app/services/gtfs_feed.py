@@ -233,10 +233,13 @@ class GTFSFeedImporter:
         if cleaned is None:
             return None
 
+        # Sometimes datetime.datetime appears in test doubles; normalize to date.
+        if isinstance(cleaned, datetime):
+            return cleaned.date()
+
         if isinstance(cleaned, date):
             return cleaned
 
-        # Sometimes datetime.datetime appears in test doubles; normalize to date.
         if hasattr(cleaned, "date") and not isinstance(cleaned, str):
             try:
                 return cleaned.date()
