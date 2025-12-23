@@ -114,7 +114,7 @@ class GTFSScheduleService:
             LEFT JOIN gtfs_calendar c ON t.service_id = c.service_id
             LEFT JOIN gtfs_calendar_dates cd
                    ON t.service_id = cd.service_id AND cd.date = :today
-            WHERE st.stop_id = :stop_id
+            WHERE (st.stop_id = :stop_id OR s.parent_station = :stop_id)
               AND st.departure_time >= :from_interval
               AND (
                     (
