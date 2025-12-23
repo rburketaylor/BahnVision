@@ -47,14 +47,25 @@ class FakeAsyncSession:
     def __init__(
         self,
         rows: list[object] | None = None,
+        row_sets: list[list[object]] | None = None,
         raise_on_execute: Exception | None = None,
     ):
         self._rows = rows or []
+        self._row_sets = row_sets
+        self._row_set_index = 0
         self._raise_on_execute = raise_on_execute
+        self.executed_statements: list[object] = []
 
     async def execute(self, stmt) -> FakeResult:
+        self.executed_statements.append(stmt)
         if self._raise_on_execute:
             raise self._raise_on_execute
+        if self._row_sets is not None:
+            if self._row_set_index >= len(self._row_sets):
+                return FakeResult([])
+            rows = self._row_sets[self._row_set_index]
+            self._row_set_index += 1
+            return FakeResult(rows)
         return FakeResult(self._rows)
 
 
@@ -306,6 +317,67 @@ class TestHeatmapService:
         assert result.summary.total_departures == 0
         assert result.summary.total_cancellations == 0
         assert result.summary.overall_cancellation_rate == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_cancellation_heatmap_fetches_breakdown_for_selected_stations(
+        self,
+    ):
+        """Ensure service fetches route_type breakdown only for selected stations."""
+
+        @dataclass
+        class StationAggRow:
+            stop_id: str
+            stop_name: str
+            stop_lat: float
+            stop_lon: float
+            total_departures: int
+            cancelled_count: int
+            delayed_count: int
+            impact_score: int = 0
+
+        @dataclass
+        class BreakdownRow:
+            stop_id: str
+            route_type: int
+            total_departures: int
+            cancelled_count: int
+            delayed_count: int
+
+        station_rows = [
+            StationAggRow(
+                stop_id="de:09162:6",
+                stop_name="Marienplatz",
+                stop_lat=48.13743,
+                stop_lon=11.57549,
+                total_departures=100,
+                cancelled_count=5,
+                delayed_count=10,
+                impact_score=15,
+            )
+        ]
+        breakdown_rows = [
+            BreakdownRow(
+                stop_id="de:09162:6",
+                route_type=2,
+                total_departures=100,
+                cancelled_count=5,
+                delayed_count=10,
+            )
+        ]
+
+        session = FakeAsyncSession(row_sets=[station_rows, breakdown_rows])
+        gtfs_schedule = FakeGTFSScheduleService()
+        cache = FakeCache()
+        service = HeatmapService(gtfs_schedule, cache, session=session)
+
+        result = await service.get_cancellation_heatmap(max_points=1)
+
+        assert len(session.executed_statements) == 2
+        assert len(result.data_points) == 1
+        assert result.data_points[0].station_id == "de:09162:6"
+        assert result.data_points[0].by_transport["BAHN"].total == 100
+        assert result.data_points[0].by_transport["BAHN"].cancelled == 5
+        assert result.data_points[0].by_transport["BAHN"].delayed == 10
 
 
 class TestCalculateSummary:
