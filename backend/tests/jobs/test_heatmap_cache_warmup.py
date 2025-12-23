@@ -23,8 +23,7 @@ class TestHeatmapWarmupTarget:
             time_range="24h",
             transport_modes=None,
             bucket_width_minutes=60,
-            zoom_level=10,
-            max_points=None,
+            max_points=1000,
         )
 
         key = target.cache_key
@@ -32,7 +31,7 @@ class TestHeatmapWarmupTarget:
         assert key is not None
         assert "24h" in key
         assert "60" in key
-        assert "10" in key
+        assert "1000" in key
 
     def test_cache_key_with_transport_modes(self):
         """Test cache_key includes transport modes when set."""
@@ -40,14 +39,14 @@ class TestHeatmapWarmupTarget:
             time_range="1h",
             transport_modes="UBAHN,SBAHN",
             bucket_width_minutes=30,
-            zoom_level=8,
             max_points=100,
         )
 
         key = target.cache_key
 
         assert "1h" in key
-        assert "UBAHN,SBAHN" in key or "UBAHN" in key
+        assert "SBAHN" in key
+        assert "UBAHN" in key
 
     def test_cache_key_default_values(self):
         """Test cache_key with default transport_modes and max_points."""
@@ -55,8 +54,7 @@ class TestHeatmapWarmupTarget:
             time_range="7d",
             transport_modes=None,
             bucket_width_minutes=60,
-            zoom_level=6,
-            max_points=None,
+            max_points=500,
         )
 
         key = target.cache_key
@@ -97,7 +95,7 @@ class TestHeatmapCacheWarmer:
     def test_build_targets_creates_correct_combinations(
         self, mock_cache, mock_settings_enabled
     ):
-        """Test _build_targets creates targets for all time/zoom combinations."""
+        """Test _build_targets creates targets for all time/density combinations."""
         with patch(
             "app.jobs.heatmap_cache_warmup.get_settings",
             return_value=mock_settings_enabled,
@@ -105,15 +103,15 @@ class TestHeatmapCacheWarmer:
             warmer = HeatmapCacheWarmer(mock_cache)
             targets = warmer._build_targets()
 
-        # 2 time ranges * 2 zoom levels = 4 targets
+        # 2 time ranges * 2 max_points densities = 4 targets
         assert len(targets) == 4
 
         # Verify all combinations exist
         time_ranges = {t.time_range for t in targets}
-        zoom_levels = {t.zoom_level for t in targets}
+        max_points = {t.max_points for t in targets}
 
         assert time_ranges == {"1h", "24h"}
-        assert zoom_levels == {8, 10}
+        assert max_points == {500, 1000}
 
     def test_build_targets_uses_settings_bucket_width(
         self, mock_cache, mock_settings_enabled
@@ -240,7 +238,7 @@ class TestHeatmapCacheWarmer:
                         await warmer._warmup(reason="test")
 
         # Should have called set_json for each target
-        assert mock_cache.set_json.call_count == 4  # 2 time ranges * 2 zoom levels
+        assert mock_cache.set_json.call_count == 4  # 2 time ranges * 2 densities
 
     @pytest.mark.asyncio
     async def test_warmup_continues_on_individual_target_failure(
