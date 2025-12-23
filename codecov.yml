@@ -20,6 +20,13 @@ coverage:
         target: 80%
         threshold: 5%  # More lenient for patches
         if_ci_failed: error
+        only_pulls: true
+        # Only evaluate patch coverage for actual application code.
+        # This avoids failing PRs/commits that only touch meta/config files
+        # (e.g., `.gitignore`, docs, CI config) which aren't in coverage reports.
+        paths:
+          - backend/app/
+          - frontend/src/
 
 # PR comment configuration
 comment:
@@ -69,6 +76,7 @@ component_management:
 
 # Ignore test files and config files from coverage
 ignore:
+  - ".gitignore"
   - "**/*.test.*"
   - "**/*.spec.*"
   - "**/tests/**"
