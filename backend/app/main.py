@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -90,6 +91,14 @@ async def lifespan(app: FastAPI):
         await harvester.start()
         logger.info("GTFS-RT data harvester started")
 
+    # Warm common heatmap variants at startup to reduce first-page latency.
+    try:
+        from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
+
+        HeatmapCacheWarmer(cache_service).trigger(reason="startup")
+    except Exception:
+        logger.exception("Failed to trigger heatmap cache warmup at startup")
+
     # Start GTFS-RT background processor
     async with gtfs_rt_lifespan_manager(cache_service) as rt_processor:
         yield {"rt_processor": rt_processor, "harvester": harvester}
@@ -123,6 +132,9 @@ def create_app() -> FastAPI:
     # Instrument FastAPI for tracing if enabled
     instrument_fastapi(app, enabled=settings.otel_enabled)
     _install_request_id_middleware(app)
+
+    # Compress larger JSON responses (e.g., heatmap payloads)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     allow_origins = settings.cors_allow_origins
     allow_origin_regex = settings.cors_allow_origin_regex
