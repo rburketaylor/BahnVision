@@ -8,6 +8,7 @@ Uses real GTFS-RT data from the realtime_station_stats table.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+_SLOW_HEATMAP_DB_QUERY_LOG_MS = 1000
 
 # Time range preset mappings (in hours)
 TIME_RANGE_HOURS: dict[TimeRangePreset, int] = {
@@ -91,6 +93,25 @@ TRANSPORT_TO_ROUTE_TYPES: dict[str, list[int]] = {
     "SCHIFF": [4, 1000],
     "SBAHN": [109],
 }
+
+
+def resolve_max_points(zoom_level: int, max_points: int | None) -> int:
+    """Resolve the effective max_points for a request.
+
+    We intentionally bucket zoom levels into a small set of densities so caching
+    and warmup can cover most requests with a small number of keys.
+    """
+    if max_points is None:
+        if zoom_level < 10:
+            effective = 500
+        elif zoom_level < 12:
+            effective = 1000
+        else:
+            effective = 2000
+    else:
+        effective = max_points
+
+    return min(int(effective), MAX_DATA_POINTS)
 
 
 @dataclass
@@ -200,22 +221,15 @@ class HeatmapService:
             transport_modes or "all",
         )
 
-        # Set max points based on zoom level if not provided
-        if max_points is None:
-            if zoom_level < 10:
-                # At low zoom we still want enough points for stable clustering
-                # and a representative national overview.
-                max_points = 500
-            elif zoom_level < 12:
-                max_points = 1000
-            else:
-                max_points = min(2000, MAX_DATA_POINTS)
-        else:
-            max_points = min(max_points, MAX_DATA_POINTS)
+        max_points_effective = resolve_max_points(zoom_level, max_points)
 
         # Get real aggregation data from database (joins with gtfs_stops internally)
         data_points = await self._aggregate_station_data_from_db(
-            transport_types, from_time, to_time
+            transport_types,
+            from_time,
+            to_time,
+            bucket_width_minutes=bucket_width_minutes,
+            max_points=max_points_effective,
         )
 
         # Log when no real data is available
@@ -230,12 +244,12 @@ class HeatmapService:
             f"Filtered data points: {filtered_count}/{original_count} stations have departures"
         )
 
-        # Sort by impact (combined delay + cancellation rate, weighted by departures)
+        # Defensive: sort + cap again (DB already limits, but keep semantics stable)
         data_points.sort(
             key=lambda x: (x.delay_rate + x.cancellation_rate) * x.total_departures,
             reverse=True,
         )
-        data_points = data_points[:max_points]
+        data_points = data_points[:max_points_effective]
         logger.info(
             f"Returning {len(data_points)} data points after filtering and limiting"
         )
@@ -268,6 +282,9 @@ class HeatmapService:
         transport_types: list[str] | None,
         from_time: datetime,
         to_time: datetime,
+        *,
+        bucket_width_minutes: int,
+        max_points: int,
     ) -> list[HeatmapDataPoint]:
         """Query real cancellation data by joining with GTFS stops.
 
@@ -275,6 +292,7 @@ class HeatmapService:
             transport_types: Filter to specific transport types
             from_time: Start of time range
             to_time: End of time range
+            max_points: Maximum number of stations to return
 
         Returns:
             List of HeatmapDataPoint with real statistics, or empty list when no data exists
@@ -297,19 +315,30 @@ class HeatmapService:
         try:
             from app.models.gtfs import GTFSStop
 
-            # Query aggregated data with JOIN to gtfs_stops for coordinates/names
-            stmt = (
+            total_departures_expr = func.coalesce(
+                func.sum(RealtimeStationStats.trip_count), 0
+            )
+            cancelled_count_expr = func.coalesce(
+                func.sum(RealtimeStationStats.cancelled_count), 0
+            )
+            delayed_count_expr = func.coalesce(
+                func.sum(RealtimeStationStats.delayed_count), 0
+            )
+            impact_score_expr = func.least(
+                cancelled_count_expr, total_departures_expr
+            ) + func.least(delayed_count_expr, total_departures_expr)
+
+            # First: select the most "impacted" stations and limit in SQL to avoid huge transfers.
+            stations_stmt = (
                 select(
                     RealtimeStationStats.stop_id,
                     GTFSStop.stop_name,
                     GTFSStop.stop_lat,
                     GTFSStop.stop_lon,
-                    func.sum(RealtimeStationStats.trip_count).label("total_departures"),
-                    func.sum(RealtimeStationStats.cancelled_count).label(
-                        "cancelled_count"
-                    ),
-                    func.sum(RealtimeStationStats.delayed_count).label("delayed_count"),
-                    RealtimeStationStats.route_type,
+                    total_departures_expr.label("total_departures"),
+                    cancelled_count_expr.label("cancelled_count"),
+                    delayed_count_expr.label("delayed_count"),
+                    impact_score_expr.label("impact_score"),
                 )
                 .join(
                     GTFSStop,
@@ -317,105 +346,144 @@ class HeatmapService:
                 )
                 .where(RealtimeStationStats.bucket_start >= from_time)
                 .where(RealtimeStationStats.bucket_start < to_time)
+                .where(
+                    RealtimeStationStats.bucket_width_minutes == bucket_width_minutes
+                )
                 .where(GTFSStop.stop_lat.isnot(None))
                 .where(GTFSStop.stop_lon.isnot(None))
             )
 
             if route_type_filter:
-                stmt = stmt.where(
+                stations_stmt = stations_stmt.where(
                     RealtimeStationStats.route_type.in_(route_type_filter)
                 )
 
-            stmt = stmt.group_by(
+            stations_stmt = (
+                stations_stmt.group_by(
+                    RealtimeStationStats.stop_id,
+                    GTFSStop.stop_name,
+                    GTFSStop.stop_lat,
+                    GTFSStop.stop_lon,
+                )
+                .having(total_departures_expr >= 1)
+                .order_by(impact_score_expr.desc(), total_departures_expr.desc())
+                .limit(max_points)
+            )
+
+            stations_started = time.monotonic()
+            stations_result = await self._session.execute(stations_stmt)
+            stations_ms = (time.monotonic() - stations_started) * 1000
+            station_rows = stations_result.all()
+            if not station_rows:
+                return []
+            if stations_ms >= _SLOW_HEATMAP_DB_QUERY_LOG_MS:
+                logger.info(
+                    "Slow heatmap stations query (%dms): rows=%d max_points=%d",
+                    int(stations_ms),
+                    len(station_rows),
+                    max_points,
+                )
+
+            station_ids = [row.stop_id for row in station_rows]
+
+            # Second: fetch per-route_type breakdown only for the selected stations.
+            breakdown_stmt = (
+                select(
+                    RealtimeStationStats.stop_id,
+                    RealtimeStationStats.route_type,
+                    func.coalesce(func.sum(RealtimeStationStats.trip_count), 0).label(
+                        "total_departures"
+                    ),
+                    func.coalesce(
+                        func.sum(RealtimeStationStats.cancelled_count), 0
+                    ).label("cancelled_count"),
+                    func.coalesce(
+                        func.sum(RealtimeStationStats.delayed_count), 0
+                    ).label("delayed_count"),
+                )
+                .where(RealtimeStationStats.bucket_start >= from_time)
+                .where(RealtimeStationStats.bucket_start < to_time)
+                .where(
+                    RealtimeStationStats.bucket_width_minutes == bucket_width_minutes
+                )
+                .where(RealtimeStationStats.stop_id.in_(station_ids))
+            )
+
+            if route_type_filter:
+                breakdown_stmt = breakdown_stmt.where(
+                    RealtimeStationStats.route_type.in_(route_type_filter)
+                )
+
+            breakdown_stmt = breakdown_stmt.group_by(
                 RealtimeStationStats.stop_id,
-                GTFSStop.stop_name,
-                GTFSStop.stop_lat,
-                GTFSStop.stop_lon,
                 RealtimeStationStats.route_type,
             )
 
-            result = await self._session.execute(stmt)
-            rows = result.all()
+            breakdown_started = time.monotonic()
+            breakdown_result = await self._session.execute(breakdown_stmt)
+            breakdown_ms = (time.monotonic() - breakdown_started) * 1000
+            breakdown_rows = breakdown_result.all()
+            if breakdown_ms >= _SLOW_HEATMAP_DB_QUERY_LOG_MS:
+                logger.info(
+                    "Slow heatmap breakdown query (%dms): stations=%d",
+                    int(breakdown_ms),
+                    len(station_ids),
+                )
 
-            if not rows:
-                return []
-
-            # Aggregate by stop (combining route_types)
-            stop_stats: dict[str, dict] = {}
-            for row in rows:
+            breakdown_by_station: dict[str, dict[str, TransportStats]] = {}
+            for row in breakdown_rows:
                 stop_id = row.stop_id
+                route_type = row.route_type
+                if route_type is None:
+                    continue
 
-                if stop_id not in stop_stats:
-                    stop_stats[stop_id] = {
-                        "stop_name": row.stop_name or stop_id,
-                        "stop_lat": float(row.stop_lat),
-                        "stop_lon": float(row.stop_lon),
-                        "total_departures": 0,
-                        "cancelled_count": 0,
-                        "delayed_count": 0,
-                        "by_transport": {},
-                    }
-
-                stop_stats[stop_id]["total_departures"] += row.total_departures or 0
-                stop_stats[stop_id]["cancelled_count"] += row.cancelled_count or 0
-                stop_stats[stop_id]["delayed_count"] += row.delayed_count or 0
-
-                # Track by transport type
-                if row.route_type is not None:
-                    transport_type = GTFS_ROUTE_TYPES.get(row.route_type, "BUS")
-                    if transport_type not in stop_stats[stop_id]["by_transport"]:
-                        stop_stats[stop_id]["by_transport"][transport_type] = {
-                            "total": 0,
-                            "cancelled": 0,
-                            "delayed": 0,
-                        }
-                    stop_stats[stop_id]["by_transport"][transport_type]["total"] += (
-                        row.total_departures or 0
+                transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
+                per_station = breakdown_by_station.setdefault(stop_id, {})
+                existing = per_station.get(transport_type)
+                if existing is None:
+                    per_station[transport_type] = TransportStats(
+                        total=int(row.total_departures or 0),
+                        cancelled=int(row.cancelled_count or 0),
+                        delayed=int(row.delayed_count or 0),
                     )
-                    stop_stats[stop_id]["by_transport"][transport_type][
-                        "cancelled"
-                    ] += row.cancelled_count or 0
-                    stop_stats[stop_id]["by_transport"][transport_type]["delayed"] += (
-                        row.delayed_count or 0
+                else:
+                    per_station[transport_type] = TransportStats(
+                        total=existing.total + int(row.total_departures or 0),
+                        cancelled=existing.cancelled + int(row.cancelled_count or 0),
+                        delayed=existing.delayed + int(row.delayed_count or 0),
                     )
 
             # Convert to HeatmapDataPoint
             data_points = []
-            for stop_id, stats in stop_stats.items():
-                total = stats["total_departures"]
-                cancelled = stats["cancelled_count"]
-                delayed = stats["delayed_count"]
+            for row in station_rows:
+                stop_id = row.stop_id
+                total = int(row.total_departures or 0)
+                cancelled = int(row.cancelled_count or 0)
+                delayed = int(row.delayed_count or 0)
                 # Clamp rates to [0, 1] to handle data quality issues
                 # where delayed_count or cancelled_count may exceed trip_count
                 cancellation_rate = min(cancelled / total, 1.0) if total > 0 else 0.0
                 delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
 
-                by_transport = {
-                    tt: TransportStats(
-                        total=ts["total"],
-                        cancelled=ts["cancelled"],
-                        delayed=ts["delayed"],
-                    )
-                    for tt, ts in stats["by_transport"].items()
-                }
-
                 data_points.append(
                     HeatmapDataPoint(
                         station_id=stop_id,
-                        station_name=stats["stop_name"],
-                        latitude=stats["stop_lat"],
-                        longitude=stats["stop_lon"],
+                        station_name=(row.stop_name or stop_id),
+                        latitude=float(row.stop_lat),
+                        longitude=float(row.stop_lon),
                         total_departures=total,
                         cancelled_count=cancelled,
                         cancellation_rate=cancellation_rate,
                         delayed_count=delayed,
                         delay_rate=delay_rate,
-                        by_transport=by_transport,
+                        by_transport=breakdown_by_station.get(stop_id, {}),
                     )
                 )
 
             logger.info(
-                "Retrieved %d stations with real aggregation data", len(data_points)
+                "Retrieved %d stations with real aggregation data (limited to %d)",
+                len(data_points),
+                max_points,
             )
             return data_points
 

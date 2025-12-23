@@ -2,7 +2,7 @@
 Heatmap cache warmup job.
 
 The heatmap aggregation query can be expensive on cold caches. This job prewarms
-the most common heatmap variants (by time range + zoom) after each GTFS-RT
+the most common heatmap variants (by time range + density) after each GTFS-RT
 harvest cycle so first user refreshes are fast.
 """
 
@@ -18,7 +18,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import AsyncSessionFactory
 from app.models.heatmap import TimeRangePreset
 from app.services.heatmap_cache import heatmap_cancellations_cache_key
-from app.services.heatmap_service import HeatmapService
+from app.services.heatmap_service import HeatmapService, resolve_max_points
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,7 @@ class HeatmapWarmupTarget:
     time_range: TimeRangePreset
     transport_modes: str | None
     bucket_width_minutes: int
-    zoom_level: int
-    max_points: int | None
+    max_points: int
 
     @property
     def cache_key(self) -> str:
@@ -37,7 +36,6 @@ class HeatmapWarmupTarget:
             time_range=self.time_range,
             transport_modes=self.transport_modes,
             bucket_width_minutes=self.bucket_width_minutes,
-            zoom_level=self.zoom_level,
             max_points=self.max_points,
         )
 
@@ -62,14 +60,17 @@ class HeatmapCacheWarmer:
     def _build_targets(self) -> list[HeatmapWarmupTarget]:
         targets: list[HeatmapWarmupTarget] = []
         for time_range in self._settings.heatmap_cache_warmup_time_ranges:
-            for zoom in self._settings.heatmap_cache_warmup_zoom_levels:
+            max_points_variants = {
+                resolve_max_points(zoom, None)
+                for zoom in self._settings.heatmap_cache_warmup_zoom_levels
+            }
+            for max_points in sorted(max_points_variants):
                 targets.append(
                     HeatmapWarmupTarget(
                         time_range=cast(TimeRangePreset, time_range),
                         transport_modes=None,
                         bucket_width_minutes=self._settings.heatmap_cache_warmup_bucket_width_minutes,
-                        zoom_level=zoom,
-                        max_points=None,
+                        max_points=max_points,
                     )
                 )
         return targets
@@ -81,6 +82,7 @@ class HeatmapCacheWarmer:
 
             targets = self._build_targets()
             ttl_seconds = self._settings.heatmap_cache_ttl_seconds
+            stale_ttl_seconds = self._settings.heatmap_cache_stale_ttl_seconds
 
             started_at = time.monotonic()
             logger.info(
@@ -105,13 +107,13 @@ class HeatmapCacheWarmer:
                                 time_range=target.time_range,
                                 transport_modes=target.transport_modes,
                                 bucket_width_minutes=target.bucket_width_minutes,
-                                zoom_level=target.zoom_level,
                                 max_points=target.max_points,
                             )
                             await self._cache.set_json(
                                 target.cache_key,
                                 result.model_dump(mode="json"),
                                 ttl_seconds=ttl_seconds,
+                                stale_ttl_seconds=stale_ttl_seconds,
                             )
                             warmed += 1
                         except Exception:

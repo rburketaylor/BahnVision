@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     heatmap_cache_ttl_seconds: int = Field(
         default=300, alias="HEATMAP_CACHE_TTL_SECONDS", ge=0
     )
+    heatmap_cache_stale_ttl_seconds: int = Field(
+        default=3600,
+        alias="HEATMAP_CACHE_STALE_TTL_SECONDS",
+        ge=0,
+        description="How long to retain a stale heatmap cache entry for fast fallbacks.",
+    )
 
     # ==========================================================================
     # Cache Behavior
@@ -140,7 +146,7 @@ class Settings(BaseSettings):
         description="Comma-separated list of heatmap time_range presets to prewarm (e.g. 1h,6h,24h).",
     )
     heatmap_cache_warmup_zoom_levels: list[int] = Field(
-        default_factory=lambda: [6, 10],
+        default_factory=lambda: [6, 10, 12],
         alias="HEATMAP_CACHE_WARMUP_ZOOM_LEVELS",
         description="Comma-separated list of zoom levels to prewarm (e.g. 6,10,12).",
     )
