@@ -51,3 +51,4 @@ mutants/
 **/reports/
 .mutmut-cache
 backend/coverage.xml
+.serena/
