@@ -22,6 +22,22 @@ const CancellationHeatmap = lazy(() =>
 )
 
 const CONTROLS_OPEN_STORAGE_KEY = 'bahnvision-heatmap-controls-open-v1'
+const MAP_VIEW_STORAGE_KEY = 'bahnvision-heatmap-view-v1'
+
+function loadInitialZoom(): number {
+  if (typeof window === 'undefined') return DEFAULT_ZOOM
+  try {
+    const raw = window.localStorage.getItem(MAP_VIEW_STORAGE_KEY)
+    if (!raw) return DEFAULT_ZOOM
+    const parsed = JSON.parse(raw) as unknown
+    const zoomValue = (parsed as { zoom?: unknown } | null)?.zoom
+    if (typeof zoomValue !== 'number' || Number.isNaN(zoomValue)) return DEFAULT_ZOOM
+    if (zoomValue < 0 || zoomValue > 22) return DEFAULT_ZOOM
+    return zoomValue
+  } catch {
+    return DEFAULT_ZOOM
+  }
+}
 
 // Loading skeleton for the map
 function MapLoadingSkeleton() {
@@ -47,7 +63,7 @@ function isTypingTarget(target: EventTarget | null) {
 export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
-  const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM) // Default zoom
+  const [zoom, setZoom] = useState<number>(() => loadInitialZoom())
   const [metric, setMetric] = useState<HeatmapMetric>('cancellations')
   const [controlsOpen, setControlsOpen] = useState(true)
 
