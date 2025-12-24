@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { TransitDeparture } from '../types/gtfs'
+import { formatTime } from '../utils/time'
 
 interface DeparturesBoardProps {
   departures: TransitDeparture[]
@@ -31,16 +32,6 @@ function TimeFormatToggle({ use24Hour, onToggle }: TimeFormatToggleProps) {
       </div>
     </div>
   )
-}
-
-// Format time for display
-const formatTime = (dateString: string | null | undefined, use24Hour: boolean = true) => {
-  if (!dateString) return 'N/A'
-  return new Date(dateString).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: !use24Hour,
-  })
 }
 
 export function DeparturesBoard({
