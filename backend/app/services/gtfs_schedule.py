@@ -226,10 +226,10 @@ class GTFSScheduleService:
         return result.scalar_one_or_none()
 
 
-def time_to_interval(dt: datetime) -> str:
-    """Convert datetime time to PostgreSQL interval format."""
+def time_to_interval(dt: datetime) -> timedelta:
+    """Convert datetime time to a timedelta for PostgreSQL interval comparison."""
     t = dt.time()
-    return f"{t.hour} hours {t.minute} minutes {t.second} seconds"
+    return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second)
 
 
 def interval_to_datetime(service_date: date, interval_value) -> Optional[datetime]:

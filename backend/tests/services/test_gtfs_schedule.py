@@ -24,19 +24,19 @@ class TestTimeToInterval:
         """Test conversion of morning time."""
         dt = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
         result = time_to_interval(dt)
-        assert result == "8 hours 30 minutes 0 seconds"
+        assert result == timedelta(hours=8, minutes=30, seconds=0)
 
     def test_time_to_interval_afternoon(self):
         """Test conversion of afternoon time."""
         dt = datetime(2025, 12, 8, 14, 45, 30, tzinfo=timezone.utc)
         result = time_to_interval(dt)
-        assert result == "14 hours 45 minutes 30 seconds"
+        assert result == timedelta(hours=14, minutes=45, seconds=30)
 
     def test_time_to_interval_midnight(self):
         """Test conversion of midnight."""
         dt = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
         result = time_to_interval(dt)
-        assert result == "0 hours 0 minutes 0 seconds"
+        assert result == timedelta(hours=0, minutes=0, seconds=0)
 
 
 class TestIntervalToDatetime:
