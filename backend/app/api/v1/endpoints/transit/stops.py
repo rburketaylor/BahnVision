@@ -9,6 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.shared.dependencies import get_transit_data_service
 from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import get_session
@@ -20,7 +21,6 @@ from app.models.transit import (
 )
 from app.services.cache import CacheService, get_cache_service
 from app.services.gtfs_schedule import GTFSScheduleService
-from app.services.gtfs_realtime import GtfsRealtimeService
 from app.services.station_stats_service import StationStatsService
 from app.services.transit_data import TransitDataService
 
@@ -28,16 +28,6 @@ router = APIRouter()
 
 # Cache names for metrics
 _CACHE_STOP_SEARCH = "transit_stop_search"
-
-
-async def get_transit_data_service(
-    cache: CacheService = Depends(get_cache_service),
-    db: AsyncSession = Depends(get_session),
-) -> TransitDataService:
-    """Create TransitDataService with dependencies."""
-    gtfs_schedule = GTFSScheduleService(db)
-    gtfs_realtime = GtfsRealtimeService(cache)
-    return TransitDataService(cache, gtfs_schedule, gtfs_realtime, db)
 
 
 async def get_station_stats_service(

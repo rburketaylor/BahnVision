@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes import api_router
 from app.api.v1.endpoints.transit import stops as stops_module
+from app.api.v1.shared import dependencies as dependencies_module
 from app.models.station_stats import StationStats, StationTrends, TrendDataPoint
 
 
@@ -207,11 +208,11 @@ class TestStopsDependencyFactories:
         realtime_cls = MagicMock(return_value=realtime_instance)
         transit_data_cls = MagicMock(return_value=service_instance)
 
-        monkeypatch.setattr(stops_module, "GTFSScheduleService", schedule_cls)
-        monkeypatch.setattr(stops_module, "GtfsRealtimeService", realtime_cls)
-        monkeypatch.setattr(stops_module, "TransitDataService", transit_data_cls)
+        monkeypatch.setattr(dependencies_module, "GTFSScheduleService", schedule_cls)
+        monkeypatch.setattr(dependencies_module, "GtfsRealtimeService", realtime_cls)
+        monkeypatch.setattr(dependencies_module, "TransitDataService", transit_data_cls)
 
-        result = await stops_module.get_transit_data_service(
+        result = await dependencies_module.get_transit_data_service(
             cache=fake_cache, db=fake_db
         )
 
