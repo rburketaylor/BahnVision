@@ -542,9 +542,26 @@ class GTFSFeedImporter:
                 return
             member_name = alt_member
 
-        batch_count = 0
-        with zf.open(member_name) as f:
-            reader = self._read_csv_batched(f, batch_size=batch_size)
+        # Extract stop_times.txt to a temp file since polars read_csv_batched
+        # doesn't support ZipExtFile objects (requires file path or bytes)
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".csv", delete=False
+            ) as tmp:
+                tmp_path = tmp.name
+                with zf.open(member_name) as f:
+                    # Copy in chunks to avoid loading entire file into memory
+                    while True:
+                        chunk = f.read(8 * 1024 * 1024)  # 8MB chunks
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+
+            logger.info("Extracted stop_times.txt to temp file for processing")
+
+            batch_count = 0
+            reader = self._read_csv_batched(tmp_path, batch_size=batch_size)
             while True:
                 batches = reader.next_batches(1)
                 if not batches:
@@ -553,6 +570,12 @@ class GTFSFeedImporter:
                 await self._copy_stop_times_batch(batches[0], feed_id)
                 if batch_count % 10 == 0:
                     logger.info("Copied %s stop_times batches...", batch_count)
+        finally:
+            if tmp_path is not None:
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    logger.warning("Failed to delete temp file: %s", tmp_path)
 
         await self._recreate_stop_times_indexes_and_fks()
 

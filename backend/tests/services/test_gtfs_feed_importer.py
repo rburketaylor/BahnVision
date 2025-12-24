@@ -985,3 +985,149 @@ class TestGTFSFeedImporterCsvBatchCompatibility:
         assert len(calls) == 2
         assert "schema_overrides" in calls[0]
         assert "dtypes" in calls[1]
+
+
+class TestGTFSFeedImporterZipExtraction:
+    """Tests for ZIP file extraction compatibility with Polars.
+
+    These tests verify that stop_times.txt is properly extracted to a temporary
+    file before being read by Polars, since polars.read_csv_batched() doesn't
+    support ZipExtFile objects directly.
+    """
+
+    @pytest.mark.asyncio
+    async def test_copy_stop_times_from_zip_extracts_to_temp_file(self, tmp_path: Path):
+        """Test that stop_times.txt is extracted to a temp file for processing."""
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        zip_path = tmp_path / "feed.zip"
+
+        # Create a minimal stop_times.txt in a ZIP
+        stop_times_content = (
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n"
+        )
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("stop_times.txt", stop_times_content)
+
+        extracted_path = None
+
+        def capture_read_csv_batched(source, *, batch_size):
+            nonlocal extracted_path
+            extracted_path = source
+            # Return a fake reader that produces one batch
+            return FakeReader()
+
+        class FakeReader:
+            def __init__(self):
+                self._called = False
+
+            def next_batches(self, _n):
+                if self._called:
+                    return []
+                self._called = True
+                return [
+                    pl.DataFrame(
+                        {
+                            "trip_id": ["t1"],
+                            "stop_id": ["s1"],
+                            "arrival_time": ["08:00:00"],
+                            "departure_time": ["08:01:00"],
+                            "stop_sequence": [1],
+                        }
+                    )
+                ]
+
+        with (
+            zipfile.ZipFile(zip_path) as zf,
+            patch.object(importer, "_read_csv_batched", capture_read_csv_batched),
+            patch.object(importer, "_copy_stop_times_batch", new_callable=AsyncMock),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ),
+        ):
+            await importer._copy_stop_times_from_zip(zf, "feed1", batch_size=10)
+
+        # Verify that _read_csv_batched received a file path (string), not a ZipExtFile
+        assert extracted_path is not None
+        assert isinstance(extracted_path, str), (
+            f"Expected file path string, got {type(extracted_path).__name__}"
+        )
+        # The temp file should end with .csv
+        assert extracted_path.endswith(".csv")
+
+    @pytest.mark.asyncio
+    async def test_copy_stop_times_from_zip_cleans_up_temp_file(self, tmp_path: Path):
+        """Test that the temporary file is cleaned up after processing."""
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        zip_path = tmp_path / "feed.zip"
+
+        stop_times_content = (
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n"
+        )
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("stop_times.txt", stop_times_content)
+
+        temp_file_path = None
+
+        def capture_read_csv_batched(source, *, batch_size):
+            nonlocal temp_file_path
+            temp_file_path = source
+
+            class FakeReader:
+                def next_batches(self, _n):
+                    return []
+
+            return FakeReader()
+
+        with (
+            zipfile.ZipFile(zip_path) as zf,
+            patch.object(importer, "_read_csv_batched", capture_read_csv_batched),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ),
+        ):
+            await importer._copy_stop_times_from_zip(zf, "feed1", batch_size=10)
+
+        # Verify the temp file was cleaned up
+        assert temp_file_path is not None
+        assert not Path(temp_file_path).exists(), "Temp file should be deleted"
+
+    @pytest.mark.asyncio
+    async def test_copy_stop_times_from_zip_handles_nested_paths(self, tmp_path: Path):
+        """Test extraction works for nested stop_times.txt paths in ZIP."""
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        zip_path = tmp_path / "feed.zip"
+
+        stop_times_content = (
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n"
+        )
+        # Create with nested path
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("gtfs/stop_times.txt", stop_times_content)
+
+        extracted_path = None
+
+        def capture_read_csv_batched(source, *, batch_size):
+            nonlocal extracted_path
+            extracted_path = source
+
+            class FakeReader:
+                def next_batches(self, _n):
+                    return []
+
+            return FakeReader()
+
+        with (
+            zipfile.ZipFile(zip_path) as zf,
+            patch.object(importer, "_read_csv_batched", capture_read_csv_batched),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ),
+        ):
+            await importer._copy_stop_times_from_zip(zf, "feed1", batch_size=10)
+
+        # Verify extraction worked for nested path
+        assert extracted_path is not None
+        assert isinstance(extracted_path, str)
