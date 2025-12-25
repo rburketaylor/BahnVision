@@ -120,7 +120,7 @@ export default function HeatmapPage() {
   }, [controlsOpen])
 
   return (
-    <div className="fixed inset-x-0 top-16 bottom-0">
+    <div className="fixed inset-x-0 top-16 bottom-0" data-testid="heatmap-container">
       <div className="relative w-full h-full overflow-hidden p-2 sm:p-3">
         <Suspense fallback={<MapLoadingSkeleton />}>
           <CancellationHeatmap
