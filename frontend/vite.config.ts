@@ -21,13 +21,9 @@ export default defineConfig({
           // React and its ecosystem
           'react-vendor': ['react', 'react-dom', 'react-router'],
           // State management and data fetching
-          'state-management': ['@tanstack/react-query', 'zustand'],
-          // UI components (if we had any heavy ones)
-          'ui-components': ['@headlessui/react'],
+          'state-management': ['@tanstack/react-query'],
           // Map related libraries (large)
           'map-vendor': ['maplibre-gl'],
-          // Error tracking
-          monitoring: ['@sentry/react'],
         },
         // Optimize chunk naming for better caching
         chunkFileNames: chunkInfo => {
@@ -50,8 +46,6 @@ export default defineConfig({
       'react-dom',
       'react-router',
       '@tanstack/react-query',
-      'zustand',
-      '@headlessui/react',
       'maplibre-gl',
     ],
   },
