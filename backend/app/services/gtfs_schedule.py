@@ -2,12 +2,17 @@ import logging
 from datetime import datetime, time, timedelta, timezone, date
 from typing import List, Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.gtfs import (
     GTFSStop,
     GTFSRoute,
+    GTFSStopTime,
+    GTFSTrip,
+    GTFSCalendar,
+    GTFSCalendarDate,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +68,27 @@ class StopNotFoundError(Exception):
     pass
 
 
+def _get_weekday_column(calendar: GTFSCalendar, weekday: str):
+    """Get the appropriate weekday column from GTFSCalendar model.
+
+    This returns the SQLAlchemy column object, not a string,
+    allowing safe use in query construction without string interpolation.
+    """
+    weekday_attrs = {
+        "monday": calendar.monday,
+        "tuesday": calendar.tuesday,
+        "wednesday": calendar.wednesday,
+        "thursday": calendar.thursday,
+        "friday": calendar.friday,
+        "saturday": calendar.saturday,
+        "sunday": calendar.sunday,
+    }
+    column = weekday_attrs.get(weekday)
+    if column is None:
+        raise ValueError(f"Invalid weekday: {weekday}")
+    return column
+
+
 class GTFSScheduleService:
     """Query scheduled departures from PostgreSQL."""
 
@@ -89,61 +115,61 @@ class GTFSScheduleService:
         # In that case, a strict INNER JOIN to gtfs_calendar yields no results.
         # We use a LEFT JOIN and treat calendar_dates exception_type=1 as an
         # explicit inclusion even when there is no calendar row.
-        weekday_columns = {
-            "monday": "monday",
-            "tuesday": "tuesday",
-            "wednesday": "wednesday",
-            "thursday": "thursday",
-            "friday": "friday",
-            "saturday": "saturday",
-            "sunday": "sunday",
-        }
-        weekday_column = weekday_columns.get(weekday)
-        if weekday_column is None:
-            raise ValueError(f"Invalid weekday: {weekday}")
 
-        # Build the query using parameterized values for all user/date inputs.
-        # The weekday_column is safe to interpolate as it comes from the hardcoded
-        # weekday_columns dictionary above - not from user input.
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        query = text(
-            f"""
-            SELECT st.departure_time, st.arrival_time, t.trip_headsign,
-                   r.route_short_name, r.route_long_name, r.route_type, r.route_color,
-                   s.stop_name, t.trip_id, r.route_id
-            FROM gtfs_stop_times st
-            JOIN gtfs_trips t ON st.trip_id = t.trip_id
-            JOIN gtfs_routes r ON t.route_id = r.route_id
-            JOIN gtfs_stops s ON st.stop_id = s.stop_id
-            LEFT JOIN gtfs_calendar c ON t.service_id = c.service_id
-            LEFT JOIN gtfs_calendar_dates cd
-                   ON t.service_id = cd.service_id AND cd.date = :today
-            WHERE (st.stop_id = :stop_id OR s.parent_station = :stop_id)
-              AND st.departure_time >= :from_interval
-              AND (
-                    (
-                      c.service_id IS NOT NULL
-                      AND c.start_date <= :today
-                      AND c.end_date >= :today
-                      AND c.{weekday_column} = true
-                      AND (cd.exception_type IS NULL OR cd.exception_type != 2)
-                    )
-                    OR cd.exception_type = 1
-                  )
-            ORDER BY st.departure_time
-            LIMIT :limit
-            """
+        # Use aliases for clarity in the query
+        st = aliased(GTFSStopTime, name="st")
+        t = aliased(GTFSTrip, name="t")
+        r = aliased(GTFSRoute, name="r")
+        s = aliased(GTFSStop, name="s")
+        c = aliased(GTFSCalendar, name="c")
+        cd = aliased(GTFSCalendarDate, name="cd")
+
+        # Get the weekday column safely using the model attribute
+        weekday_col = _get_weekday_column(c, weekday)
+
+        from_interval = time_to_interval(from_time)
+
+        # Build the query using SQLAlchemy ORM
+        query = (
+            select(
+                st.departure_time,
+                st.arrival_time,
+                t.trip_headsign,
+                r.route_short_name,
+                r.route_long_name,
+                r.route_type,
+                r.route_color,
+                s.stop_name,
+                t.trip_id,
+                r.route_id,
+            )
+            .select_from(st)
+            .join(t, st.trip_id == t.trip_id)
+            .join(r, t.route_id == r.route_id)
+            .join(s, st.stop_id == s.stop_id)
+            .outerjoin(c, t.service_id == c.service_id)
+            .outerjoin(cd, and_(t.service_id == cd.service_id, cd.date == today))
+            .where(
+                or_(st.stop_id == stop_id, s.parent_station == stop_id),
+                st.departure_time >= from_interval,
+                or_(
+                    # Calendar-based service with possible exceptions
+                    and_(
+                        c.service_id.isnot(None),
+                        c.start_date <= today,
+                        c.end_date >= today,
+                        weekday_col == True,  # noqa: E712
+                        or_(cd.exception_type.is_(None), cd.exception_type != 2),
+                    ),
+                    # Explicit addition via calendar_dates
+                    cd.exception_type == 1,
+                ),
+            )
+            .order_by(st.departure_time)
+            .limit(limit)
         )
 
-        result = await self.session.execute(
-            query,
-            {
-                "stop_id": stop_id,
-                "today": today,
-                "from_interval": time_to_interval(from_time),
-                "limit": limit,
-            },
-        )
+        result = await self.session.execute(query)
 
         departures = []
         for row in result:
