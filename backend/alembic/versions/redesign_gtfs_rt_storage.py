@@ -28,7 +28,7 @@ def upgrade() -> None:
     # Create new streaming stats table
     op.execute(
         """
-        CREATE TABLE realtime_station_stats (
+        CREATE TABLE IF NOT EXISTS realtime_station_stats (
             id BIGSERIAL PRIMARY KEY,
             stop_id VARCHAR(64) NOT NULL,
             bucket_start TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -47,10 +47,10 @@ def upgrade() -> None:
     """
     )
     op.execute(
-        "CREATE INDEX ix_realtime_stats_stop_bucket ON realtime_station_stats (stop_id, bucket_start)"
+        "CREATE INDEX IF NOT EXISTS ix_realtime_stats_stop_bucket ON realtime_station_stats (stop_id, bucket_start)"
     )
     op.execute(
-        "CREATE INDEX ix_realtime_stats_bucket ON realtime_station_stats (bucket_start)"
+        "CREATE INDEX IF NOT EXISTS ix_realtime_stats_bucket ON realtime_station_stats (bucket_start)"
     )
 
 
