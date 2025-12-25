@@ -267,9 +267,7 @@ async def get_cancellation_heatmap(
 
     except Exception as e:
         logger.error(f"Heatmap generation failed: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate heatmap: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to generate heatmap data")
 
 
 @router.get("/health")
@@ -290,7 +288,7 @@ async def heatmap_health_check():
 
     except Exception as e:
         logger.error(f"Heatmap health check failed: {str(e)}")
-        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+        return {"status": "unhealthy", "database": "disconnected"}
 
 
 # Test the health endpoint directly

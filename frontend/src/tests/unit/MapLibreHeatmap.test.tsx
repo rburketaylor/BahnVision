@@ -284,7 +284,7 @@ describe('MapLibreHeatmap Component', () => {
     expect((maplibregl as unknown as { Marker: { mock: unknown } }).Marker).toHaveBeenCalled()
   })
 
-  it('opens a popup and escapes station name on point click, and clears selection on Escape', async () => {
+  it('opens a popup and sanitizes station name on point click, and clears selection on Escape', async () => {
     const onStationSelect = vi.fn()
 
     render(
@@ -327,7 +327,10 @@ describe('MapLibreHeatmap Component', () => {
     const popupInstance = (
       maplibregl as unknown as { Popup: { mock: { instances: MockedMapInstance[] } } }
     ).Popup.mock.instances[0]
-    expect(popupInstance.setHTML).toHaveBeenCalledWith(expect.stringContaining('&lt;script&gt;'))
+    // DOMPurify sanitizes by stripping script tags entirely (not just escaping them)
+    const htmlArg = popupInstance.setHTML.mock.calls[0][0] as string
+    expect(htmlArg).not.toContain('<script>')
+    expect(htmlArg).not.toContain('</script>')
     expect(onStationSelect).toHaveBeenCalledWith('de:09162:1')
 
     fireEvent.keyDown(window, { key: 'Escape' })

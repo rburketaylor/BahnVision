@@ -102,6 +102,10 @@ class GTFSScheduleService:
         if weekday_column is None:
             raise ValueError(f"Invalid weekday: {weekday}")
 
+        # Build the query using parameterized values for all user/date inputs.
+        # The weekday_column is safe to interpolate as it comes from the hardcoded
+        # weekday_columns dictionary above - not from user input.
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         query = text(
             f"""
             SELECT st.departure_time, st.arrival_time, t.trip_headsign,

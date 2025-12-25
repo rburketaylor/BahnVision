@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useCallback, useMemo, useState, type ReactNode } from 'react'
+import DOMPurify from 'dompurify'
 import maplibregl from 'maplibre-gl'
 import React from 'react'
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec'
@@ -185,7 +186,7 @@ function validateHeatmapData(dataPoints: HeatmapDataPoint[]): HeatmapDataPoint[]
       typeof point?.delayed_count === 'number'
 
     if (!isValid) {
-      console.warn(`Invalid data point filtered at index ${index}:`, {
+      console.warn('Invalid data point filtered at index', index, {
         latitude: point?.latitude,
         longitude: point?.longitude,
         total_departures: point?.total_departures,
@@ -259,13 +260,8 @@ function getMarkerColor(intensity: number): string {
   return '#22c55e' // green
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+function sanitize(value: string): string {
+  return DOMPurify.sanitize(value, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
 }
 
 /**
@@ -821,12 +817,12 @@ export function MapLibreHeatmap({
       const delayRate = props.delay_rate as number
       const intensity = (props.intensity as number) ?? 0
       const color = getMarkerColor(intensity)
-      const stationName = escapeHtml(String(props.station_name ?? 'Unknown'))
+      const stationName = sanitize(String(props.station_name ?? 'Unknown'))
 
       // Show popup with both metrics
       const isDelaySelected = metricRef.current === 'delays'
 
-      const stationId = escapeHtml(String(props.station_id ?? ''))
+      const stationId = sanitize(String(props.station_id ?? ''))
       const popupContent = `
         <div class="bv-map-popup">
           <h4 class="bv-map-popup__title">${stationName}</h4>
