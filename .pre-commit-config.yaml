@@ -26,12 +26,12 @@ repos:
         name: eslint
         entry: bash -c 'cd frontend && npm run lint'
         language: system
-        files: ^frontend/src/.*\.(ts|tsx)$
+        files: ^frontend/.*\.(ts|tsx)$
         pass_filenames: false
 
       - id: typescript-check
         name: typescript type-check
         entry: bash -c 'cd frontend && npm run type-check'
         language: system
-        files: ^frontend/src/.*\.(ts|tsx)$
+        files: ^frontend/.*\.(ts|tsx)$
         pass_filenames: false

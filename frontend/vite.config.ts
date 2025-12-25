@@ -41,13 +41,7 @@ export default defineConfig({
   },
   // Optimize dependencies during development
   optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react-router',
-      '@tanstack/react-query',
-      'maplibre-gl',
-    ],
+    include: ['react', 'react-dom', 'react-router', '@tanstack/react-query', 'maplibre-gl'],
   },
   server: {
     // Enable HMR for better development experience
