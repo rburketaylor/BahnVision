@@ -66,6 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+      VALKEY_URL: valkey://localhost:6379/0
       RATE_LIMIT_ENABLED: false
     services:
       postgres:
@@ -78,6 +79,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd="pg_isready -U bahnvision"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      valkey:
+        image: valkey/valkey:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="valkey-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -151,6 +161,12 @@ jobs:
         run: npm ci --prefer-offline --prefix frontend
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      - name: Run lint
+        run: npm run lint --prefix frontend
+
+      - name: Run type check
+        run: npm run type-check --prefix frontend
 
       - name: Run unit tests
         run: npm test --prefix frontend -- --coverage --run
@@ -387,7 +403,6 @@ jobs:
       - name: Run E2E tests
         working-directory: frontend
         run: npm run test:e2e -- --project=chromium
-        continue-on-error: true
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v5

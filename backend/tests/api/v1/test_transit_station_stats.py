@@ -60,13 +60,23 @@ class FakeGTFSScheduleService:
 
 @pytest.fixture
 def test_app():
+    from app.api.v1.shared.rate_limit import limiter
+
     @asynccontextmanager
     async def null_lifespan(app: FastAPI):
         yield {}
 
     app = FastAPI(lifespan=null_lifespan)
     app.include_router(api_router, prefix="/api/v1")
+
+    # Disable rate limiting for tests (avoids Valkey connection requirement)
+    original_enabled = limiter.enabled
+    limiter.enabled = False
+
     yield app
+
+    # Restore original state
+    limiter.enabled = original_enabled
     app.dependency_overrides.clear()
 
 

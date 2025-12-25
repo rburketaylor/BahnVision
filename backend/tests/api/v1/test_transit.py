@@ -96,6 +96,7 @@ def transit_api_client(
     from contextlib import asynccontextmanager
     from fastapi import FastAPI
     from app.api.routes import api_router
+    from app.api.v1.shared.rate_limit import limiter
 
     # Create a minimal test app without the full lifespan
     @asynccontextmanager
@@ -112,8 +113,15 @@ def transit_api_client(
         lambda: fake_transit_data_service
     )
 
+    # Disable rate limiting for tests (avoids Valkey connection requirement)
+    original_enabled = limiter.enabled
+    limiter.enabled = False
+
     client = TestClient(test_app)
     yield client
+
+    # Restore original state
+    limiter.enabled = original_enabled
     test_app.dependency_overrides.clear()
 
 
