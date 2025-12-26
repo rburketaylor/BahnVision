@@ -7,7 +7,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import Layout from './components/Layout'
 import { MainPage } from './pages/MainPage'
 import { StationPage } from './pages/StationPage'
-import InsightsPage from './pages/InsightsPage'
+import MonitoringPage from './pages/MonitoringPage'
 import HeatmapPage from './pages/HeatmapPage'
 
 export default function App() {
@@ -23,8 +23,8 @@ export default function App() {
             <Route path="/search" element={<MainPage />} />
             {/* Station details page with tabs */}
             <Route path="/station/:stationId" element={<StationPage />} />
-            {/* Insights page */}
-            <Route path="/insights" element={<InsightsPage />} />
+            {/* Monitoring page */}
+            <Route path="/monitoring" element={<MonitoringPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
