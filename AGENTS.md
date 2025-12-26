@@ -17,10 +17,14 @@
 - Docker stack: `docker compose up --build` (starts cache warmup, backend on `:8000`, frontend on `:3000`).
 - Local Python virtualenv lives in `backend/.venv`; activate with `source backend/.venv/bin/activate` before backend commands.
 - Backend tests: `source backend/.venv/bin/activate && pytest backend/tests`.
+- Quality checks: `python scripts/check_test_quality.py [dir]` (included in CI).
+- Secrets detection: `pre-commit run detect-secrets --all-files` (uses `.secrets.baseline`).
 - Frontend tests: `npm run test -- --run` (Vitest in single-run mode; avoid watch mode which hangs), `npm run test:coverage` for coverage, `npm run test:e2e` for Playwright.
 - Frontend lint + format check: `cd frontend && npm run lint`.
 - Frontend typecheck: `cd frontend && npm run type-check`.
+- Frontend mutation testing: `cd frontend && npm run stryker`.
 - Backend lint + format (preferred): `source backend/.venv/bin/activate && pre-commit run --all-files`.
+- Backend typecheck: `source backend/.venv/bin/activate && mypy backend/app`.
 - Dependency audit: `source backend/.venv/bin/activate && pip-audit` (backend), `npm audit` (frontend).
 
 ## Coding Style & Naming Conventions
