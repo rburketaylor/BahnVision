@@ -14,7 +14,9 @@ from app.services.gtfs_schedule import (
     StopNotFoundError,
     time_to_interval,
     interval_to_datetime,
+    _get_weekday_column,
 )
+from app.models.gtfs import GTFSCalendar
 
 
 class TestTimeToInterval:
@@ -85,6 +87,64 @@ class TestIntervalToDatetime:
         # Parser returns midnight (00:00:00) for strings without hours/minutes/seconds
         expected = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
         assert result == expected
+
+    def test_interval_to_datetime_string_with_seconds(self):
+        """Test conversion from string interval format including seconds."""
+        service_date = date(2025, 12, 8)
+        interval_str = "8 hours 30 minutes 45 seconds"
+        result = interval_to_datetime(service_date, interval_str)
+
+        expected = datetime(2025, 12, 8, 8, 30, 45, tzinfo=timezone.utc)
+        assert result == expected
+
+    def test_interval_to_datetime_unknown_type(self):
+        """Test that unknown interval types return None and log a warning."""
+        result = interval_to_datetime(date(2025, 12, 8), 12345)  # int is not supported
+        assert result is None
+
+    def test_interval_to_datetime_value_error(self):
+        """Test handling of ValueError during interval parsing."""
+
+        # Create a mock object that raises ValueError when accessed
+        class BadInterval:
+            def __str__(self):
+                raise ValueError("Bad interval")
+
+        result = interval_to_datetime(date(2025, 12, 8), BadInterval())
+        # Should return None due to exception handling
+        assert result is None
+
+
+class TestGetWeekdayColumn:
+    """Tests for _get_weekday_column helper function."""
+
+    def test_get_weekday_column_monday(self):
+        """Test getting Monday column."""
+        calendar = GTFSCalendar
+        column = _get_weekday_column(calendar, "monday")
+        assert column is not None
+
+    def test_get_weekday_column_all_days(self):
+        """Test getting all valid weekday columns."""
+        calendar = GTFSCalendar
+        weekdays = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
+        for weekday in weekdays:
+            column = _get_weekday_column(calendar, weekday)
+            assert column is not None
+
+    def test_get_weekday_column_invalid_weekday(self):
+        """Test that invalid weekday raises ValueError."""
+        calendar = GTFSCalendar
+        with pytest.raises(ValueError, match="Invalid weekday"):
+            _get_weekday_column(calendar, "notaday")
 
 
 class TestScheduledDeparture:
