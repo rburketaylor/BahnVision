@@ -21,6 +21,7 @@
 - Frontend lint + format check: `cd frontend && npm run lint`.
 - Frontend typecheck: `cd frontend && npm run type-check`.
 - Backend lint + format (preferred): `source backend/.venv/bin/activate && pre-commit run --all-files`.
+- Dependency audit: `source backend/.venv/bin/activate && pip-audit` (backend), `npm audit` (frontend).
 
 ## Coding Style & Naming Conventions
 - Python: PEP 8, 4-space indent, snake_case modules; prefer typed signatures and Pydantic models; keep services stateless and cache logic centralized.
@@ -33,6 +34,7 @@
 - Backend: use FastAPI TestClient, Fake Valkey/GTFS doubles for deterministic tests.
 - Backend test markers: `pytest backend/tests -m "not integration"` for fast unit tests; `pytest backend/tests -m integration` for service-backed tests.
 - Frontend: RTL + MSW for API mocking; keep tests colocated under `src`; name test files `*.test.ts[x]`.
+- Playwright: Prefer built-in user-facing locators (getByRole, getByLabelText, getByPlaceholderText) over CSS selectors for more resilient, accessible tests. Use automatic waiting; avoid hard timeouts.
 - Run targeted tests before PRs; aim for coverage via `npm run test:coverage` when touching frontend logic.
 
 ## Commit & Pull Request Guidelines
@@ -49,12 +51,22 @@
 - Store secrets (DB/Valkey URLs, API tokens) in env vars or `.env` excluded from VCS; do not hardcode credentials.
 - Prefer copying `.env.example` to `.env` (repo root) for local development if it doesn't exist; keep `.env` out of commits.
 - Default local DB URL: `postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`; configure Valkey via `CACHE_*` envs; prefer `docker compose` for parity.
+- Regularly audit dependencies: `pip-audit` for Python, `npm audit` for frontend. Consider Dependabot or Renovate for automated dependency updates.
 - Respect cache behavior: writes populate Valkey and fallback store; watch `X-Cache-Status` and Prometheus metrics (`/metrics`) for validation.
 
 ## Database & Migrations
 - Alembic config lives at `backend/alembic.ini` with migrations under `backend/alembic/`.
 - If a change affects schemas, include an Alembic migration (and mention it in the PR description).
 - Common commands: `source backend/.venv/bin/activate && alembic -c backend/alembic.ini upgrade head` and `source backend/.venv/bin/activate && alembic -c backend/alembic.ini revision --autogenerate -m "..."`.
+- Avoid using ORM models in migrations - they may become stale. Use `op.execute()` with raw SQL or Alembic's batch operations for schema changes. Make migrations idempotent when possible.
+
+## Agent Behavior Guidelines
+- **Verify before claiming**: Before stating that something "is used" or "applies" to this project, check the actual codebase. Use grep/search tools to confirm patterns exist.
+- **Cite sources**: When referencing existing code patterns, cite the specific file(s) where they appear (e.g., "as seen in `backend/app/services/cache_service.py`").
+- **Distinguish facts from recommendations**: Clearly differentiate between:
+  - **Current state**: What actually exists in the codebase today (verified by inspection)
+  - **Recommendations**: Best practices or suggestions that are not yet implemented
+- **Don't assume**: If unsure whether a pattern or tool is used, search the codebase first rather than assuming based on common conventions.
 
 ## Docs & API Changes
 - When changing backend routes or response shapes, update relevant backend docs under `backend/docs/` and any impacted frontend API/client code under `frontend/src/services/`.
