@@ -7,20 +7,16 @@ Provides real-time departure information using GTFS static + real-time data.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.shared.dependencies import get_transit_data_service
 from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
-from app.core.database import get_session
 from app.models.transit import (
     TransitDeparture,
     TransitDeparturesResponse,
     TransitStop,
 )
-from app.services.cache import CacheService, get_cache_service
-from app.services.gtfs_schedule import GTFSScheduleService
-from app.services.gtfs_realtime import GtfsRealtimeService
-from app.services.transit_data import TransitDataService, DepartureInfo
+from app.services.transit_data import DepartureInfo, TransitDataService
 
 router = APIRouter()
 
@@ -32,7 +28,7 @@ def _departure_info_to_response(dep: DepartureInfo) -> TransitDeparture:
     """Convert internal DepartureInfo to API response model."""
     # Convert alert objects to strings
     alerts = []
-    for alert in dep.alerts:
+    for alert in dep.alerts or []:
         if hasattr(alert, "header_text"):
             alerts.append(alert.header_text)
         elif isinstance(alert, str):
@@ -56,16 +52,6 @@ def _departure_info_to_response(dep: DepartureInfo) -> TransitDeparture:
         vehicle_id=dep.vehicle_id,
         alerts=alerts,
     )
-
-
-async def get_transit_data_service(
-    cache: CacheService = Depends(get_cache_service),
-    db: AsyncSession = Depends(get_session),
-) -> TransitDataService:
-    """Create TransitDataService with dependencies."""
-    gtfs_schedule = GTFSScheduleService(db)
-    gtfs_realtime = GtfsRealtimeService(cache)
-    return TransitDataService(cache, gtfs_schedule, gtfs_realtime, db)
 
 
 @router.get(

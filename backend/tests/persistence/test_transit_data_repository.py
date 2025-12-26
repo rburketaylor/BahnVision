@@ -42,7 +42,7 @@ def _transit_line_payload() -> TransitLinePayload:
     return TransitLinePayload(
         line_id="U3",
         transport_mode=models.TransportMode.UBAHN,
-        operator="MVG",  # This is fine as it's data content, but maybe we should genericize it to prevent confusion? Let's leave it as specific data for now as MVG is a valid operator name. Wait, the goal is to remove all mention. Let's change it to "LocalTransit".
+        operator="SWM",
         description="U3 main line",
         color_hex="#FF5500",
     )

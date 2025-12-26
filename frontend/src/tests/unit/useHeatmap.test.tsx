@@ -32,8 +32,10 @@ const mockHeatmapResponse = {
       total_departures: 1250,
       cancelled_count: 45,
       cancellation_rate: 0.036,
+      delayed_count: 75,
+      delay_rate: 0.06,
       by_transport: {
-        UBAHN: { total: 500, cancelled: 20 },
+        UBAHN: { total: 500, cancelled: 20, delayed: 30 },
       },
     },
   ],
@@ -42,6 +44,8 @@ const mockHeatmapResponse = {
     total_departures: 1250,
     total_cancellations: 45,
     overall_cancellation_rate: 0.036,
+    total_delays: 75,
+    overall_delay_rate: 0.06,
     most_affected_station: 'Marienplatz',
     most_affected_line: 'U-Bahn',
   },
@@ -75,7 +79,7 @@ describe('useHeatmap', () => {
     })
 
     expect(mockGetHeatmapData).toHaveBeenCalledTimes(1)
-    expect(result.current.data?.data).toEqual(mockHeatmapResponse)
+    expect(result.current.data).toEqual(mockHeatmapResponse)
   })
 
   it('passes params to API client', async () => {
@@ -94,7 +98,7 @@ describe('useHeatmap', () => {
     expect(mockGetHeatmapData).toHaveBeenCalledWith(params)
   })
 
-  it('respects autoRefresh option', async () => {
+  it('configures auto-refresh interval when enabled', async () => {
     mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
 
     const { result } = renderHook(() => useHeatmap({}, { autoRefresh: true }), {
@@ -105,8 +109,10 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Verify the hook was called - auto-refresh behavior is configured
-    expect(mockGetHeatmapData).toHaveBeenCalled()
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['heatmap', 'cancellations', {}],
+    })
+    expect(query?.options.refetchInterval).toBe(5 * 60 * 1000)
   })
 
   it('disables auto-refresh when specified', async () => {
@@ -120,8 +126,10 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Verify the hook was called successfully
-    expect(mockGetHeatmapData).toHaveBeenCalled()
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['heatmap', 'cancellations', {}],
+    })
+    expect(query?.options.refetchInterval).toBe(false)
   })
 
   it('can be disabled', async () => {
@@ -147,7 +155,9 @@ describe('useHeatmap', () => {
     })
 
     await waitFor(() => {
-      const query = queryClient.getQueryCache().find({ queryKey: ['heatmap', 'cancellations', params] })
+      const query = queryClient
+        .getQueryCache()
+        .find({ queryKey: ['heatmap', 'cancellations', params] })
       expect(query).toBeDefined()
     })
   })
@@ -163,9 +173,8 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Query should have 5 minute stale time (5 * 60 * 1000 = 300000)
     const query = queryClient.getQueryCache().find({ queryKey: ['heatmap', 'cancellations', {}] })
-    expect(query?.state.dataUpdatedAt).toBeGreaterThan(0)
+    expect(query?.options.staleTime).toBe(5 * 60 * 1000)
   })
 
   it('handles API error gracefully', async () => {
@@ -205,7 +214,9 @@ describe('useHeatmap', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    // Verify successful fetch with default options
-    expect(mockGetHeatmapData).toHaveBeenCalledWith({})
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['heatmap', 'cancellations', {}],
+    })
+    expect(query?.options.refetchInterval).toBe(5 * 60 * 1000)
   })
 })

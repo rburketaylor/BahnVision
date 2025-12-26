@@ -1,22 +1,23 @@
 /**
  * Heatmap Stats Component
- * Displays summary statistics for cancellation data
+ * Displays summary statistics for cancellation and delay data
  */
 
-import type { HeatmapSummary } from '../../types/heatmap'
+import type { HeatmapSummary, HeatmapMetric } from '../../types/heatmap'
 
 interface HeatmapStatsProps {
   summary: HeatmapSummary | null
+  metric: HeatmapMetric
   isLoading?: boolean
 }
 
-export function HeatmapStats({ summary, isLoading = false }: HeatmapStatsProps) {
+export function HeatmapStats({ summary, metric, isLoading = false }: HeatmapStatsProps) {
   if (isLoading) {
     return (
       <div className="bg-card rounded-lg border border-border p-4 animate-pulse">
         <h3 className="text-sm font-semibold text-foreground mb-3">Statistics</h3>
         <div className="space-y-3">
-          {[1, 2, 3, 4].map(i => (
+          {[1, 2, 3, 4, 5].map(i => (
             <div key={i} className="h-6 bg-muted rounded" />
           ))}
         </div>
@@ -36,24 +37,31 @@ export function HeatmapStats({ summary, isLoading = false }: HeatmapStatsProps) 
   const formatPercent = (rate: number) => `${(rate * 100).toFixed(1)}%`
   const formatNumber = (num: number) => num.toLocaleString()
 
+  // Calculate selected overall rate based on metric
+  const overallRate =
+    metric === 'delays' ? (summary.overall_delay_rate ?? 0) : summary.overall_cancellation_rate
+
   return (
     <div className="bg-card rounded-lg border border-border p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3">Statistics</h3>
 
       <div className="space-y-3">
-        {/* Overall cancellation rate */}
+        {/* Overall rate - highlighted based on selected metric */}
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Overall Rate</span>
           <span
             className={`text-sm font-medium ${
-              summary.overall_cancellation_rate > 0.05
+              overallRate > (metric === 'delays' ? 0.2 : 0.05)
                 ? 'text-red-500'
-                : summary.overall_cancellation_rate > 0.02
+                : overallRate > (metric === 'delays' ? 0.1 : 0.02)
                   ? 'text-yellow-500'
                   : 'text-green-500'
             }`}
           >
-            {formatPercent(summary.overall_cancellation_rate)}
+            {formatPercent(overallRate)}
+            <span className="text-xs text-muted-foreground ml-1">
+              ({metric === 'delays' ? 'delays' : 'cancellations'})
+            </span>
           </span>
         </div>
 
@@ -65,11 +73,19 @@ export function HeatmapStats({ summary, isLoading = false }: HeatmapStatsProps) 
           </span>
         </div>
 
-        {/* Total cancellations */}
+        {/* Cancellations count */}
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Cancellations</span>
           <span className="text-sm font-medium text-red-500">
             {formatNumber(summary.total_cancellations)}
+          </span>
+        </div>
+
+        {/* Delays count */}
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-muted-foreground">Delays</span>
+          <span className="text-sm font-medium text-orange-500">
+            {formatNumber(summary.total_delays ?? 0)}
           </span>
         </div>
 

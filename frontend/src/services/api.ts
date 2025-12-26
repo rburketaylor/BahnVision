@@ -2,8 +2,7 @@
  * API client for BahnVision backend
  *
  * This file exports the Transit API client which provides GTFS-based
- * Germany-wide transit data. The transit API replaces the previous MVG-only
- * implementation with broader coverage and real-time GTFS-RT updates.
+ * Germany-wide transit data with real-time GTFS-RT updates.
  */
 
 // Re-export types

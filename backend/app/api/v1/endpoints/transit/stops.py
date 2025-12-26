@@ -9,16 +9,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.shared.dependencies import get_transit_data_service
 from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import get_session
+from app.models.heatmap import TimeRangePreset
+from app.models.station_stats import StationStats, StationTrends, TrendGranularity
 from app.models.transit import (
     TransitStop,
     TransitStopSearchResponse,
 )
 from app.services.cache import CacheService, get_cache_service
 from app.services.gtfs_schedule import GTFSScheduleService
-from app.services.gtfs_realtime import GtfsRealtimeService
+from app.services.station_stats_service import StationStatsService
 from app.services.transit_data import TransitDataService
 
 router = APIRouter()
@@ -27,14 +30,12 @@ router = APIRouter()
 _CACHE_STOP_SEARCH = "transit_stop_search"
 
 
-async def get_transit_data_service(
-    cache: CacheService = Depends(get_cache_service),
+async def get_station_stats_service(
     db: AsyncSession = Depends(get_session),
-) -> TransitDataService:
-    """Create TransitDataService with dependencies."""
+) -> StationStatsService:
+    """Create StationStatsService with dependencies."""
     gtfs_schedule = GTFSScheduleService(db)
-    gtfs_realtime = GtfsRealtimeService(cache)
-    return TransitDataService(cache, gtfs_schedule, gtfs_realtime, db)
+    return StationStatsService(db, gtfs_schedule)
 
 
 @router.get(
@@ -90,44 +91,6 @@ async def search_stops(
     return TransitStopSearchResponse(
         query=query,
         results=results,
-    )
-
-
-@router.get(
-    "/stops/{stop_id}",
-    response_model=TransitStop,
-    summary="Get stop details",
-    description="Get detailed information about a specific stop.",
-)
-@limiter.limit("60/minute")
-async def get_stop(
-    request: Request,
-    stop_id: str,
-    response: Response,
-    transit_service: TransitDataService = Depends(get_transit_data_service),
-) -> TransitStop:
-    """Get details for a specific stop."""
-    stop_info = await transit_service.get_stop_info(stop_id)
-
-    if not stop_info:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Stop '{stop_id}' not found",
-        )
-
-    # Set cache headers
-    settings = get_settings()
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
-    )
-
-    return TransitStop(
-        id=stop_info.stop_id,
-        name=stop_info.stop_name,
-        latitude=stop_info.stop_lat,
-        longitude=stop_info.stop_lon,
-        zone_id=stop_info.zone_id,
-        wheelchair_boarding=stop_info.wheelchair_boarding,
     )
 
 
@@ -203,3 +166,109 @@ async def get_nearby_stops(
     )
 
     return results
+
+
+@router.get(
+    "/stops/{stop_id}",
+    response_model=TransitStop,
+    summary="Get stop details",
+    description="Get detailed information about a specific stop.",
+)
+@limiter.limit("60/minute")
+async def get_stop(
+    request: Request,
+    stop_id: str,
+    response: Response,
+    transit_service: TransitDataService = Depends(get_transit_data_service),
+) -> TransitStop:
+    """Get details for a specific stop."""
+    stop_info = await transit_service.get_stop_info(stop_id)
+
+    if not stop_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stop '{stop_id}' not found",
+        )
+
+    # Set cache headers
+    settings = get_settings()
+    response.headers["Cache-Control"] = (
+        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
+    )
+
+    return TransitStop(
+        id=stop_info.stop_id,
+        name=stop_info.stop_name,
+        latitude=stop_info.stop_lat,
+        longitude=stop_info.stop_lon,
+        zone_id=stop_info.zone_id,
+        wheelchair_boarding=stop_info.wheelchair_boarding,
+    )
+
+
+@router.get(
+    "/stops/{stop_id}/stats",
+    response_model=StationStats,
+    summary="Get station statistics",
+    description="Get cancellation and delay statistics for a specific station.",
+)
+@limiter.limit("60/minute")
+async def get_station_stats(
+    request: Request,
+    stop_id: str,
+    response: Response,
+    time_range: Annotated[
+        TimeRangePreset,
+        Query(description="Time range preset (1h, 6h, 24h, 7d, 30d)."),
+    ] = "24h",
+    stats_service: StationStatsService = Depends(get_station_stats_service),
+) -> StationStats:
+    """Get station statistics including cancellation and delay rates."""
+    stats = await stats_service.get_station_stats(stop_id, time_range)
+
+    if not stats:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Station '{stop_id}' not found",
+        )
+
+    # Set cache headers - shorter TTL for stats (5 minutes)
+    response.headers["Cache-Control"] = "public, max-age=300"
+
+    return stats
+
+
+@router.get(
+    "/stops/{stop_id}/trends",
+    response_model=StationTrends,
+    summary="Get station trends",
+    description="Get historical trend data for a specific station.",
+)
+@limiter.limit("30/minute")
+async def get_station_trends(
+    request: Request,
+    stop_id: str,
+    response: Response,
+    time_range: Annotated[
+        TimeRangePreset,
+        Query(description="Time range preset (1h, 6h, 24h, 7d, 30d)."),
+    ] = "24h",
+    granularity: Annotated[
+        TrendGranularity,
+        Query(description="Data granularity (hourly or daily)."),
+    ] = "hourly",
+    stats_service: StationStatsService = Depends(get_station_stats_service),
+) -> StationTrends:
+    """Get historical trend data for a station."""
+    trends = await stats_service.get_station_trends(stop_id, time_range, granularity)
+
+    if not trends:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Station '{stop_id}' not found",
+        )
+
+    # Set cache headers - shorter TTL for trends (5 minutes)
+    response.headers["Cache-Control"] = "public, max-age=300"
+
+    return trends

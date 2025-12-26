@@ -30,23 +30,64 @@ describe('Layout', () => {
 
     render(
       <ThemeProvider>
-        <MemoryRouter initialEntries={['/planner']}>
+        <MemoryRouter initialEntries={['/search']}>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="/" element={<div>Departures Home</div>} />
-              <Route path="/planner" element={<div>Planner Content</div>} />
+              <Route path="/" element={<div>Map Home</div>} />
+              <Route path="/search" element={<div>Stations Content</div>} />
             </Route>
           </Routes>
         </MemoryRouter>
       </ThemeProvider>
     )
 
-    expect(screen.getByText('Planner Content')).toBeInTheDocument()
+    expect(screen.getByText('Stations Content')).toBeInTheDocument()
 
-    const plannerLink = screen.getByRole('link', { name: 'Planner' })
-    expect(plannerLink.className).toContain('bg-primary/10')
+    const stationsLink = screen.getByRole('link', { name: 'Stations' })
+    expect(stationsLink.className).toContain('bg-primary/10')
 
-    await user.click(screen.getByRole('link', { name: 'Departures' }))
-    expect(screen.getByText('Departures Home')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Map' }))
+    expect(screen.getByText('Map Home')).toBeInTheDocument()
+  })
+
+  it('uses padded layout for non-full-bleed pages', () => {
+    render(
+      <ThemeProvider>
+        <MemoryRouter initialEntries={['/search']}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/search" element={<div>Stations Content</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
+    )
+
+    expect(screen.getByRole('main').className).toContain('px-4')
+  })
+
+  it('opens and closes mobile navigation menu', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <ThemeProvider>
+        <MemoryRouter initialEntries={['/search']}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<div>Map Home</div>} />
+              <Route path="/search" element={<div>Stations Content</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
+    )
+
+    expect(screen.getAllByRole('link', { name: 'Map' })).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Toggle navigation menu' }))
+    expect(screen.getAllByRole('link', { name: 'Map' })).toHaveLength(2)
+
+    await user.click(screen.getAllByRole('link', { name: 'Map' })[1]!)
+    expect(screen.getAllByRole('link', { name: 'Map' })).toHaveLength(1)
   })
 })

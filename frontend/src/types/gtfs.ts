@@ -229,3 +229,78 @@ export function getRouteTypeFromString(routeString: string): GtfsRouteType {
       return GtfsRouteType.BUS
   }
 }
+
+// ==================== Station Stats Types ====================
+
+/** Time range preset for station stats */
+export type StationStatsTimeRange = '1h' | '6h' | '24h' | '7d' | '30d'
+
+/** Trend granularity */
+export type TrendGranularity = 'hourly' | 'daily'
+
+/** Transport type breakdown */
+export interface TransportBreakdown {
+  transport_type: string
+  display_name: string
+  total_departures: number
+  cancelled_count: number
+  cancellation_rate: number
+  delayed_count: number
+  delay_rate: number
+}
+
+/** Station statistics response */
+export interface StationStats {
+  station_id: string
+  station_name: string
+  time_range: string
+  total_departures: number
+  cancelled_count: number
+  cancellation_rate: number
+  delayed_count: number
+  delay_rate: number
+  network_avg_cancellation_rate: number | null
+  network_avg_delay_rate: number | null
+  performance_score: number | null
+  by_transport: TransportBreakdown[]
+  data_from: string
+  data_to: string
+}
+
+/** Trend data point */
+export interface TrendDataPoint {
+  timestamp: string
+  total_departures: number
+  cancelled_count: number
+  cancellation_rate: number
+  delayed_count: number
+  delay_rate: number
+}
+
+/** Station trends response */
+export interface StationTrends {
+  station_id: string
+  station_name: string
+  time_range: string
+  granularity: string
+  data_points: TrendDataPoint[]
+  avg_cancellation_rate: number
+  avg_delay_rate: number
+  peak_cancellation_rate: number
+  peak_delay_rate: number
+  data_from: string
+  data_to: string
+}
+
+/** Query parameters for station stats endpoint */
+export interface StationStatsParams {
+  stop_id: string
+  time_range?: StationStatsTimeRange
+}
+
+/** Query parameters for station trends endpoint */
+export interface StationTrendsParams {
+  stop_id: string
+  time_range?: StationStatsTimeRange
+  granularity?: TrendGranularity
+}

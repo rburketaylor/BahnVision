@@ -11,15 +11,17 @@ export default function Layout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const navItems = [
-    { path: '/', label: 'Departures' },
-    { path: '/planner', label: 'Planner' },
-    { path: '/heatmap', label: 'Heatmap' },
+    { path: '/', label: 'Map' },
+    { path: '/search', label: 'Stations' },
     { path: '/insights', label: 'Insights' },
   ]
 
+  // Full-bleed mode for heatmap pages (no padding)
+  const isFullBleed = location.pathname === '/' || location.pathname === '/heatmap'
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <nav className="bg-card shadow-sm border-b border-border">
+      <nav className="bg-card shadow-sm border-b border-border relative z-[2000]">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo and desktop navigation */}
@@ -103,7 +105,7 @@ export default function Layout() {
         </div>
       </nav>
 
-      <main className="px-4 sm:px-6 lg:px-8 py-8">
+      <main className={isFullBleed ? '' : 'px-4 sm:px-6 lg:px-8 py-8'}>
         <Outlet />
       </main>
     </div>

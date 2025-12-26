@@ -1,9 +1,25 @@
+# Python
 .venv
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-.DS_Store
-Thumbs.db
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+
+# Local dev toolchain
+.node/
+.dev-env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# Docs and configs not needed in image
+docs/
+*.md
+!README.md

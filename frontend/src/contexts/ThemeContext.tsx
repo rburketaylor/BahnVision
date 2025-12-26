@@ -86,7 +86,8 @@ export function ThemeProvider({ children, defaultTheme = 'system' }: ThemeProvid
   }
 
   const toggleTheme = () => {
-    setTheme(theme === 'light' ? 'dark' : 'light')
+    // Toggle based on resolved theme so "system" can still flip reliably.
+    setTheme(resolvedTheme === 'light' ? 'dark' : 'light')
   }
 
   const value: ThemeContextType = {

@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, List, Optional
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,31 @@ from app.persistence.dependencies import get_station_repository
 from app.persistence.repositories import StationPayload
 from app.services.cache import CacheService, get_cache_service
 from app.api.v1.endpoints.heatmap import get_gtfs_schedule
+from app.core.database import get_session
+
+
+class FakeAsyncSession:
+    """Fake async database session for testing.
+
+    Returns empty results for queries to avoid hitting the real database.
+    """
+
+    async def execute(self, stmt):
+        """Return empty result set for any query."""
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar_one_or_none.return_value = None
+        return mock_result
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
+
+    async def close(self):
+        pass
 
 
 @dataclass
@@ -31,9 +57,9 @@ class FakeCacheService:
 
     def __init__(self) -> None:
         self._cache: dict[str, CacheScenario] = {}
-        self.recorded_sets: list[tuple[str, dict[str, Any], int | None, int | None]] = (
-            []
-        )
+        self.recorded_sets: list[
+            tuple[str, dict[str, Any], int | None, int | None]
+        ] = []
         self._lock_timeout = False
 
     def configure(self, key: str, scenario: CacheScenario) -> None:
@@ -182,11 +208,24 @@ def api_client(
     fake_station_repository: FakeStationRepository,
     fake_gtfs_schedule: FakeGTFSScheduleService,
 ) -> TestClient:
+    """Create test client with dependencies mocked.
+
+    Note: This uses the full app which includes rate limiter middleware
+    that requires Valkey. If Valkey is unavailable, tests will be skipped
+    with a helpful message.
+    """
+    from tests.service_availability import skip_if_no_valkey
+
+    # Check Valkey availability before creating client
+    skip_if_no_valkey()
+
     app = create_app()
     app.dependency_overrides[CacheService] = lambda: fake_cache
     app.dependency_overrides[get_cache_service] = lambda: fake_cache
     app.dependency_overrides[get_station_repository] = lambda: fake_station_repository
     app.dependency_overrides[get_gtfs_schedule] = lambda: fake_gtfs_schedule
+    # Override get_session to use fake session that returns empty results
+    app.dependency_overrides[get_session] = lambda: FakeAsyncSession()
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()

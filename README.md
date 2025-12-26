@@ -1,6 +1,6 @@
 # BahnVision
 
-Real-time Munich transit data API and dashboard. Live departures, station search, and route planning powered by MVG data with Valkey caching for fast, reliable responses.
+Real-time German transit data API and dashboard. Live departures, station search, and heatmap visualization powered by GTFS data with Valkey caching for fast, reliable responses.
 
 ## Quick Start
 
@@ -35,9 +35,9 @@ npm run dev
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/mvg/stations/search?query=marienplatz` | Station search |
-| `GET /api/v1/mvg/departures?station=marienplatz` | Live departures |
-| `GET /api/v1/mvg/routes/plan?origin=X&destination=Y` | Route planning |
+| `GET /api/v1/transit/stations/search?query=marienplatz` | Station search |
+| `GET /api/v1/transit/departures?station=marienplatz` | Live departures |
+| `GET /api/v1/transit/heatmap/data` | Heatmap activity data |
 | `GET /api/v1/health` | Health check |
 | `GET /metrics` | Prometheus metrics |
 
@@ -83,15 +83,14 @@ cd frontend && npm test
 │       ├── hooks/
 │       └── services/
 ├── docs/                 # Documentation
-└── examples/             # K8s, monitoring configs
 ```
 
 ## Architecture
 
 ```
 ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   Frontend  │─────▶│   FastAPI   │─────▶│   MVG API   │
-│   (React)   │      │   Backend   │      │  (upstream) │
+│   Frontend  │─────▶│   FastAPI   │─────▶│  GTFS Feed  │
+│   (React)   │      │   Backend   │      │  (Germany)  │
 └─────────────┘      └──────┬──────┘      └─────────────┘
                            │
               ┌────────────┼────────────┐
@@ -102,7 +101,20 @@ cd frontend && npm test
          └────────┘  └──────────┘  └──────────┘
 ```
 
-**Caching:** Requests hit Valkey first. On miss, fetch from MVG and cache the result. Stale data is served while refreshing in the background. Circuit breaker falls back to in-memory cache if Valkey is unavailable.
+**Caching:** Requests hit Valkey first. On miss, fetch from GTFS data and cache the result. Stale data is served while refreshing in the background. Circuit breaker falls back to in-memory cache if Valkey is unavailable.
+
+## Security Considerations
+
+This project implements several security best practices:
+
+- **Container Security**: All containers run as non-root users (`appuser`, `nginx`)
+- **Security Headers**: HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy
+- **CORS Protection**: Strict mode available; wildcard origins rejected by default
+- **Rate Limiting**: Configurable request limits per minute/hour/day
+- **Production Safeguards**: Application refuses to start with default credentials in production mode
+- **CI/CD Security Scanning**: Bandit, Safety, Semgrep, npm audit, and Trivy container scanning
+
+**CSP Note**: The Content Security Policy currently allows `'unsafe-inline'` for compatibility with MapLibre GL's WebGL rendering pipeline. A future enhancement would implement nonce-based CSP with server-side nonce injection. See [`docs/planning/security-changes.md`](docs/planning/security-changes.md) for the planned approach.
 
 ## Contributing
 

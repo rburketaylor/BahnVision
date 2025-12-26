@@ -2,16 +2,19 @@
 Heatmap service for cancellation data aggregation.
 
 Aggregates departure cancellation data across stations for heatmap visualization.
-Since historical data persistence is not yet implemented (Phase 2), this service
-currently generates simulated data based on station characteristics.
+Uses real GTFS-RT data from the realtime_station_stats table.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.heatmap import (
     HeatmapDataPoint,
@@ -21,10 +24,15 @@ from app.models.heatmap import (
     TimeRangePreset,
     TransportStats,
 )
+from app.persistence.models import RealtimeStationStats
 from app.services.cache import CacheService
 from app.services.gtfs_schedule import GTFSScheduleService
 
+if TYPE_CHECKING:
+    pass
+
 logger = logging.getLogger(__name__)
+_SLOW_HEATMAP_DB_QUERY_LOG_MS = 1000
 
 # Time range preset mappings (in hours)
 TIME_RANGE_HOURS: dict[TimeRangePreset, int] = {
@@ -75,6 +83,35 @@ GTFS_ROUTE_TYPES: dict[int, str] = {
     900: "TRAM",  # Tram Service
     1000: "SCHIFF",  # Water Transport Service
 }
+
+# Reverse mapping for filtering
+TRANSPORT_TO_ROUTE_TYPES: dict[str, list[int]] = {
+    "TRAM": [0, 5, 6, 7, 11, 900],
+    "UBAHN": [1, 400],
+    "BAHN": [2, 12, 100],
+    "BUS": [3, 700],
+    "SCHIFF": [4, 1000],
+    "SBAHN": [109],
+}
+
+
+def resolve_max_points(zoom_level: int, max_points: int | None) -> int:
+    """Resolve the effective max_points for a request.
+
+    We intentionally bucket zoom levels into a small set of densities so caching
+    and warmup can cover most requests with a small number of keys.
+    """
+    if max_points is None:
+        if zoom_level < 10:
+            effective = 500
+        elif zoom_level < 12:
+            effective = 1000
+        else:
+            effective = 2000
+    else:
+        effective = max_points
+
+    return min(int(effective), MAX_DATA_POINTS)
 
 
 @dataclass
@@ -133,28 +170,26 @@ def parse_transport_modes(transport_modes: str | None) -> list[str] | None:
 class HeatmapService:
     """Service for aggregating cancellation data for heatmap visualization.
 
-    Since historical data persistence is Phase 2, this service currently:
-    1. Fetches all stops from the GTFS database
-    2. Generates simulated cancellation data based on station characteristics
-    3. Returns data points with lat/lng for map rendering
-
-    The service is designed to work efficiently with the existing cache
-    infrastructure and can be extended to use historical data once available.
+    Queries pre-computed station aggregations from the database when available.
+    Falls back to simulated data when historical data collection is still building up.
     """
 
     def __init__(
         self,
         gtfs_schedule: GTFSScheduleService,
         cache: CacheService,
+        session: AsyncSession | None = None,
     ) -> None:
         """Initialize heatmap service.
 
         Args:
             gtfs_schedule: GTFS schedule service for fetching stop data
             cache: Cache service for data storage and retrieval
+            session: Optional database session for aggregation queries
         """
         self._gtfs_schedule = gtfs_schedule
         self._cache = cache
+        self._session = session
 
     async def get_cancellation_heatmap(
         self,
@@ -186,179 +221,275 @@ class HeatmapService:
             transport_modes or "all",
         )
 
-        # Get all stops from GTFS data
-        try:
-            gtfs_stops = await self._gtfs_schedule.get_all_stops(limit=5000)
-            stops = [
-                StopInfo(
-                    stop_id=stop.stop_id,
-                    stop_name=stop.stop_name,
-                    stop_lat=float(stop.stop_lat) if stop.stop_lat else 0.0,
-                    stop_lon=float(stop.stop_lon) if stop.stop_lon else 0.0,
-                )
-                for stop in gtfs_stops
-                if stop.stop_lat and stop.stop_lon
-            ]
-        except Exception as exc:
-            logger.error("Failed to fetch stop list: %s", exc)
-            stops = []
+        max_points_effective = resolve_max_points(zoom_level, max_points)
 
-        if not stops:
-            return HeatmapResponse(
-                time_range=TimeRange(from_time=from_time, to_time=to_time),
-                data_points=[],
-                summary=HeatmapSummary(
-                    total_stations=0,
-                    total_departures=0,
-                    total_cancellations=0,
-                    overall_cancellation_rate=0.0,
-                    most_affected_station=None,
-                    most_affected_line=None,
-                ),
-            )
-
-        # Set max points based on zoom level if not provided
-        if max_points is None:
-            if zoom_level < 10:
-                max_points = 100
-            elif zoom_level < 12:
-                max_points = 500
-            else:
-                max_points = min(2000, MAX_DATA_POINTS)
-        else:
-            max_points = min(max_points, MAX_DATA_POINTS)
-
-        # Aggregate cancellation data for each station
-        data_points = self._aggregate_station_data(stops, transport_types)
-
-        # Filter to stations with significant data
-        data_points = [
-            dp
-            for dp in data_points
-            if dp.total_departures >= MIN_DEPARTURES
-            and dp.cancellation_rate >= MIN_CANCELLATION_RATE
-        ]
-
-        # Sort by impact (cancellation rate * departures) and limit
-        data_points.sort(
-            key=lambda x: x.cancellation_rate * x.total_departures, reverse=True
+        # Get real aggregation data from database (joins with gtfs_stops internally)
+        data_points = await self._aggregate_station_data_from_db(
+            transport_types,
+            from_time,
+            to_time,
+            bucket_width_minutes=bucket_width_minutes,
+            max_points=max_points_effective,
         )
-        data_points = data_points[:max_points]
+
+        # Log when no real data is available
+        if not data_points:
+            logger.info("No historical data available for the requested time range")
+
+        # Filter to stations with any data (at least 1 departure)
+        original_count = len(data_points)
+        data_points = [dp for dp in data_points if dp.total_departures >= 1]
+        filtered_count = len(data_points)
+        logger.debug(
+            f"Filtered data points: {filtered_count}/{original_count} stations have departures"
+        )
+
+        # Defensive: sort + cap again (DB already limits, but keep semantics stable)
+        data_points.sort(
+            key=lambda x: (x.delay_rate + x.cancellation_rate) * x.total_departures,
+            reverse=True,
+        )
+        data_points = data_points[:max_points_effective]
+        logger.info(
+            f"Returning {len(data_points)} data points after filtering and limiting"
+        )
 
         # Calculate summary
-        summary = self._calculate_summary(data_points)
+        try:
+            summary = self._calculate_summary(data_points)
+        except Exception as e:
+            logger.error(f"Failed to calculate summary: {str(e)}")
+            # Provide a safe default summary
+            summary = HeatmapSummary(
+                total_stations=len(data_points),
+                total_departures=sum(dp.total_departures for dp in data_points),
+                total_cancellations=sum(dp.cancelled_count for dp in data_points),
+                overall_cancellation_rate=0.0,
+                total_delays=sum(dp.delayed_count for dp in data_points),
+                overall_delay_rate=0.0,
+                most_affected_station=None,
+                most_affected_line=None,
+            )
 
         return HeatmapResponse(
-            time_range=TimeRange(from_time=from_time, to_time=to_time),
+            time_range=TimeRange.model_validate({"from": from_time, "to": to_time}),
             data_points=data_points,
             summary=summary,
         )
 
-    def _aggregate_station_data(
+    async def _aggregate_station_data_from_db(
         self,
-        stops: list[StopInfo],
         transport_types: list[str] | None,
+        from_time: datetime,
+        to_time: datetime,
+        *,
+        bucket_width_minutes: int,
+        max_points: int,
     ) -> list[HeatmapDataPoint]:
-        """Generate simulated cancellation data for each station.
-
-        Currently generates fake data since historical persistence is Phase 2.
-        The structure is designed to be replaced with real database queries
-        when that feature is implemented.
+        """Query real cancellation data by joining with GTFS stops.
 
         Args:
-            stops: List of stops to generate data for
             transport_types: Filter to specific transport types
+            from_time: Start of time range
+            to_time: End of time range
+            max_points: Maximum number of stations to return
 
         Returns:
-            List of HeatmapDataPoint with simulated statistics
+            List of HeatmapDataPoint with real statistics, or empty list when no data exists
         """
-        data_points: list[HeatmapDataPoint] = []
-
-        # Default transport types if not specified
-        all_transport_types = ["UBAHN", "SBAHN", "TRAM", "BUS", "BAHN"]
-        active_types = transport_types or all_transport_types
-
-        # Generate realistic-looking data based on station characteristics
-        for stop in stops:
-            # Use stop ID hash for reproducible "random" data
-            # Using SHA256 instead of MD5 for security compliance
-            stop_hash = int(hashlib.sha256(stop.stop_id.encode()).hexdigest()[:8], 16)
-
-            # Generate realistic departure counts based on station importance
-            # Central stations have more departures
-            is_major_station = any(
-                name in stop.stop_name.lower()
-                for name in [
-                    "hauptbahnhof",
-                    "hbf",
-                    "marienplatz",
-                    "sendlinger",
-                    "stachus",
-                    "odeonsplatz",
-                    "münchner freiheit",
-                    "ostbahnhof",
-                    "pasing",
-                    "giesing",
-                    "moosach",
-                    "zentrum",
-                    "bahnhof",
-                ]
+        if not self._session:
+            logger.error("No database session available for heatmap data aggregation")
+            raise RuntimeError(
+                "Heatmap aggregation requires an active database session"
             )
 
-            base_departures = 500 if is_major_station else 100
-            total_departures = base_departures + (stop_hash % 200)
+        # Build route_type filter if transport_types specified
+        route_type_filter = None
+        if transport_types:
+            route_types_to_include = []
+            for tt in transport_types:
+                route_types_to_include.extend(TRANSPORT_TO_ROUTE_TYPES.get(tt, []))
+            if route_types_to_include:
+                route_type_filter = route_types_to_include
 
-            # Calculate cancellation rate (typically 1-5%, higher for some stations)
-            base_rate = 0.02 + (stop_hash % 100) / 3000
-            if stop_hash % 20 == 0:  # Some stations have higher issues
-                base_rate += 0.03
+        try:
+            from app.models.gtfs import GTFSStop
 
-            cancelled_count = int(total_departures * min(base_rate, 0.15))
+            total_departures_expr = func.coalesce(
+                func.sum(RealtimeStationStats.trip_count), 0
+            )
+            cancelled_count_expr = func.coalesce(
+                func.sum(RealtimeStationStats.cancelled_count), 0
+            )
+            delayed_count_expr = func.coalesce(
+                func.sum(RealtimeStationStats.delayed_count), 0
+            )
+            impact_score_expr = func.least(
+                cancelled_count_expr, total_departures_expr
+            ) + func.least(delayed_count_expr, total_departures_expr)
 
-            # Generate transport breakdown
-            by_transport: dict[str, TransportStats] = {}
+            # First: select the most "impacted" stations and limit in SQL to avoid huge transfers.
+            stations_stmt = (
+                select(
+                    RealtimeStationStats.stop_id,
+                    GTFSStop.stop_name,
+                    GTFSStop.stop_lat,
+                    GTFSStop.stop_lon,
+                    total_departures_expr.label("total_departures"),
+                    cancelled_count_expr.label("cancelled_count"),
+                    delayed_count_expr.label("delayed_count"),
+                    impact_score_expr.label("impact_score"),
+                )
+                .join(
+                    GTFSStop,
+                    RealtimeStationStats.stop_id == GTFSStop.stop_id,
+                )
+                .where(RealtimeStationStats.bucket_start >= from_time)
+                .where(RealtimeStationStats.bucket_start < to_time)
+                .where(
+                    RealtimeStationStats.bucket_width_minutes == bucket_width_minutes
+                )
+                .where(GTFSStop.stop_lat.isnot(None))
+                .where(GTFSStop.stop_lon.isnot(None))
+            )
 
-            remaining_departures = total_departures
-            remaining_cancellations = cancelled_count
+            if route_type_filter:
+                stations_stmt = stations_stmt.where(
+                    RealtimeStationStats.route_type.in_(route_type_filter)
+                )
 
-            for i, tt in enumerate(active_types):
-                if i == len(active_types) - 1:
-                    # Last transport type gets remaining
-                    tt_departures = remaining_departures
-                    tt_cancellations = remaining_cancellations
+            stations_stmt = (
+                stations_stmt.group_by(
+                    RealtimeStationStats.stop_id,
+                    GTFSStop.stop_name,
+                    GTFSStop.stop_lat,
+                    GTFSStop.stop_lon,
+                )
+                .having(total_departures_expr >= 1)
+                .order_by(impact_score_expr.desc(), total_departures_expr.desc())
+                .limit(max_points)
+            )
+
+            stations_started = time.monotonic()
+            stations_result = await self._session.execute(stations_stmt)
+            stations_ms = (time.monotonic() - stations_started) * 1000
+            station_rows = stations_result.all()
+            if not station_rows:
+                return []
+            if stations_ms >= _SLOW_HEATMAP_DB_QUERY_LOG_MS:
+                logger.info(
+                    "Slow heatmap stations query (%dms): rows=%d max_points=%d",
+                    int(stations_ms),
+                    len(station_rows),
+                    max_points,
+                )
+
+            station_ids = [row.stop_id for row in station_rows]
+
+            # Second: fetch per-route_type breakdown only for the selected stations.
+            breakdown_stmt = (
+                select(
+                    RealtimeStationStats.stop_id,
+                    RealtimeStationStats.route_type,
+                    func.coalesce(func.sum(RealtimeStationStats.trip_count), 0).label(
+                        "total_departures"
+                    ),
+                    func.coalesce(
+                        func.sum(RealtimeStationStats.cancelled_count), 0
+                    ).label("cancelled_count"),
+                    func.coalesce(
+                        func.sum(RealtimeStationStats.delayed_count), 0
+                    ).label("delayed_count"),
+                )
+                .where(RealtimeStationStats.bucket_start >= from_time)
+                .where(RealtimeStationStats.bucket_start < to_time)
+                .where(
+                    RealtimeStationStats.bucket_width_minutes == bucket_width_minutes
+                )
+                .where(RealtimeStationStats.stop_id.in_(station_ids))
+            )
+
+            if route_type_filter:
+                breakdown_stmt = breakdown_stmt.where(
+                    RealtimeStationStats.route_type.in_(route_type_filter)
+                )
+
+            breakdown_stmt = breakdown_stmt.group_by(
+                RealtimeStationStats.stop_id,
+                RealtimeStationStats.route_type,
+            )
+
+            breakdown_started = time.monotonic()
+            breakdown_result = await self._session.execute(breakdown_stmt)
+            breakdown_ms = (time.monotonic() - breakdown_started) * 1000
+            breakdown_rows = breakdown_result.all()
+            if breakdown_ms >= _SLOW_HEATMAP_DB_QUERY_LOG_MS:
+                logger.info(
+                    "Slow heatmap breakdown query (%dms): stations=%d",
+                    int(breakdown_ms),
+                    len(station_ids),
+                )
+
+            breakdown_by_station: dict[str, dict[str, TransportStats]] = {}
+            for row in breakdown_rows:
+                stop_id = row.stop_id
+                route_type = row.route_type
+                if route_type is None:
+                    continue
+
+                transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
+                per_station = breakdown_by_station.setdefault(stop_id, {})
+                existing = per_station.get(transport_type)
+                if existing is None:
+                    per_station[transport_type] = TransportStats(
+                        total=int(row.total_departures or 0),
+                        cancelled=int(row.cancelled_count or 0),
+                        delayed=int(row.delayed_count or 0),
+                    )
                 else:
-                    # Distribute based on hash
-                    ratio = ((stop_hash >> (i * 4)) % 10 + 1) / 10
-                    tt_departures = int(remaining_departures * ratio * 0.3)
-                    tt_cancellations = int(remaining_cancellations * ratio * 0.3)
-
-                    remaining_departures -= tt_departures
-                    remaining_cancellations -= tt_cancellations
-
-                if tt_departures > 0:
-                    by_transport[tt] = TransportStats(
-                        total=tt_departures,
-                        cancelled=max(0, tt_cancellations),
+                    per_station[transport_type] = TransportStats(
+                        total=existing.total + int(row.total_departures or 0),
+                        cancelled=existing.cancelled + int(row.cancelled_count or 0),
+                        delayed=existing.delayed + int(row.delayed_count or 0),
                     )
 
-            cancellation_rate = (
-                cancelled_count / total_departures if total_departures > 0 else 0
-            )
+            # Convert to HeatmapDataPoint
+            data_points = []
+            for row in station_rows:
+                stop_id = row.stop_id
+                total = int(row.total_departures or 0)
+                cancelled = int(row.cancelled_count or 0)
+                delayed = int(row.delayed_count or 0)
+                # Clamp rates to [0, 1] to handle data quality issues
+                # where delayed_count or cancelled_count may exceed trip_count
+                cancellation_rate = min(cancelled / total, 1.0) if total > 0 else 0.0
+                delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
 
-            data_points.append(
-                HeatmapDataPoint(
-                    station_id=stop.stop_id,
-                    station_name=stop.stop_name,
-                    latitude=stop.stop_lat,
-                    longitude=stop.stop_lon,
-                    total_departures=total_departures,
-                    cancelled_count=cancelled_count,
-                    cancellation_rate=cancellation_rate,
-                    by_transport=by_transport,
+                data_points.append(
+                    HeatmapDataPoint(
+                        station_id=stop_id,
+                        station_name=(row.stop_name or stop_id),
+                        latitude=float(row.stop_lat),
+                        longitude=float(row.stop_lon),
+                        total_departures=total,
+                        cancelled_count=cancelled,
+                        cancellation_rate=cancellation_rate,
+                        delayed_count=delayed,
+                        delay_rate=delay_rate,
+                        by_transport=breakdown_by_station.get(stop_id, {}),
+                    )
                 )
-            )
 
-        return data_points
+            logger.info(
+                "Retrieved %d stations with real aggregation data (limited to %d)",
+                len(data_points),
+                max_points,
+            )
+            return data_points
+
+        except Exception as exc:
+            logger.error("Failed to query aggregation data: %s", exc)
+            raise
 
     def _calculate_summary(
         self,
@@ -378,21 +509,32 @@ class HeatmapService:
                 total_departures=0,
                 total_cancellations=0,
                 overall_cancellation_rate=0.0,
+                total_delays=0,
+                overall_delay_rate=0.0,
                 most_affected_station=None,
                 most_affected_line=None,
             )
 
         total_departures = sum(dp.total_departures for dp in data_points)
         total_cancellations = sum(dp.cancelled_count for dp in data_points)
-        overall_rate = (
-            total_cancellations / total_departures if total_departures > 0 else 0
+        total_delays = sum(dp.delayed_count for dp in data_points)
+        overall_cancellation_rate = (
+            min(total_cancellations / total_departures, 1.0)
+            if total_departures > 0
+            else 0
+        )
+        overall_delay_rate = (
+            min(total_delays / total_departures, 1.0) if total_departures > 0 else 0
         )
 
-        # Find most affected station (by rate, with minimum departures threshold)
+        # Find most affected station (by combined delay+cancellation rate)
         affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
         most_affected_station = None
         if affected_stations:
-            most_affected = max(affected_stations, key=lambda x: x.cancellation_rate)
+            most_affected = max(
+                affected_stations,
+                key=lambda x: x.delay_rate + x.cancellation_rate,
+            )
             most_affected_station = most_affected.station_name
 
         # Find most affected line (aggregate by transport type)
@@ -400,24 +542,29 @@ class HeatmapService:
         for dp in data_points:
             for transport, stats in dp.by_transport.items():
                 if transport not in line_stats:
-                    line_stats[transport] = {"total": 0, "cancelled": 0}
+                    line_stats[transport] = {"total": 0, "cancelled": 0, "delayed": 0}
                 line_stats[transport]["total"] += stats.total
                 line_stats[transport]["cancelled"] += stats.cancelled
+                line_stats[transport]["delayed"] += stats.delayed
 
         most_affected_line = None
         highest_line_rate = 0.0
-        for line, stats in line_stats.items():
-            if stats["total"] >= 100:  # Minimum threshold
-                rate = stats["cancelled"] / stats["total"]
-                if rate > highest_line_rate:
-                    highest_line_rate = rate
+        for line, line_stat in line_stats.items():
+            if line_stat["total"] >= 100:  # Minimum threshold
+                combined_rate = (
+                    line_stat["cancelled"] + line_stat["delayed"]
+                ) / line_stat["total"]
+                if combined_rate > highest_line_rate:
+                    highest_line_rate = combined_rate
                     most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)
 
         return HeatmapSummary(
             total_stations=len(data_points),
             total_departures=total_departures,
             total_cancellations=total_cancellations,
-            overall_cancellation_rate=overall_rate,
+            overall_cancellation_rate=overall_cancellation_rate,
+            total_delays=total_delays,
+            overall_delay_rate=overall_delay_rate,
             most_affected_station=most_affected_station,
             most_affected_line=most_affected_line,
         )
@@ -426,14 +573,16 @@ class HeatmapService:
 def get_heatmap_service(
     gtfs_schedule: GTFSScheduleService,
     cache: CacheService,
+    session: AsyncSession | None = None,
 ) -> HeatmapService:
     """Factory function for HeatmapService.
 
     Args:
         gtfs_schedule: GTFS schedule service
         cache: Cache service
+        session: Optional database session for aggregation queries
 
     Returns:
         Configured HeatmapService instance
     """
-    return HeatmapService(gtfs_schedule, cache)
+    return HeatmapService(gtfs_schedule, cache, session)

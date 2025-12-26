@@ -10,6 +10,7 @@ Examples:
     python scripts/import_gtfs.py https://download.gtfs.de/germany/free/latest.zip
     python scripts/import_gtfs.py /tmp/gtfs/gtfs_feed.zip  # Use local file
 """
+
 import asyncio
 import logging
 import sys

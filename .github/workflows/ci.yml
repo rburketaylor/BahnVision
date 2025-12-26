@@ -50,13 +50,13 @@ jobs:
           restore-keys: pip-lint-${{ runner.os }}-
 
       - name: Install linting tools only
-        run: pip install ruff black
+        run: pip install ruff
 
-      - name: Run Ruff
+      - name: Run Ruff linter
         run: ruff check backend/
 
-      - name: Run Black
-        run: black --check backend/
+      - name: Run Ruff formatter
+        run: ruff format --check backend/
 
   # =============================================================================
   # TEST JOBS - Always run (deps can break things)
@@ -66,6 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+      VALKEY_URL: valkey://localhost:6379/0
       RATE_LIMIT_ENABLED: false
     services:
       postgres:
@@ -78,6 +79,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd="pg_isready -U bahnvision"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      valkey:
+        image: valkey/valkey:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="valkey-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -152,6 +162,12 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
+      - name: Run lint
+        run: npm run lint --prefix frontend
+
+      - name: Run type check
+        run: npm run type-check --prefix frontend
+
       - name: Run unit tests
         run: npm test --prefix frontend -- --coverage --run
 
@@ -203,7 +219,7 @@ jobs:
       - name: Run Python security scan
         if: matrix.setup == 'python'
         run: |
-          pip install bandit safety
+          pip install bandit==1.9.2 safety==3.7.0
           bandit -r backend/app -f json -o bandit-report.json || true
           safety check --output json 2>&1 | tee safety-report.json || true
 
@@ -291,6 +307,8 @@ jobs:
           push: false
           load: true
           tags: bahnvision-frontend:test
+          build-args: |
+            APK_CACHE_DATE=${{ github.run_id }}
           cache-from: type=gha,scope=frontend-image
           cache-to: type=gha,mode=max,scope=frontend-image
 
@@ -341,7 +359,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Start services
-        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+        run: docker compose -f docker-compose.yml up -d
 
       - name: Wait for services to be healthy
         run: |
@@ -385,13 +403,13 @@ jobs:
       - name: Run E2E tests
         working-directory: frontend
         run: npm run test:e2e -- --project=chromium
-        continue-on-error: true
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v6
         if: always()
         with:
           name: e2e-test-results
+          if-no-files-found: ignore
           path: |
             frontend/playwright-report/
             frontend/test-results/
@@ -464,5 +482,7 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            APK_CACHE_DATE=${{ github.run_id }}
           cache-from: type=gha,scope=frontend-image
           cache-to: type=gha,mode=max,scope=frontend-image

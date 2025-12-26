@@ -114,7 +114,7 @@ def get_tracer() -> trace.Tracer:
 def add_traceparent_header(headers: dict[str, str]) -> dict[str, str]:
     """Add traceparent header to HTTP request headers if tracing is enabled.
 
-    This allows propagating trace context to external services like MVG API.
+    This allows propagating trace context to external services.
 
     Args:
         headers: Existing HTTP headers

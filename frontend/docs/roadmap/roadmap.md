@@ -40,7 +40,7 @@
 ## Dependencies & Risks
 - Backend spec mismatch (health endpoint payload) may require backend update or frontend workaround.
 - Weather features blocked pending Phase 2 backend; keep feature flag to avoid UI debt.
-- Data accuracy relies on MVG API uptime; ensure fallback messaging is clear before public launch.
+- Data accuracy relies on GTFS feed availability; ensure fallback messaging is clear before public launch.
 
 ## Deliverables Per Phase
 - Phase 0: repo skeleton, ADR approved.

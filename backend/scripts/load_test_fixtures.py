@@ -57,7 +57,7 @@ async def load_fixtures():
             line_data = {
                 "line_id": "U3",
                 "transport_mode": TransportMode.UBAHN,
-                "operator": "MVG",
+                "operator": "SWM",
                 "description": "U-Bahn Line 3",
                 "color_hex": "#EC6726",
                 "created_at": datetime.now(timezone.utc),

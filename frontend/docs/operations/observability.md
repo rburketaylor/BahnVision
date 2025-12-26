@@ -51,7 +51,7 @@
 {
   "event": "api_error",
   "timestamp": 1716200000000,
-  "url": "/api/v1/mvg/departures?station_id=de:09162:6",
+  "url": "/api/v1/transit/departures?station_id=de:09162:6",
   "status": 503,
   "request_id": "req-12345",
   "error_code": "upstream_timeout",

@@ -87,6 +87,7 @@ interface StationSearchProps {
   debounceMs?: number
   label?: string
   showRecentSearches?: boolean
+  autoFocus?: boolean
 }
 
 const DEFAULT_LIMIT = 40
@@ -100,6 +101,7 @@ export function StationSearch({
   debounceMs = DEFAULT_DEBOUNCE,
   label = 'Station search',
   showRecentSearches = true,
+  autoFocus = false,
 }: StationSearchProps) {
   const componentId = useId()
   const inputId = `${componentId}-input`
@@ -288,6 +290,7 @@ export function StationSearch({
           className="w-full pl-10 pr-12 py-3 text-base border border-border rounded-lg bg-input text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
           autoComplete="off"
           autoCapitalize="off"
+          autoFocus={autoFocus}
           spellCheck="false"
           role="combobox"
           aria-label={label}

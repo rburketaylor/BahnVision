@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -19,7 +20,9 @@ from app.core.telemetry import (
     instrument_httpx,
 )
 from app.jobs.rt_processor import gtfs_rt_lifespan_manager
+from app.jobs.gtfs_scheduler import GTFSFeedScheduler
 from app.services.cache import get_cache_service
+from app.services.gtfs_realtime_harvester import GTFSRTDataHarvester
 
 logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-Id"
@@ -77,10 +80,34 @@ async def lifespan(app: FastAPI):
     # Instrument httpx for outbound request tracing
     instrument_httpx(enabled=settings.otel_enabled)
 
+    # Start GTFS static feed scheduler (handles initial import if DB empty)
+    gtfs_scheduler = GTFSFeedScheduler(settings)
+    await gtfs_scheduler.start()
+
+    # Start GTFS-RT data harvester for historical persistence
+    harvester: GTFSRTDataHarvester | None = None
+    if settings.gtfs_rt_harvesting_enabled:
+        harvester = GTFSRTDataHarvester(cache_service=cache_service)
+        await harvester.start()
+        logger.info("GTFS-RT data harvester started")
+
+    # Warm common heatmap variants at startup to reduce first-page latency.
+    try:
+        from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
+
+        HeatmapCacheWarmer(cache_service).trigger(reason="startup")
+    except Exception:
+        logger.exception("Failed to trigger heatmap cache warmup at startup")
+
     # Start GTFS-RT background processor
     async with gtfs_rt_lifespan_manager(cache_service) as rt_processor:
-        yield {"rt_processor": rt_processor}
+        yield {"rt_processor": rt_processor, "harvester": harvester}
 
+    # Stop harvester before shutdown
+    if harvester:
+        await harvester.stop()
+
+    await gtfs_scheduler.stop()
     await engine.dispose()
 
 
@@ -99,12 +126,15 @@ def create_app() -> FastAPI:
     # Configure rate limiting using the shared limiter
     if settings.rate_limit_enabled:
         app.state.limiter = limiter
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
         logger.info("Rate limiting enabled")
 
     # Instrument FastAPI for tracing if enabled
     instrument_fastapi(app, enabled=settings.otel_enabled)
     _install_request_id_middleware(app)
+
+    # Compress larger JSON responses (e.g., heatmap payloads)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     allow_origins = settings.cors_allow_origins
     allow_origin_regex = settings.cors_allow_origin_regex

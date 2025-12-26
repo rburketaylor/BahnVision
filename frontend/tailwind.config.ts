@@ -6,9 +6,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        // MVG brand colors
+        // Transit brand colors
         primary: {
-          DEFAULT: '#0065AE', // MVG blue
+          DEFAULT: '#0065AE', // Primary blue
           dark: '#004677',
           light: '#4C9ACF',
         },

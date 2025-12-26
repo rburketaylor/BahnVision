@@ -266,6 +266,107 @@ class CacheService:
         self._fallback = FallbackCache()
         self._single_flight = SingleFlightLock(client)
 
+    async def get(self, key: str) -> str | None:
+        """Retrieve a raw string value from the cache.
+
+        Used for simple key-value storage like trip deduplication.
+        Falls back to in-memory cache if Valkey is unavailable.
+        """
+        value = await self._get_from_valkey(key)
+        if value is not None:
+            return value
+        return await self._fallback.get(key)
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        """Store a raw string value in the cache.
+
+        Used for simple key-value storage like trip deduplication.
+        Also stores in fallback cache for resilience.
+        """
+        effective_ttl = self._config.get_effective_ttl(ttl_seconds)
+        await self._set_to_valkey(key, value, effective_ttl)
+        await self._fallback.set(key, value, effective_ttl)
+
+    async def mget(self, keys: list[str]) -> dict[str, str | None]:
+        """Retrieve multiple raw string values from the cache in a single call.
+
+        Uses Valkey's MGET for efficient batch lookups.
+        Falls back to in-memory cache for keys not found in Valkey.
+
+        Args:
+            keys: List of cache keys to retrieve
+
+        Returns:
+            Dict mapping keys to their values (None if not found)
+        """
+        if not keys:
+            return {}
+
+        result: dict[str, str | None] = {k: None for k in keys}
+
+        # Try Valkey first
+        if not self._circuit_breaker.is_open():
+            try:
+                values = await self._client.mget(keys)
+                for key, value in zip(keys, values):
+                    if value is not None:
+                        result[key] = value
+                self._circuit_breaker.close()
+            except Exception as exc:
+                logger.warning("MGET failed, falling back: %s", exc)
+                self._circuit_breaker.open()
+
+        # Fall back to in-memory for any missing keys
+        missing_keys = [k for k, v in result.items() if v is None]
+        for key in missing_keys:
+            fallback_value = await self._fallback.get(key)
+            if fallback_value is not None:
+                result[key] = fallback_value
+
+        return result
+
+    async def mset(
+        self,
+        items: dict[str, str],
+        ttl_seconds: int | None = None,
+    ) -> None:
+        """Store multiple raw string values in the cache in a single call.
+
+        Uses Valkey's pipelining for efficient batch writes.
+
+        Args:
+            items: Dict mapping keys to values to store
+            ttl_seconds: Optional TTL for all keys
+        """
+        if not items:
+            return
+
+        effective_ttl = self._config.get_effective_ttl(ttl_seconds)
+
+        # Write to Valkey using pipeline
+        if not self._circuit_breaker.is_open():
+            try:
+                pipe = self._client.pipeline()
+                for key, value in items.items():
+                    if effective_ttl and effective_ttl > 0:
+                        pipe.set(key, value, ex=effective_ttl)
+                    else:
+                        pipe.set(key, value)
+                await pipe.execute()
+                self._circuit_breaker.close()
+            except Exception as exc:
+                logger.warning("MSET pipeline failed: %s", exc)
+                self._circuit_breaker.open()
+
+        # Always store in fallback for resilience
+        for key, value in items.items():
+            await self._fallback.set(key, value, effective_ttl)
+
     async def get_json(self, key: str) -> dict[str, Any] | None:
         """Retrieve a JSON document and decode it."""
         payload = await self._get_from_valkey(key)

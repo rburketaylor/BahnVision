@@ -19,12 +19,13 @@ class TransportStats(BaseModel):
         ..., ge=0, description="Total departures for this transport type."
     )
     cancelled: int = Field(..., ge=0, description="Number of cancelled departures.")
+    delayed: int = Field(default=0, ge=0, description="Number of delayed departures.")
 
 
 class HeatmapDataPoint(BaseModel):
-    """A single data point representing cancellation data for a station."""
+    """A single data point representing delay/cancellation data for a station."""
 
-    station_id: str = Field(..., description="Global MVG station identifier.")
+    station_id: str = Field(..., description="GTFS stop_id identifier.")
     station_name: str = Field(..., description="Human-readable station name.")
     latitude: float = Field(..., ge=-90, le=90, description="Station latitude.")
     longitude: float = Field(..., ge=-180, le=180, description="Station longitude.")
@@ -37,9 +38,15 @@ class HeatmapDataPoint(BaseModel):
     cancellation_rate: float = Field(
         ..., ge=0, le=1, description="Cancellation rate (0.0 to 1.0)."
     )
+    delayed_count: int = Field(
+        default=0, ge=0, description="Number of delayed departures (>5 min)."
+    )
+    delay_rate: float = Field(
+        default=0.0, ge=0, le=1, description="Delay rate (0.0 to 1.0)."
+    )
     by_transport: dict[str, TransportStats] = Field(
         default_factory=dict,
-        description="Breakdown of cancellations by transport type.",
+        description="Breakdown by transport type.",
     )
 
 
@@ -47,9 +54,9 @@ class TimeRange(BaseModel):
     """Time range specification."""
 
     from_time: datetime = Field(
-        ..., alias="from", description="Start of time range (UTC)."
+        ..., description="Start of time range (UTC).", alias="from"
     )
-    to_time: datetime = Field(..., alias="to", description="End of time range (UTC).")
+    to_time: datetime = Field(..., description="End of time range (UTC).", alias="to")
 
     model_config = {"populate_by_name": True}
 
@@ -67,11 +74,17 @@ class HeatmapSummary(BaseModel):
     overall_cancellation_rate: float = Field(
         ..., ge=0, le=1, description="Overall cancellation rate."
     )
+    total_delays: int = Field(
+        default=0, ge=0, description="Total delayed departures across all stations."
+    )
+    overall_delay_rate: float = Field(
+        default=0.0, ge=0, le=1, description="Overall delay rate."
+    )
     most_affected_station: str | None = Field(
-        None, description="Station with highest cancellation rate."
+        None, description="Station with highest delay/cancellation impact."
     )
     most_affected_line: str | None = Field(
-        None, description="Line with highest cancellation rate."
+        None, description="Line with highest delay/cancellation rate."
     )
 
 

@@ -4,10 +4,16 @@ This module provides a centralized rate limiter that can be imported by
 endpoint routers to apply consistent rate limiting across the API.
 """
 
+from typing import cast
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.core.config import get_settings
+
+# Type alias for default limits - using cast to satisfy mypy variance requirements
+# slowapi expects list[str | Callable[..., str]] but we only use strings
+LimitsType = list[str]
 
 # Create a module-level limiter instance that will be initialized on first import.
 # The limiter uses the client's IP address as the rate limit key.
@@ -26,7 +32,8 @@ def get_limiter() -> Limiter:
         settings = get_settings()
 
         # Build default limits from settings
-        default_limits = [
+        # Cast to Any to satisfy mypy - slowapi expects list[str | Callable] but we only use strings
+        default_limits: LimitsType = [
             f"{settings.rate_limit_requests_per_minute}/minute",
             f"{settings.rate_limit_requests_per_hour}/hour",
             f"{settings.rate_limit_requests_per_day}/day",
@@ -37,19 +44,19 @@ def get_limiter() -> Limiter:
                 _limiter = Limiter(
                     key_func=get_remote_address,
                     storage_uri=settings.valkey_url,
-                    default_limits=default_limits,
+                    default_limits=cast(list, default_limits),
                 )
             except Exception:
                 # Fallback to in-memory if Valkey connection fails
                 _limiter = Limiter(
                     key_func=get_remote_address,
-                    default_limits=default_limits,
+                    default_limits=cast(list, default_limits),
                 )
         else:
             # Create a disabled limiter (no-op)
             _limiter = Limiter(
                 key_func=get_remote_address,
-                default_limits=default_limits,
+                default_limits=cast(list, default_limits),
                 enabled=False,
             )
 

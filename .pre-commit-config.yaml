@@ -1,13 +1,37 @@
 repos:
-  - repo: https://github.com/psf/black
-    rev: 25.11.0
-    hooks:
-      - id: black
-        files: ^backend/
-
+  # === Python (Backend) ===
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.5
+    rev: v0.14.9
     hooks:
-      - id: ruff
+      - id: ruff-format
+        files: ^backend/
+      - id: ruff-check
         args: [--fix]
         files: ^backend/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        files: ^backend/app/
+        args: [--ignore-missing-imports, --no-error-summary]
+        additional_dependencies:
+          - pydantic
+          - fastapi
+
+  # === TypeScript/React (Frontend) ===
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: typescript-check
+        name: typescript type-check
+        entry: bash -c 'cd frontend && npm run type-check'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false

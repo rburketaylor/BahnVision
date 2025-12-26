@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -37,8 +38,8 @@ class GTFSFeedScheduler:
         logger.info("Starting GTFS feed scheduler")
         self.scheduler.start()
 
-        # Run initial feed update if needed
-        await self._check_and_update_feed()
+        # Run initial feed update in background (don't block server startup)
+        asyncio.create_task(self._check_and_update_feed())
 
     async def stop(self):
         """Stop the scheduler."""
@@ -81,13 +82,31 @@ class GTFSFeedScheduler:
                     logger.info("No GTFS feed found, performing initial import")
                     should_update = True
                 else:
-                    # Check if feed is too old
+                    # Check if feed is expired (past feed_end_date)
+                    today = datetime.now(timezone.utc).date()
+                    feed_expired = (
+                        latest_feed.feed_end_date is not None
+                        and latest_feed.feed_end_date < today
+                    )
+
+                    # Check if feed download is too old
                     age_hours = (
                         datetime.now(timezone.utc) - latest_feed.downloaded_at
                     ).total_seconds() / 3600
-                    if age_hours > self.settings.gtfs_max_feed_age_hours:
+
+                    if feed_expired:
+                        logger.info(
+                            f"GTFS feed expired (end_date: {latest_feed.feed_end_date}), updating"
+                        )
+                        should_update = True
+                    elif age_hours > self.settings.gtfs_max_feed_age_hours:
                         logger.info(f"GTFS feed is {age_hours:.1f} hours old, updating")
                         should_update = True
+                    else:
+                        logger.info(
+                            f"GTFS feed is current (age: {age_hours:.1f}h, "
+                            f"valid until: {latest_feed.feed_end_date})"
+                        )
 
                 if should_update:
                     importer = GTFSFeedImporter(session, self.settings)

@@ -14,21 +14,26 @@ Place variables in the root `.env` or export them in the shell. Defaults are sho
 - `VALKEY_URL` (valkey://localhost:6379/0) — Valkey/Redis connection.
 - `VALKEY_CACHE_TTL_SECONDS` (30) — Base TTL for generic cache items.
 - `VALKEY_CACHE_TTL_NOT_FOUND_SECONDS` (15) — TTL for not-found markers.
-- `MVG_DEPARTURES_CACHE_TTL_SECONDS` (30) — Live TTL for departures.
-- `MVG_DEPARTURES_CACHE_STALE_TTL_SECONDS` (300) — Stale TTL for departures.
-- `MVG_STATION_SEARCH_CACHE_TTL_SECONDS` (60) — Live TTL for station search.
-- `MVG_STATION_SEARCH_CACHE_STALE_TTL_SECONDS` (600) — Stale TTL for station search.
-- `MVG_STATION_LIST_CACHE_TTL_SECONDS` (86400) — Live TTL for station list.
-- `MVG_STATION_LIST_CACHE_STALE_TTL_SECONDS` (172800) — Stale TTL for station list.
-- `MVG_ROUTE_CACHE_TTL_SECONDS` (120) — Live TTL for route planning.
-- `MVG_ROUTE_CACHE_STALE_TTL_SECONDS` (900) — Stale TTL for route planning.
+- `TRANSIT_DEPARTURES_CACHE_TTL_SECONDS` (30) — Live TTL for departures.
+- `TRANSIT_DEPARTURES_CACHE_STALE_TTL_SECONDS` (300) — Stale TTL for departures.
+- `TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS` (60) — Live TTL for station search.
+- `TRANSIT_STATION_SEARCH_CACHE_STALE_TTL_SECONDS` (600) — Stale TTL for station search.
+- `TRANSIT_STATION_LIST_CACHE_TTL_SECONDS` (86400) — Live TTL for station list.
+- `TRANSIT_STATION_LIST_CACHE_STALE_TTL_SECONDS` (172800) — Stale TTL for station list.
+- `TRANSIT_ROUTE_CACHE_TTL_SECONDS` (120) — Live TTL for route planning.
+- `TRANSIT_ROUTE_CACHE_STALE_TTL_SECONDS` (900) — Stale TTL for route planning.
 - `CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS` (5) — Single-flight lock TTL.
 - `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS` (5.0) — Wait time for lock.
 - `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS` (0.05) — Retry delay while waiting.
 - `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS` (2.0) — Serve stale window when cache is unhealthy.
+- `HEATMAP_CACHE_TTL_SECONDS` (300) — Cache TTL for heatmap aggregations.
 - `CACHE_WARMUP_DEPARTURE_STATIONS` — Optional comma-separated list of station names/IDs to prewarm departures cache keys.
 - `CACHE_WARMUP_DEPARTURE_LIMIT` (10) — Number of departures requested per warmup station.
 - `CACHE_WARMUP_DEPARTURE_OFFSET_MINUTES` (0) — Offset minutes applied to warmup departures.
+- `HEATMAP_CACHE_WARMUP_ENABLED` (true) — Enable/disable heatmap cache warmup after each GTFS-RT harvest.
+- `HEATMAP_CACHE_WARMUP_TIME_RANGES` (24h) — Comma-separated list of heatmap `time_range` presets to prewarm.
+- `HEATMAP_CACHE_WARMUP_ZOOM_LEVELS` (6,10) — Comma-separated list of zoom levels to prewarm.
+- `HEATMAP_CACHE_WARMUP_BUCKET_WIDTH_MINUTES` (60) — Bucket width minutes to prewarm.
 - `CORS_ALLOW_ORIGINS` — Comma-separated list of allowed origins (no `*`).
 - `CORS_ALLOW_ORIGIN_REGEX` — Optional regex for origins.
 - `DATABASE_URL` (postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision) — Async SQLAlchemy DSN.
@@ -56,8 +61,8 @@ Backend `.env` (repository root):
 ```
 VALKEY_URL=valkey://localhost:6379/0
 DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
-MVG_DEPARTURES_CACHE_TTL_SECONDS=30
-MVG_DEPARTURES_CACHE_STALE_TTL_SECONDS=300
+TRANSIT_DEPARTURES_CACHE_TTL_SECONDS=30
+TRANSIT_DEPARTURES_CACHE_STALE_TTL_SECONDS=300
 CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS=2
 CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:5173
 ```

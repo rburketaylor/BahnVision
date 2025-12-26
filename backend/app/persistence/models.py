@@ -73,6 +73,16 @@ class IngestionStatus(str, enum.Enum):
     RETRYING = "RETRYING"
 
 
+class ScheduleRelationship(str, enum.Enum):
+    """GTFS-RT schedule relationship status for trip updates."""
+
+    SCHEDULED = "SCHEDULED"
+    SKIPPED = "SKIPPED"
+    NO_DATA = "NO_DATA"
+    UNSCHEDULED = "UNSCHEDULED"
+    CANCELED = "CANCELED"
+
+
 transport_mode_enum = SqlEnum(
     TransportMode,
     name="transport_mode",
@@ -98,6 +108,10 @@ ingestion_source_enum = SqlEnum(
 ingestion_status_enum = SqlEnum(
     IngestionStatus,
     name="ingestion_status",
+)
+schedule_relationship_enum = SqlEnum(
+    ScheduleRelationship,
+    name="schedule_relationship",
 )
 
 
@@ -430,5 +444,109 @@ class DepartureWeatherLink(Base):
             "departure_id",
             "weather_id",
             name="uq_departure_weather_unique",
+        ),
+    )
+
+
+class RealtimeStationStats(Base):
+    """Streaming aggregation of GTFS-RT statistics per station per hour.
+
+    Updated in place on each harvest cycle instead of storing raw observations.
+    This provides ~250x storage reduction compared to storing individual observations.
+    """
+
+    __tablename__ = "realtime_station_stats"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    stop_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Time bucket
+    bucket_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="Start of the time bucket (hourly).",
+    )
+    bucket_width_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=60,
+        server_default="60",
+    )
+
+    # Streaming counters (updated incrementally)
+    observation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Number of harvest cycles that contributed to this bucket.",
+    )
+    trip_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Number of unique trips observed (deduplicated via Valkey).",
+    )
+
+    # Delay statistics
+    total_delay_seconds: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Cumulative delay for average calculation.",
+    )
+    delayed_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Count of departures delayed > 5 minutes.",
+    )
+    on_time_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Count of departures with delay < 1 minute.",
+    )
+
+    # Cancellations
+    cancelled_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    # Route type (NULL = combined stats for all types)
+    route_type: Mapped[int | None] = mapped_column(
+        Integer,
+        doc="GTFS route_type for transport mode filtering (null = all types).",
+    )
+
+    # Timestamps
+    first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_realtime_stats_stop_bucket", "stop_id", "bucket_start"),
+        Index("ix_realtime_stats_bucket", "bucket_start"),
+        UniqueConstraint(
+            "stop_id",
+            "bucket_start",
+            "bucket_width_minutes",
+            "route_type",
+            name="uq_realtime_stats_unique",
         ),
     )

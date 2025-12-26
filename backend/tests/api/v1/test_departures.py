@@ -157,6 +157,8 @@ def departures_client():
     """Create test client for departures endpoint."""
     from contextlib import asynccontextmanager
 
+    from app.api.v1.shared.rate_limit import limiter
+
     @asynccontextmanager
     async def null_lifespan(app: FastAPI):
         yield {}
@@ -168,7 +170,15 @@ def departures_client():
 
     app.dependency_overrides[get_transit_data_service] = lambda: fake_service
 
-    return TestClient(app), fake_service
+    # Disable rate limiting for tests (avoids Valkey connection requirement)
+    original_enabled = limiter.enabled
+    limiter.enabled = False
+
+    yield TestClient(app), fake_service
+
+    # Restore original state
+    limiter.enabled = original_enabled
+    app.dependency_overrides.clear()
 
 
 class TestDeparturesEndpoint:

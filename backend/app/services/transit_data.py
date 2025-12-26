@@ -31,8 +31,8 @@ try:
 
     GTFS_SCHEDULE_AVAILABLE = True
 except ImportError as e:
-    GTFSScheduleService = None
-    ScheduledDeparture = None
+    GTFSScheduleService = None  # type: ignore[misc,assignment]
+    ScheduledDeparture = None  # type: ignore[misc,assignment]
     GTFS_SCHEDULE_AVAILABLE = False
     logger.warning(f"GTFS schedule service not available: {e}")
 
@@ -46,14 +46,12 @@ try:
 
     GTFS_REALTIME_AVAILABLE = True
 except ImportError as e:
-    GtfsRealtimeService = None
-    TripUpdate = None
-    VehiclePosition = None
-    ServiceAlert = None
+    GtfsRealtimeService = None  # type: ignore[misc,assignment]
+    TripUpdate = None  # type: ignore[misc,assignment]
+    VehiclePosition = None  # type: ignore[misc,assignment]
+    ServiceAlert = None  # type: ignore[misc,assignment]
     GTFS_REALTIME_AVAILABLE = False
     logger.warning(f"GTFS realtime service not available: {e}")
-
-logger = logging.getLogger(__name__)
 
 
 class ScheduleRelationship(Enum):
@@ -85,9 +83,9 @@ class DepartureInfo:
     schedule_relationship: ScheduleRelationship = ScheduleRelationship.SCHEDULED
     vehicle_id: Optional[str] = None
     vehicle_position: Optional[Dict] = None
-    alerts: List = None  # Remove ServiceAlert type reference
+    alerts: Optional[List] = None  # ServiceAlert list
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.alerts is None:
             self.alerts = []
 
@@ -103,9 +101,9 @@ class RouteInfo:
     route_color: str
     route_text_color: str
     active_trips: int = 0
-    alerts: List = None  # Remove ServiceAlert type reference
+    alerts: Optional[List] = None  # ServiceAlert list
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.alerts is None:
             self.alerts = []
 
@@ -120,10 +118,10 @@ class StopInfo:
     stop_lon: float
     zone_id: Optional[str] = None
     wheelchair_boarding: int = 0
-    upcoming_departures: List = None  # Remove DepartureInfo type reference
-    alerts: List = None  # Remove ServiceAlert type reference
+    upcoming_departures: Optional[List] = None  # DepartureInfo list
+    alerts: Optional[List] = None  # ServiceAlert list
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.upcoming_departures is None:
             self.upcoming_departures = []
         if self.alerts is None:
@@ -343,31 +341,42 @@ class TransitDataService:
             vehicle_positions_task = self.gtfs_realtime.fetch_vehicle_positions()
             alerts_task = self.gtfs_realtime.fetch_alerts()
 
-            trip_updates, vehicle_positions, alerts = await asyncio.gather(
+            results = await asyncio.gather(
                 trip_updates_task,
                 vehicle_positions_task,
                 alerts_task,
                 return_exceptions=True,
             )
+            trip_updates_result = results[0]
+            vehicle_positions_result = results[1]
+            alerts_result = results[2]
 
             # Handle exceptions
             trip_updates_count = (
-                len(trip_updates) if not isinstance(trip_updates, Exception) else 0
-            )
-            vehicle_positions_count = (
-                len(vehicle_positions)
-                if not isinstance(vehicle_positions, Exception)
+                len(trip_updates_result)
+                if not isinstance(trip_updates_result, BaseException)
                 else 0
             )
-            alerts_count = len(alerts) if not isinstance(alerts, Exception) else 0
+            vehicle_positions_count = (
+                len(vehicle_positions_result)
+                if not isinstance(vehicle_positions_result, BaseException)
+                else 0
+            )
+            alerts_count = (
+                len(alerts_result)
+                if not isinstance(alerts_result, BaseException)
+                else 0
+            )
 
             # Log any errors
-            if isinstance(trip_updates, Exception):
-                logger.error(f"Failed to fetch trip updates: {trip_updates}")
-            if isinstance(vehicle_positions, Exception):
-                logger.error(f"Failed to fetch vehicle positions: {vehicle_positions}")
-            if isinstance(alerts, Exception):
-                logger.error(f"Failed to fetch alerts: {alerts}")
+            if isinstance(trip_updates_result, BaseException):
+                logger.error(f"Failed to fetch trip updates: {trip_updates_result}")
+            if isinstance(vehicle_positions_result, BaseException):
+                logger.error(
+                    f"Failed to fetch vehicle positions: {vehicle_positions_result}"
+                )
+            if isinstance(alerts_result, BaseException):
+                logger.error(f"Failed to fetch alerts: {alerts_result}")
 
             logger.info(
                 f"Real-time data refresh: {trip_updates_count} trip updates, "

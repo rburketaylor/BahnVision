@@ -1,6 +1,6 @@
 # BahnVision Backend
 
-FastAPI service that serves MVG departures, station search, route planning, health, and Prometheus metrics. Uses Valkey for low‑latency caching and PostgreSQL for persistence.
+FastAPI service that serves German transit departures, station search, heatmap data, health, and Prometheus metrics. Uses Valkey for low‑latency caching and PostgreSQL for GTFS persistence.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ FastAPI service that serves MVG departures, station search, route planning, heal
 
 - `VALKEY_URL` — cache DSN (default `valkey://localhost:6379/0`)
 - `DATABASE_URL` — async DSN (default `postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision`)
-- Per-feature TTLs: `MVG_DEPARTURES_CACHE_TTL_SECONDS`, `MVG_STATION_SEARCH_CACHE_TTL_SECONDS`, `MVG_ROUTE_CACHE_TTL_SECONDS` and corresponding `_STALE_TTL_SECONDS`
+- Per-feature TTLs: `TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`, `TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`, `TRANSIT_ROUTE_CACHE_TTL_SECONDS` and corresponding `_STALE_TTL_SECONDS`
 - Single‑flight tuning: `CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`, `CACHE_SINGLEFLIGHT_LOCK_WAIT_SECONDS`, `CACHE_SINGLEFLIGHT_RETRY_DELAY_SECONDS`
 - Circuit breaker window: `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`
 
@@ -27,14 +27,14 @@ Legacy `REDIS_*` variables are accepted for backward compatibility. See `docs/ru
 ## API Endpoints
 
 - `GET /api/v1/health` — readiness probe
-- `GET /api/v1/mvg/stations/search` — station autocomplete
-- `GET /api/v1/mvg/departures` — live departures
-- `GET /api/v1/mvg/routes/plan` — route planning
+- `GET /api/v1/transit/stations/search` — station autocomplete
+- `GET /api/v1/transit/departures` — live departures
+- `GET /api/v1/transit/heatmap/data` — heatmap activity data
 - `GET /metrics` — Prometheus metrics
 
 Example:
 ```bash
-curl "http://127.0.0.1:8000/api/v1/mvg/departures?station=de:09162:6&transport_type=UBAHN"
+curl "http://127.0.0.1:8000/api/v1/transit/departures?station=de:09162:6&transport_type=UBAHN"
 ```
 
 ## Caching

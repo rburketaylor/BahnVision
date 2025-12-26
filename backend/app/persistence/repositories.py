@@ -90,7 +90,7 @@ class TransitDataRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def upsert_station(self, payload: StationPayload) -> models.Station:
+    async def upsert_station(self, payload: StationPayload) -> models.Station | None:
         stmt = insert(models.Station).values(
             station_id=payload.station_id,
             name=payload.name,
@@ -117,7 +117,7 @@ class TransitDataRepository:
 
     async def upsert_transit_line(
         self, payload: TransitLinePayload
-    ) -> models.TransitLine:
+    ) -> models.TransitLine | None:
         stmt = insert(models.TransitLine).values(
             line_id=payload.line_id,
             transport_mode=payload.transport_mode,
@@ -434,7 +434,7 @@ class StationRepository:
         """Get the total number of stations in the database."""
         stmt = select(func.count(models.Station.station_id))
         result = await self._session.execute(stmt)
-        return result.scalar()
+        return result.scalar() or 0
 
     async def delete_station(self, station_id: str) -> bool:
         """Delete a station by ID. Returns True if station was deleted."""

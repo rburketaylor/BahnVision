@@ -18,6 +18,7 @@ coverage/
 htmlcov/
 *.coverage
 .coverage.*
+coverage.json
 
 # OS files
 .DS_Store
@@ -41,8 +42,13 @@ build/
 # Code directory
 .code/
 
+# Local KiloCode config
+.kilocode/
+
 # Mutation testing
 mutants/
 .stryker-tmp/
 **/reports/
 .mutmut-cache
+backend/coverage.xml
+.serena/

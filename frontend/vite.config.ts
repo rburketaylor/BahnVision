@@ -11,8 +11,8 @@ export default defineConfig({
     },
   },
   build: {
-    // Enable source maps for debugging in production
-    sourcemap: true,
+    // Only enable source maps in development, not production (security hardening)
+    sourcemap: process.env.NODE_ENV !== 'production',
     // Generate bundle analysis
     rollupOptions: {
       output: {
@@ -21,13 +21,9 @@ export default defineConfig({
           // React and its ecosystem
           'react-vendor': ['react', 'react-dom', 'react-router'],
           // State management and data fetching
-          'state-management': ['@tanstack/react-query', 'zustand'],
-          // UI components (if we had any heavy ones)
-          'ui-components': ['@headlessui/react'],
-          // Map related libraries (large, rarely used)
-          'map-vendor': ['leaflet', 'react-leaflet'],
-          // Error tracking
-          monitoring: ['@sentry/react'],
+          'state-management': ['@tanstack/react-query'],
+          // Map related libraries (large)
+          'map-vendor': ['maplibre-gl'],
         },
         // Optimize chunk naming for better caching
         chunkFileNames: chunkInfo => {
@@ -38,23 +34,14 @@ export default defineConfig({
         },
       },
     },
-    // Optimize chunks
-    chunkSizeWarningLimit: 1000,
+    // MapLibre GL is ~1011KB minified - just over the default 1000KB limit
+    chunkSizeWarningLimit: 1100,
     // CSS code splitting
     cssCodeSplit: true,
   },
   // Optimize dependencies during development
   optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react-router',
-      '@tanstack/react-query',
-      'zustand',
-      '@headlessui/react',
-      'leaflet',
-      'react-leaflet',
-    ],
+    include: ['react', 'react-dom', 'react-router', '@tanstack/react-query', 'maplibre-gl'],
   },
   server: {
     // Enable HMR for better development experience

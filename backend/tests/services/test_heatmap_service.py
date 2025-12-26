@@ -31,6 +31,44 @@ class FakeCache:
         pass
 
 
+class FakeResult:
+    """Fake SQLAlchemy result for testing."""
+
+    def __init__(self, rows: list[object]):
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
+
+
+class FakeAsyncSession:
+    """Fake async database session for testing."""
+
+    def __init__(
+        self,
+        rows: list[object] | None = None,
+        row_sets: list[list[object]] | None = None,
+        raise_on_execute: Exception | None = None,
+    ):
+        self._rows = rows or []
+        self._row_sets = row_sets
+        self._row_set_index = 0
+        self._raise_on_execute = raise_on_execute
+        self.executed_statements: list[object] = []
+
+    async def execute(self, stmt) -> FakeResult:
+        self.executed_statements.append(stmt)
+        if self._raise_on_execute:
+            raise self._raise_on_execute
+        if self._row_sets is not None:
+            if self._row_set_index >= len(self._row_sets):
+                return FakeResult([])
+            rows = self._row_sets[self._row_set_index]
+            self._row_set_index += 1
+            return FakeResult(rows)
+        return FakeResult(self._rows)
+
+
 @dataclass
 class FakeGTFSStop:
     """Fake GTFS stop for testing."""
@@ -79,6 +117,12 @@ def sample_stops() -> list[FakeGTFSStop]:
             stop_lon=11.567,
         ),
     ]
+
+
+@pytest.fixture
+def fake_session_empty() -> FakeAsyncSession:
+    """Fake session that returns no rows."""
+    return FakeAsyncSession()
 
 
 class TestParseTimeRange:
@@ -172,24 +216,28 @@ class TestHeatmapService:
     """Tests for HeatmapService."""
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_basic(self, sample_stops):
-        """Test basic heatmap generation."""
+    async def test_get_cancellation_heatmap_basic(
+        self, sample_stops, fake_session_empty
+    ):
+        """Test basic heatmap generation returns empty when DB has no rows."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap()
 
         assert isinstance(result, HeatmapResponse)
-        assert len(result.data_points) > 0
-        assert result.summary.total_stations > 0
+        assert len(result.data_points) == 0
+        assert result.summary.total_stations == 0
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_with_time_range(self, sample_stops):
+    async def test_get_cancellation_heatmap_with_time_range(
+        self, sample_stops, fake_session_empty
+    ):
         """Test heatmap with specific time range."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap(time_range="1h")
 
@@ -198,11 +246,11 @@ class TestHeatmapService:
         assert abs(delta.total_seconds() - 3600) < 1
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_empty_stops(self):
-        """Test heatmap with no stops."""
+    async def test_get_cancellation_heatmap_empty_stops(self, fake_session_empty):
+        """Test heatmap with no rows and no stops."""
         gtfs_schedule = FakeGTFSScheduleService(stops=[])
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap()
 
@@ -211,56 +259,125 @@ class TestHeatmapService:
         assert result.summary.overall_cancellation_rate == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_cancellation_heatmap_stop_failure(self):
-        """Test heatmap handles stop fetch failure."""
+    async def test_get_cancellation_heatmap_without_session_raises(self):
+        """Test heatmap fails without a database session."""
         gtfs_schedule = FakeGTFSScheduleService()
-        gtfs_schedule.fail_stops = True
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache)
 
-        result = await service.get_cancellation_heatmap()
-
-        assert len(result.data_points) == 0
-        assert result.summary.total_stations == 0
+        with pytest.raises(RuntimeError, match="database session"):
+            await service.get_cancellation_heatmap()
 
     @pytest.mark.asyncio
-    async def test_data_point_structure(self, sample_stops):
-        """Test that data points have correct structure."""
-        gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
+    async def test_get_cancellation_heatmap_db_error_raises(self):
+        """Test heatmap fails when the database query fails."""
+        gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        session = FakeAsyncSession(raise_on_execute=RuntimeError("db down"))
+        service = HeatmapService(gtfs_schedule, cache, session=session)
 
-        result = await service.get_cancellation_heatmap()
+        with pytest.raises(RuntimeError, match="db down"):
+            await service.get_cancellation_heatmap()
 
-        for point in result.data_points:
-            assert isinstance(point.station_id, str)
-            assert isinstance(point.station_name, str)
-            assert isinstance(point.latitude, float)
-            assert isinstance(point.longitude, float)
-            assert isinstance(point.total_departures, int)
-            assert isinstance(point.cancelled_count, int)
-            assert isinstance(point.cancellation_rate, float)
-            assert 0 <= point.cancellation_rate <= 1
+    def test_data_point_structure(self):
+        """Test that HeatmapDataPoint has correct structure."""
+        point = HeatmapDataPoint(
+            station_id="de:09162:6",
+            station_name="Marienplatz",
+            latitude=48.137,
+            longitude=11.575,
+            total_departures=100,
+            cancelled_count=5,
+            cancellation_rate=0.05,
+            delayed_count=10,
+            delay_rate=0.10,
+            by_transport={},
+        )
+
+        assert isinstance(point.station_id, str)
+        assert isinstance(point.station_name, str)
+        assert isinstance(point.latitude, float)
+        assert isinstance(point.longitude, float)
+        assert isinstance(point.total_departures, int)
+        assert isinstance(point.cancelled_count, int)
+        assert isinstance(point.cancellation_rate, float)
+        assert 0 <= point.cancellation_rate <= 1
 
     @pytest.mark.asyncio
-    async def test_summary_statistics(self, sample_stops):
-        """Test that summary statistics are calculated correctly."""
+    async def test_summary_statistics_empty_without_db(
+        self, sample_stops, fake_session_empty
+    ):
+        """Test that summary statistics are empty when DB has no rows."""
         gtfs_schedule = FakeGTFSScheduleService(stops=sample_stops)
         cache = FakeCache()
-        service = HeatmapService(gtfs_schedule, cache)
+        service = HeatmapService(gtfs_schedule, cache, session=fake_session_empty)
 
         result = await service.get_cancellation_heatmap()
 
-        # Summary should aggregate data points
-        total_deps = sum(p.total_departures for p in result.data_points)
-        total_cancelled = sum(p.cancelled_count for p in result.data_points)
+        assert result.summary.total_departures == 0
+        assert result.summary.total_cancellations == 0
+        assert result.summary.overall_cancellation_rate == 0.0
 
-        assert result.summary.total_departures == total_deps
-        assert result.summary.total_cancellations == total_cancelled
+    @pytest.mark.asyncio
+    async def test_get_cancellation_heatmap_fetches_breakdown_for_selected_stations(
+        self,
+    ):
+        """Ensure service fetches route_type breakdown only for selected stations."""
 
-        if total_deps > 0:
-            expected_rate = total_cancelled / total_deps
-            assert abs(result.summary.overall_cancellation_rate - expected_rate) < 0.001
+        @dataclass
+        class StationAggRow:
+            stop_id: str
+            stop_name: str
+            stop_lat: float
+            stop_lon: float
+            total_departures: int
+            cancelled_count: int
+            delayed_count: int
+            impact_score: int = 0
+
+        @dataclass
+        class BreakdownRow:
+            stop_id: str
+            route_type: int
+            total_departures: int
+            cancelled_count: int
+            delayed_count: int
+
+        station_rows = [
+            StationAggRow(
+                stop_id="de:09162:6",
+                stop_name="Marienplatz",
+                stop_lat=48.13743,
+                stop_lon=11.57549,
+                total_departures=100,
+                cancelled_count=5,
+                delayed_count=10,
+                impact_score=15,
+            )
+        ]
+        breakdown_rows = [
+            BreakdownRow(
+                stop_id="de:09162:6",
+                route_type=2,
+                total_departures=100,
+                cancelled_count=5,
+                delayed_count=10,
+            )
+        ]
+
+        session = FakeAsyncSession(row_sets=[station_rows, breakdown_rows])
+        gtfs_schedule = FakeGTFSScheduleService()
+        cache = FakeCache()
+        service = HeatmapService(gtfs_schedule, cache, session=session)
+
+        result = await service.get_cancellation_heatmap(max_points=1)
+
+        assert len(session.executed_statements) == 2
+        assert len(result.data_points) == 1
+        assert result.data_points[0].station_id == "de:09162:6"
+        assert result.data_points[0].by_transport["BAHN"].total == 100
+        assert result.data_points[0].by_transport["BAHN"].cancelled == 5
+        assert result.data_points[0].by_transport["BAHN"].delayed == 10
 
 
 class TestCalculateSummary:

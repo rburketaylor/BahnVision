@@ -30,9 +30,13 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine AS production
 
+# Cache-buster to force package refresh (set via --build-arg in CI)
+ARG APK_CACHE_DATE=1
+
 # Update packages to patch known vulnerabilities
 # Using --no-cache avoids storing the index locally, and running in a single layer
-RUN apk update && apk upgrade --no-cache
+RUN apk update && apk upgrade --no-cache && \
+    rm -rf /var/cache/apk/*
 
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html

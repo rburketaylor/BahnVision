@@ -114,9 +114,10 @@ class GtfsRealtimeService:
 
         if state["state"] == "OPEN":
             # Check if we should try half-open
+            last_failure = state["last_failure"]
             if (
-                state["last_failure"]
-                and (datetime.now(timezone.utc) - state["last_failure"]).seconds
+                isinstance(last_failure, datetime)
+                and (datetime.now(timezone.utc) - last_failure).seconds
                 > self.settings.gtfs_rt_circuit_breaker_recovery_seconds
             ):
                 state["state"] = "HALF_OPEN"
@@ -295,7 +296,7 @@ class GtfsRealtimeService:
             feed = FeedMessage()
             feed.ParseFromString(response.content)
 
-            alerts = []
+            alerts: list[ServiceAlert] = []
             for entity in feed.entity:
                 if not entity.HasField("alert"):
                     continue
@@ -357,7 +358,7 @@ class GtfsRealtimeService:
             return
 
         # Track trip IDs by stop for the secondary index
-        stop_to_trips = {}
+        stop_to_trips: dict[str, set[str]] = {}
 
         # Store by trip_id for quick lookup
         for tu in trip_updates:
@@ -410,7 +411,7 @@ class GtfsRealtimeService:
             return
 
         # Track alerts by route for the secondary index
-        route_to_alerts = {}
+        route_to_alerts: dict[str, set[str]] = {}
 
         # Store by alert_id
         for alert in alerts:
