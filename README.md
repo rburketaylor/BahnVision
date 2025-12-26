@@ -15,7 +15,7 @@ docker compose up --build
 
 **Quick Setup (Recommended):**
 ```bash
-./scripts/setup-dev.sh   # Downloads Node.js LTS, sets up Python venv
+./scripts/setup-dev.sh   # Downloads Node.js (pinned in `.nvmrc`), sets up Python venv
 source .dev-env          # Activate the environment
 ```
 

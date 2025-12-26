@@ -9,7 +9,7 @@ This guide covers setting up BahnVision for local development.
 - [Docker Compose](https://docs.docker.com/compose/install/) (v2.0+)
 - [Git](https://git-scm.com/)
 - [Python](https://www.python.org/) (v3.11+) for backend development
-- [Node.js](https://nodejs.org/) (v20+) for frontend development
+- [Node.js](https://nodejs.org/) (v24+, pinned in `.nvmrc`) for frontend development
 
 ## Quick Start
 
@@ -36,7 +36,7 @@ For active development with hot reload:
 
 ```bash
 # Quick setup (recommended)
-./scripts/setup-dev.sh   # Downloads Node.js LTS, sets up Python venv, installs all deps
+./scripts/setup-dev.sh   # Downloads Node.js (pinned in `.nvmrc`), sets up Python venv, installs all deps
 source .dev-env          # Activate the environment
 
 # Start backend
