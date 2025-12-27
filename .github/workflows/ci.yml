@@ -60,7 +60,7 @@ jobs:
 
       - name: Run MyPy type check
         run: |
-          pip install mypy pydantic fastapi types-valkey
+          pip install mypy pydantic fastapi
           mypy backend/app --ignore-missing-imports --no-error-summary
 
   # =============================================================================

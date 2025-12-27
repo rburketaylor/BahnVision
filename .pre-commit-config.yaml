@@ -41,6 +41,13 @@ repos:
   # === TypeScript/React (Frontend) ===
   - repo: local
     hooks:
+      - id: frontend-prettier
+        name: frontend prettier
+        entry: bash -c 'cd frontend && npx prettier --check .'
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
       - id: eslint
         name: eslint
         entry: bash -c 'cd frontend && npm run lint'
@@ -53,4 +60,12 @@ repos:
         entry: bash -c 'cd frontend && npm run type-check'
         language: system
         files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: test-quality
+        name: test quality check
+        entry: python scripts/check_test_quality.py
+        language: system
+        files: (backend/tests|frontend/src)/.*\.(py|test\.tsx?)$
+        args: [backend/tests, frontend/src]
         pass_filenames: false
