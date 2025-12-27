@@ -69,3 +69,22 @@ repos:
         files: (backend/tests|frontend/src)/.*\.(py|test\.tsx?)$
         args: [backend/tests, frontend/src]
         pass_filenames: false
+
+  # === Tests ===
+  - repo: local
+    hooks:
+      - id: backend-tests
+        name: backend tests (pytest)
+        entry: bash -c 'source backend/.venv/bin/activate && pytest backend/tests -q --tb=short -x'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: frontend-tests
+        name: frontend tests (vitest)
+        entry: bash -c 'cd frontend && npm run test -- --run'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+        stages: [pre-commit]

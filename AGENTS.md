@@ -48,7 +48,7 @@
 ## Commit & Pull Request Guidelines
 
 - **Before committing, ensure docker compose is up-to-date**: Run `docker compose up --build -d` to rebuild and start all services with the latest code. Some backend tests require Valkey and other services to be running.
-- **Run the full test suite before committing**: Execute `source backend/.venv/bin/activate && pytest backend/tests` for backend and `cd frontend && npm run test -- --run` for frontend (Vitest single-run; do not use watch mode). Fix any failures before proceeding with commits.
+- **Pre-commit hooks run tests automatically**: When you commit changes to backend Python files, pytest runs automatically. When you commit frontend TypeScript/TSX files, vitest runs automatically. This catches test failures before they reach CI. If you need to run tests manually beforehand: `source backend/.venv/bin/activate && pytest backend/tests` for backend, `cd frontend && npm run test -- --run` for frontend.
 - **Always activate the backend virtualenv before committing**: Run `source backend/.venv/bin/activate` before any `git commit` to ensure pre-commit hooks have access to the required tools (black, ruff).
 - **Never skip pre-commit hooks**: Do not use `--no-verify` or similar flags. Pre-commit hooks must run on every commit, even if they report "Skipped" for files not matching their patterns.
 - Follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, etc.); keep subjects concise.
