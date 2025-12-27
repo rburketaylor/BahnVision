@@ -45,6 +45,10 @@ def check_test_file(filepath: Path) -> list[str]:
             if not node.name.startswith("test_"):
                 continue
             
+            # Skip fixtures decorated with @pytest.fixture
+            if _is_fixture(node):
+                continue
+            
             has_assert = _function_has_assertions(node)
             
             if not has_assert:
@@ -53,6 +57,25 @@ def check_test_file(filepath: Path) -> list[str]:
                 )
     
     return issues
+
+
+def _is_fixture(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Check if a function is decorated with @pytest.fixture."""
+    for decorator in func_node.decorator_list:
+        # Simple @pytest.fixture
+        if isinstance(decorator, ast.Attribute):
+            if decorator.attr == "fixture":
+                return True
+        # @pytest.fixture() with parentheses
+        if isinstance(decorator, ast.Call):
+            if isinstance(decorator.func, ast.Attribute):
+                if decorator.func.attr == "fixture":
+                    return True
+        # Just @fixture (imported directly)
+        if isinstance(decorator, ast.Name):
+            if decorator.id == "fixture":
+                return True
+    return False
 
 
 def _function_has_assertions(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -72,10 +95,14 @@ def _function_has_assertions(func_node: ast.FunctionDef | ast.AsyncFunctionDef) 
         "assertRegex", "assertNotRegex", "assertCountEqual",
         # pytest.raises context manager
         "raises",
-        # unittest.mock assertions
+        # unittest.mock assertions (sync)
         "assert_called", "assert_called_once", "assert_called_with",
         "assert_called_once_with", "assert_any_call", "assert_has_calls",
         "assert_not_called",
+        # unittest.mock assertions (async)
+        "assert_awaited", "assert_awaited_once", "assert_awaited_with",
+        "assert_awaited_once_with", "assert_any_await", "assert_has_awaits",
+        "assert_not_awaited",
     }
     
     for child in ast.walk(func_node):
