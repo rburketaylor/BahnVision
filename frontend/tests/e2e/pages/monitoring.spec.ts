@@ -6,6 +6,26 @@
 import { test, expect } from '@playwright/test'
 import { setupHealthMocks } from '../fixtures/mocks'
 
+// Shared mock data constants - used in both mock setup and assertions
+const MOCK_GTFS_FEED = {
+  feed_id: 'test-feed-123',
+  feed_url: 'https://example.com/gtfs.zip',
+  downloaded_at: '2025-01-01T00:00:00Z',
+  feed_start_date: '2025-01-01',
+  feed_end_date: '2025-12-31',
+  stop_count: 5000,
+  route_count: 200,
+  trip_count: 25000,
+  is_expired: false,
+}
+
+const MOCK_GTFS_RT_HARVESTER = {
+  is_running: true,
+  last_harvest_at: '2025-01-01T12:00:00Z',
+  stations_updated_last_harvest: 150,
+  total_stats_records: 50000,
+}
+
 test.describe('Monitoring Page', () => {
   test.beforeEach(async ({ page }) => {
     await setupHealthMocks(page)
@@ -25,29 +45,14 @@ bahnvision_transit_requests_total{method="GET"} 1000
       })
     })
 
-    // Mock ingestion status endpoint
+    // Mock ingestion status endpoint using shared constants
     await page.route('**/api/v1/system/ingestion-status**', async route => {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          gtfs_feed: {
-            feed_id: 'test-feed-123',
-            feed_url: 'https://example.com/gtfs.zip',
-            downloaded_at: '2025-01-01T00:00:00Z',
-            feed_start_date: '2025-01-01',
-            feed_end_date: '2025-12-31',
-            stop_count: 5000,
-            route_count: 200,
-            trip_count: 25000,
-            is_expired: false,
-          },
-          gtfs_rt_harvester: {
-            is_running: true,
-            last_harvest_at: '2025-01-01T12:00:00Z',
-            stations_updated_last_harvest: 150,
-            total_stats_records: 50000,
-          },
+          gtfs_feed: MOCK_GTFS_FEED,
+          gtfs_rt_harvester: MOCK_GTFS_RT_HARVESTER,
         }),
       })
     })
@@ -89,9 +94,14 @@ bahnvision_transit_requests_total{method="GET"} 1000
 
     await page.getByRole('button', { name: /Ingestion/ }).click()
 
-    await expect(page.getByText('5,000')).toBeVisible() // stop_count
-    await expect(page.getByText('200')).toBeVisible() // route_count
-    await expect(page.getByText('25,000')).toBeVisible() // trip_count
+    // Verify counts are displayed using the same constants as the mock
+    const stopCount = MOCK_GTFS_FEED.stop_count.toLocaleString()
+    const routeCount = MOCK_GTFS_FEED.route_count.toLocaleString()
+    const tripCount = MOCK_GTFS_FEED.trip_count.toLocaleString()
+
+    await expect(page.getByText(stopCount, { exact: true })).toBeVisible()
+    await expect(page.getByText(routeCount, { exact: true })).toBeVisible()
+    await expect(page.getByText(tripCount, { exact: true })).toBeVisible()
   })
 
   test('switches to Performance tab', async ({ page }) => {
