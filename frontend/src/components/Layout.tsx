@@ -13,7 +13,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Map' },
     { path: '/search', label: 'Stations' },
-    { path: '/insights', label: 'Insights' },
+    { path: '/monitoring', label: 'Monitoring' },
   ]
 
   // Full-bleed mode for heatmap pages (no padding)

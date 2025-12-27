@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "stryker": "stryker run",
     "type-check": "tsc -b --noEmit"
   },
   "dependencies": {
@@ -38,6 +39,9 @@
     "@vitejs/plugin-react": "^5.1.2",
     "@vitest/coverage-v8": "4.0.16",
     "@vitest/ui": "4.0.16",
+    "@stryker-mutator/core": "^8.7.1",
+    "@stryker-mutator/vitest-runner": "^8.7.1",
+    "@stryker-mutator/typescript-checker": "^8.7.1",
     "autoprefixer": "10.4.23",
     "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^7.0.1",

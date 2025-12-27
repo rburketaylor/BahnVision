@@ -106,6 +106,9 @@ class GTFSRTDataHarvester:
         )
         self._running = False
         self._task: asyncio.Task | None = None
+        # Status tracking for monitoring
+        self._last_harvest_at: datetime | None = None
+        self._last_stations_updated: int = 0
 
     async def start(self) -> None:
         """Start the harvesting background loop."""
@@ -130,6 +133,18 @@ class GTFSRTDataHarvester:
                 pass
             self._task = None
         logger.info("GTFS-RT harvester stopped")
+
+    def get_status(self) -> dict:
+        """Get current harvester status for monitoring.
+
+        Returns:
+            Dict with running status and last harvest info.
+        """
+        return {
+            "is_running": self._running,
+            "last_harvest_at": self._last_harvest_at,
+            "stations_updated_last_harvest": self._last_stations_updated,
+        }
 
     async def _run_polling_loop(self) -> None:
         """Main polling loop that runs until stopped."""
@@ -188,6 +203,10 @@ class GTFSRTDataHarvester:
                 await self._upsert_stats(session, bucket_start, stop_stats)
                 await session.commit()
                 updated_count = len(stop_stats)
+
+            # Update status tracking
+            self._last_harvest_at = datetime.now(timezone.utc)
+            self._last_stations_updated = updated_count
 
             logger.info(
                 "Harvested and aggregated stats for %d station-route combinations",

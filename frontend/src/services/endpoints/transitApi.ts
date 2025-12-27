@@ -17,6 +17,7 @@ import type {
   StationTrends,
   StationTrendsParams,
 } from '../../types/gtfs'
+import type { IngestionStatus } from '../../types/ingestion'
 import { ApiError, type ApiResponse } from '../apiTypes'
 import { httpClient } from '../httpClient'
 
@@ -162,6 +163,15 @@ class TransitApiClient {
     }
 
     return response.text()
+  }
+
+  /**
+   * Get ingestion status (GTFS feed and RT harvester)
+   */
+  async getIngestionStatus(): Promise<ApiResponse<IngestionStatus>> {
+    return httpClient.request<IngestionStatus>('/api/v1/system/ingestion-status', {
+      timeout: 5000,
+    })
   }
 }
 

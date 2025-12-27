@@ -61,6 +61,7 @@ python -m alembic upgrade head
 ### Local Testing
 
 #### Smoke Test (No Data)
+
 Tests basic upgrade/downgrade cycles:
 
 ```bash
@@ -70,6 +71,7 @@ DATABASE_URL="postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvisi
 ```
 
 #### Full Test (With Data)
+
 Tests migrations with actual fixtures to verify schema changes work:
 
 ```bash
@@ -79,6 +81,7 @@ DATABASE_URL="postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvisi
 ```
 
 #### Reset Database
+
 Clean the database for fresh testing:
 
 ```bash
@@ -90,11 +93,13 @@ PYTHONPATH=. python scripts/reset_database.py
 ### CI Testing
 
 Migrations are automatically tested in GitHub Actions on:
+
 - Push to `main` or `develop` branches
 - Pull requests to `main` or `develop`
 - Changes to `backend/alembic/**` or `backend/app/persistence/models.py`
 
 The CI workflow:
+
 1. Runs migration smoke tests (upgrade/downgrade cycles)
 2. Runs migrations with test data
 3. Runs full pytest suite with migrations applied

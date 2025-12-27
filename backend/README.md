@@ -5,6 +5,7 @@ FastAPI service that serves German transit departures, station search, heatmap d
 ## Quick Start
 
 - Docker Compose (recommended):
+
   - `docker compose up --build`
   - API docs: http://127.0.0.1:8000/docs
   - Metrics: http://127.0.0.1:8000/metrics
@@ -33,6 +34,7 @@ Legacy `REDIS_*` variables are accepted for backward compatibility. See `docs/ru
 - `GET /metrics` — Prometheus metrics
 
 Example:
+
 ```bash
 curl "http://127.0.0.1:8000/api/v1/transit/departures?station=de:09162:6&transport_type=UBAHN"
 ```
@@ -55,7 +57,7 @@ Async SQLAlchemy engine and repositories live under `backend/app/persistence/`. 
 
 - Docs hub: `backend/docs/README.md`
 - Technical spec: `docs/tech-spec.md`
- - Roadmap & branch plan: `backend/docs/roadmap/persistence-branch-plan.md`
+- Roadmap & branch plan: `backend/docs/roadmap/persistence-branch-plan.md`
 
 ## Contributing
 

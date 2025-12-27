@@ -5,19 +5,20 @@
 ## 1. Product Overview
 
 BahnVision delivers live and near-real-time German public transit insights. A FastAPI backend aggregates GTFS data, applies cache-first logic for predictable latency, and stores canonical transit data in PostgreSQL. A React + TypeScript frontend renders departures, station search, and heatmap visualization with responsive UX optimized for desktop and kiosk displays. The system emphasizes:
+
 - **Predictable latency:** Cache-first reads with single-flight locks, stale fallbacks, and Valkey circuit breakers.
 - **Operational visibility:** Prometheus-native cache/transit metrics; structured JSON logging and API-level metrics are planned.
 - **Historical readiness (planned):** Async SQLAlchemy models exist for departures, weather, and ingestion metadata, but only the station catalog is persisted today; broader analytics storage is planned.
 
 ## 2. Goals & Non-Goals
 
-| Goals | Non-Goals |
-| --- | --- |
-| Serve departures, station search, routing, health, and metrics via versioned REST APIs. | Authentication/authorization, account management, or paid tiers. |
-| Maintain >70% cache hit ratio and <750 ms P95 latency via Valkey caching strategies. | Supporting other countries beyond Germany in MS1. |
-| Provide a frontend that mirrors backend capabilities with resilient API integration and optimistic UI for slow paths. | Complex UX experiments, brand-new design systems, or offline PWAs. |
-| Persist canonical transit and weather data so forecasting work can start without schema churn (planned; stations only today). | ML forecasting pipelines (Phase 2). |
-| Export Prometheus metrics and structured logs suitable for automation and alerting. | Proprietary APM integrations beyond Prometheus/Grafana. |
+| Goals                                                                                                                         | Non-Goals                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Serve departures, station search, routing, health, and metrics via versioned REST APIs.                                       | Authentication/authorization, account management, or paid tiers.   |
+| Maintain >70% cache hit ratio and <750 ms P95 latency via Valkey caching strategies.                                          | Supporting other countries beyond Germany in MS1.                  |
+| Provide a frontend that mirrors backend capabilities with resilient API integration and optimistic UI for slow paths.         | Complex UX experiments, brand-new design systems, or offline PWAs. |
+| Persist canonical transit and weather data so forecasting work can start without schema churn (planned; stations only today). | ML forecasting pipelines (Phase 2).                                |
+| Export Prometheus metrics and structured logs suitable for automation and alerting.                                           | Proprietary APM integrations beyond Prometheus/Grafana.            |
 
 ## 3. Personas & Key User Flows
 
@@ -27,6 +28,7 @@ BahnVision delivers live and near-real-time German public transit insights. A Fa
 - **SRE/on-call:** Monitors cache efficiency, transit request health, and circuit-breaker events to keep SLAs intact.
 
 Primary flows:
+
 1. Station search → select station → view departures (with filters for transport type, limit, offset).
 2. Heatmap visualization of cancellation rates and transit activity.
 3. Health/metrics monitoring via `/api/v1/health` and `/metrics`.
@@ -36,14 +38,14 @@ Primary flows:
 
 ### Backend APIs (FastAPI, `/api/v1`)
 
-| Endpoint | Description | Cache TTL / Strategy |
-| --- | --- | --- |
-| `GET /transit/stations/search` | Autocomplete stations by free-text query. | Configurable TTL (`TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
-| `GET /transit/stations/list` | Get all GTFS stops. | Heavily cached with long TTL (`TRANSIT_STATION_LIST_CACHE_TTL_SECONDS`) and stale fallback. |
-| `GET /transit/departures` | Live departures for a station with optional transport filter, limit, and offset. | TTL (`TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store. |
-| `GET /transit/heatmap/data` | Heatmap activity data for visualization. | TTL-based caching with stale fallback. |
-| `GET /health` | Readiness and dependency probes (Valkey, Postgres). | Non-cached; returns `503` when critical dependencies down. |
-| `GET /metrics` | Prometheus metrics exported via `app.api.metrics`. | N/A |
+| Endpoint                       | Description                                                                      | Cache TTL / Strategy                                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /transit/stations/search` | Autocomplete stations by free-text query.                                        | Configurable TTL (`TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
+| `GET /transit/stations/list`   | Get all GTFS stops.                                                              | Heavily cached with long TTL (`TRANSIT_STATION_LIST_CACHE_TTL_SECONDS`) and stale fallback.                                    |
+| `GET /transit/departures`      | Live departures for a station with optional transport filter, limit, and offset. | TTL (`TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store.                           |
+| `GET /transit/heatmap/data`    | Heatmap activity data for visualization.                                         | TTL-based caching with stale fallback.                                                                                         |
+| `GET /health`                  | Readiness and dependency probes (Valkey, Postgres).                              | Non-cached; returns `503` when critical dependencies down.                                                                     |
+| `GET /metrics`                 | Prometheus metrics exported via `app.api.metrics`.                               | N/A                                                                                                                            |
 
 ### Frontend Surface (React 19 + Vite)
 
@@ -77,6 +79,7 @@ FastAPI app.main
 ```
 
 **Key components**
+
 - `app.main` bootstraps FastAPI with lifespan hooks to initialize Valkey, SQLAlchemy engine, and metrics.
 - `services.cache.CacheService` abstracts cache access, stale reads, and fallback store.
 - `services.gtfs_schedule.GTFSScheduleService` provides GTFS data access and departure queries.
@@ -103,14 +106,14 @@ FastAPI app.main
 
 ## 9. Data & Schema Highlights
 
-| Table | Purpose | Notes |
-| --- | --- | --- |
-| `gtfs_stops` | GTFS stop metadata for Germany. | PK is GTFS stop_id; spatial index for geo queries. |
-| `gtfs_routes` | Static route metadata (mode, operator, branding). | Avoids duplication in departures. |
-| `gtfs_stop_times` | Scheduled stop times for trips. | Links trips to stops with arrival/departure times. |
-| `gtfs_rt_observations` | Real-time GTFS-RT observations. | Stores delays, cancellations, vehicle positions. |
-| `weather_observations` | Weather context per station/time bucket. | Supports `weather_condition` enum for analytics. |
-| `gtfs_feed_status` | Tracks GTFS feed updates. | Records last update, next check, feed health. |
+| Table                  | Purpose                                           | Notes                                              |
+| ---------------------- | ------------------------------------------------- | -------------------------------------------------- |
+| `gtfs_stops`           | GTFS stop metadata for Germany.                   | PK is GTFS stop_id; spatial index for geo queries. |
+| `gtfs_routes`          | Static route metadata (mode, operator, branding). | Avoids duplication in departures.                  |
+| `gtfs_stop_times`      | Scheduled stop times for trips.                   | Links trips to stops with arrival/departure times. |
+| `gtfs_rt_observations` | Real-time GTFS-RT observations.                   | Stores delays, cancellations, vehicle positions.   |
+| `weather_observations` | Weather context per station/time bucket.          | Supports `weather_condition` enum for analytics.   |
+| `gtfs_feed_status`     | Tracks GTFS feed updates.                         | Records last update, next check, feed health.      |
 
 Valkey stores serialized Pydantic responses (JSON) using TTL + stale TTL pairs for each endpoint.
 
@@ -127,6 +130,7 @@ Valkey stores serialized Pydantic responses (JSON) using TTL + stale TTL pairs f
 
 **Metrics (Prometheus)**
 Exposed at `/metrics` via `app.api.metrics`.
+
 - **Cache Performance:**
   - `bahnvision_cache_events_total{cache,event}`: Counters for `hit`, `miss`, `stale_return`, `refresh_success`, `refresh_error`.
   - `bahnvision_cache_refresh_seconds{cache}`: Histogram of background refresh duration.
@@ -150,18 +154,21 @@ Default FastAPI/Uvicorn logging is used. Request IDs are injected and propagated
 ### 11.3 Common Dashboards & PromQL
 
 **Cache Hit Ratio (5m window)**
+
 ```promql
-sum(rate(bahnvision_cache_events_total{event="hit"}[5m])) 
-/ 
+sum(rate(bahnvision_cache_events_total{event="hit"}[5m]))
+/
 sum(rate(bahnvision_cache_events_total[5m]))
 ```
 
 **Transit P95 Latency**
+
 ```promql
 histogram_quantile(0.95, sum(rate(bahnvision_transit_request_seconds_bucket[5m])) by (le, endpoint))
 ```
 
 **API Error Rate (planned metric)**
+
 ```promql
 sum(rate(bahnvision_api_exceptions_total[5m])) by (route)
 ```
@@ -171,6 +178,7 @@ sum(rate(bahnvision_api_exceptions_total[5m])) by (route)
 Structured JSON logging is planned; current logs follow FastAPI/Uvicorn defaults. Example formats:
 
 **Successful Cache Hit (planned format)**
+
 ```json
 {
   "level": "info",
@@ -185,6 +193,7 @@ Structured JSON logging is planned; current logs follow FastAPI/Uvicorn defaults
 ```
 
 **Upstream Failure with Stale Fallback (planned format)**
+
 ```json
 {
   "level": "warning",
@@ -199,6 +208,7 @@ Structured JSON logging is planned; current logs follow FastAPI/Uvicorn defaults
 ```
 
 **Circuit Breaker Open (planned format)**
+
 ```json
 {
   "level": "error",
@@ -226,27 +236,27 @@ Structured JSON logging is planned; current logs follow FastAPI/Uvicorn defaults
 
 ## 13. Security & Compliance
 
-- Secrets/config stored in env vars; never commit credentials.  
-- Backend enforces FastAPI validation to prevent injection; SQLAlchemy uses bound parameters.  
-- Rate limiting uses circuit breaker patterns; consider API gateway quotas if public exposure increases.  
-- CORS defaults to frontend origin; configure `VITE_API_BASE_URL` accordingly.  
+- Secrets/config stored in env vars; never commit credentials.
+- Backend enforces FastAPI validation to prevent injection; SQLAlchemy uses bound parameters.
+- Rate limiting uses circuit breaker patterns; consider API gateway quotas if public exposure increases.
+- CORS defaults to frontend origin; configure `VITE_API_BASE_URL` accordingly.
 - Future work: integrate request signing or API keys once third-party consumers onboard.
 
 ## 14. Risks & Open Questions
 
-| Area | Risk / Question | Mitigation |
-| --- | --- | --- |
-| GTFS feed availability | Prolonged outages could exhaust stale cache. | Increase stale TTL, precompute fallback departures, monitor feed health. |
-| PostgreSQL growth | Historical departures + weather may balloon storage. | Partition tables by day/week, implement TTL archival job once Phase 2 begins. |
-| Frontend data drift | Backend schema changes may break frontend query typings. | Maintain shared OpenAPI schema + automated client generation or contract tests. |
-| Warmup sequencing | Cache-warmup failure could leave API cold. | Fail fast in Compose/K8s if warmup exits non-zero; provide manual rerun docs. |
-| Structured logging | Pending decision on log format & sink. | Align with platform logging stack (e.g., Loki) before GA. |
+| Area                   | Risk / Question                                          | Mitigation                                                                      |
+| ---------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| GTFS feed availability | Prolonged outages could exhaust stale cache.             | Increase stale TTL, precompute fallback departures, monitor feed health.        |
+| PostgreSQL growth      | Historical departures + weather may balloon storage.     | Partition tables by day/week, implement TTL archival job once Phase 2 begins.   |
+| Frontend data drift    | Backend schema changes may break frontend query typings. | Maintain shared OpenAPI schema + automated client generation or contract tests. |
+| Warmup sequencing      | Cache-warmup failure could leave API cold.               | Fail fast in Compose/K8s if warmup exits non-zero; provide manual rerun docs.   |
+| Structured logging     | Pending decision on log format & sink.                   | Align with platform logging stack (e.g., Loki) before GA.                       |
 
 ## 15. Change Log
 
-| Date | Revision | Notes |
-| --- | --- | --- |
-| 2024-XX-XX | v0.1 | Initial consolidated tech spec drafted for collaborative edits. |
+| Date       | Revision | Notes                                                           |
+| ---------- | -------- | --------------------------------------------------------------- |
+| 2024-XX-XX | v0.1     | Initial consolidated tech spec drafted for collaborative edits. |
 
 ---
 

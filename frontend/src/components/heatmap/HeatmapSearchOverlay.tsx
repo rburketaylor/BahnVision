@@ -104,7 +104,7 @@ export function HeatmapSearchOverlay({
       ref={searchRef}
       className="absolute top-4 right-4 z-[1200] w-[min(22rem,calc(100vw-2rem))]"
     >
-      <div className="bg-card/95 border border-border shadow-xl backdrop-blur rounded-xl overflow-hidden">
+      <div className="bg-card/95 border border-border shadow-xl backdrop-blur rounded-xl overflow-visible">
         <div className="px-4 pt-3 pb-2 border-b border-border/60">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">

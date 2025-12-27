@@ -224,7 +224,8 @@ html:not(.dark) .maplibregl-popup-anchor-right .maplibregl-popup-tip {
 
 .bv-map-popup__title {
   margin: 0 0 8px;
-  padding-right: 44px; /* reserve space for the close button without shifting all content */
+  padding-right: 44px;
+  /* reserve space for the close button without shifting all content */
   font-weight: 600;
   font-size: 14px;
   word-break: break-word;
@@ -410,6 +411,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -421,6 +423,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
     opacity: 0;
     transform: translateX(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -432,6 +435,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -443,6 +447,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }
@@ -452,6 +457,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -462,6 +468,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -473,24 +480,9 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
   100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-5px);
-  }
-}
-
-/* Heatmap hotspot pulse (used by MapLibre DOM overlay markers) */
-@keyframes heatmapHotspotPulse {
-  0% {
-    transform: translateZ(0) scale(0.92);
-    opacity: 0.55;
-  }
-  50% {
-    transform: translateZ(0) scale(1.06);
-    opacity: 0.95;
-  }
-  100% {
-    transform: translateZ(0) scale(0.92);
-    opacity: 0.55;
   }
 }
 
@@ -531,18 +523,23 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
 .stagger-animation > *:nth-child(1) {
   animation-delay: 0ms;
 }
+
 .stagger-animation > *:nth-child(2) {
   animation-delay: 50ms;
 }
+
 .stagger-animation > *:nth-child(3) {
   animation-delay: 100ms;
 }
+
 .stagger-animation > *:nth-child(4) {
   animation-delay: 150ms;
 }
+
 .stagger-animation > *:nth-child(5) {
   animation-delay: 200ms;
 }
+
 .stagger-animation > *:nth-child(6) {
   animation-delay: 250ms;
 }
@@ -572,52 +569,6 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
   transform: scale(1.05);
 }
 
-/* MapLibre heatmap hotspot overlay markers */
-.heatmap-hotspot {
-  position: relative;
-  width: 52px;
-  height: 52px;
-  border-radius: 9999px;
-  pointer-events: none;
-  animation: heatmapHotspotPulse 2.4s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-
-.heatmap-hotspot::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    circle,
-    rgba(var(--hotspot-rgb), 0.35) 0%,
-    rgba(var(--hotspot-rgb), 0.12) 40%,
-    rgba(var(--hotspot-rgb), 0) 70%
-  );
-  box-shadow:
-    0 0 18px rgba(var(--hotspot-rgb), 0.35),
-    0 0 44px rgba(var(--hotspot-rgb), 0.22);
-}
-
-.heatmap-hotspot::after {
-  content: '';
-  position: absolute;
-  inset: 18px;
-  border-radius: inherit;
-  border: 2px solid rgba(var(--hotspot-rgb), 0.65);
-  box-shadow: 0 0 12px rgba(var(--hotspot-rgb), 0.35);
-}
-
-.heatmap-hotspot--warm {
-  --hotspot-rgb: 255, 98, 0;
-  mix-blend-mode: screen;
-}
-
-.heatmap-hotspot--cool {
-  --hotspot-rgb: 59, 130, 246;
-  mix-blend-mode: multiply;
-}
-
 .btn-hover-scale:active {
   transform: scale(0.98);
 }
@@ -633,6 +584,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -651,6 +603,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
@@ -662,6 +615,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb {
     transform: translateX(0);
     opacity: 1;
   }
+
   to {
     transform: translateX(100%);
     opacity: 0;

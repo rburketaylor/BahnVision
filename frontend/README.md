@@ -5,6 +5,7 @@ React + TypeScript frontend for the BahnVision German transit live data dashboar
 ## Quick Start
 
 ### Docker Compose (full stack)
+
 - From repository root: `docker compose up --build`
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000

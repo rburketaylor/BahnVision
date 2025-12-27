@@ -250,39 +250,8 @@ describe('MapLibreHeatmap Component', () => {
     expect(map.addLayer).toHaveBeenCalled()
   })
 
-  it('creates hotspot markers for high-intensity clusters', async () => {
-    render(
-      <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
-      </ThemeProvider>
-    )
-
-    await waitFor(() =>
-      expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
-    )
-    const map = getMockMapInstance()
-    map._emit('load')
-    map._emit('style.load')
-
-    map.queryRenderedFeatures.mockImplementation((query: { layers?: string[] }) => {
-      if (query?.layers?.includes('clusters')) {
-        return [
-          {
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [10.4, 51.1] },
-            properties: { cluster_id: 1, point_count: 50, intensity_sum: 50 },
-          },
-        ]
-      }
-      return []
-    })
-
-    vi.useFakeTimers()
-    map._emit('zoomend')
-    vi.advanceTimersByTime(300)
-
-    expect((maplibregl as unknown as { Marker: { mock: unknown } }).Marker).toHaveBeenCalled()
-  })
+  // NOTE: The "creates hotspot markers for high-intensity clusters" test was removed
+  // because the pulsing hotspot marker feature was removed from the MapLibreHeatmap component
 
   it('opens a popup and sanitizes station name on point click, and clears selection on Escape', async () => {
     const onStationSelect = vi.fn()

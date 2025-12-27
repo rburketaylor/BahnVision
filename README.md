@@ -5,27 +5,32 @@ Real-time German transit data API and dashboard. Live departures, station search
 ## Quick Start
 
 ### Docker (Recommended)
+
 ```bash
 docker compose up --build
 ```
+
 - **API**: http://localhost:8000/docs
 - **Frontend**: http://localhost:3000
 
 ### Local Development
 
 **Quick Setup (Recommended):**
+
 ```bash
-./scripts/setup-dev.sh   # Downloads Node.js LTS, sets up Python venv
+./scripts/setup-dev.sh   # Downloads Node.js (pinned in `.nvmrc`), sets up Python venv
 source .dev-env          # Activate the environment
 ```
 
 **Backend:**
+
 ```bash
 cd backend
 uvicorn app.main:app --reload
 ```
 
 **Frontend:**
+
 ```bash
 cd frontend
 npm run dev
@@ -33,15 +38,16 @@ npm run dev
 
 ## API Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/v1/transit/stations/search?query=marienplatz` | Station search |
-| `GET /api/v1/transit/departures?station=marienplatz` | Live departures |
-| `GET /api/v1/transit/heatmap/data` | Heatmap activity data |
-| `GET /api/v1/health` | Health check |
-| `GET /metrics` | Prometheus metrics |
+| Endpoint                                                | Description           |
+| ------------------------------------------------------- | --------------------- |
+| `GET /api/v1/transit/stations/search?query=marienplatz` | Station search        |
+| `GET /api/v1/transit/departures?station=marienplatz`    | Live departures       |
+| `GET /api/v1/transit/heatmap/data`                      | Heatmap activity data |
+| `GET /api/v1/health`                                    | Health check          |
+| `GET /metrics`                                          | Prometheus metrics    |
 
 **Response Headers:**
+
 - `X-Cache-Status`: `hit`, `miss`, `stale`, or `stale-refresh`
 - `X-Request-Id`: Request correlation ID
 
@@ -49,11 +55,11 @@ npm run dev
 
 Copy `.env.example` to `.env`. Key variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VALKEY_URL` | `valkey://localhost:6379/0` | Cache connection |
-| `DATABASE_URL` | `postgresql+asyncpg://...` | Database connection |
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Frontend API URL |
+| Variable            | Default                     | Description         |
+| ------------------- | --------------------------- | ------------------- |
+| `VALKEY_URL`        | `valkey://localhost:6379/0` | Cache connection    |
+| `DATABASE_URL`      | `postgresql+asyncpg://...`  | Database connection |
+| `VITE_API_BASE_URL` | `http://localhost:8000`     | Frontend API URL    |
 
 See `docs/runtime-configuration.md` for all options.
 
