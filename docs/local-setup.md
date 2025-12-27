@@ -5,6 +5,7 @@ This guide covers setting up BahnVision for local development.
 ## Prerequisites
 
 ### Required Tools
+
 - [Docker](https://docs.docker.com/get-docker/) (v20.10+)
 - [Docker Compose](https://docs.docker.com/compose/install/) (v2.0+)
 - [Git](https://git-scm.com/)

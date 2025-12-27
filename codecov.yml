@@ -11,7 +11,7 @@ coverage:
     project:
       default:
         target: 70%
-        threshold: 2%  # Allow 2% variance
+        threshold: 2% # Allow 2% variance
         if_ci_failed: error
 
     # Coverage on new/changed code in PRs
@@ -21,7 +21,7 @@ coverage:
     patch:
       default:
         target: 70%
-        threshold: 5%  # More lenient for patches
+        threshold: 5% # More lenient for patches
         if_ci_failed: error
         only_pulls: true
         # Only evaluate patch coverage for actual application code.

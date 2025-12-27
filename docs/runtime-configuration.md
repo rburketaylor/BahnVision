@@ -3,6 +3,7 @@
 Centralized reference for environment variables and `.env` usage across the repository.
 
 ## File Locations
+
 - Backend `.env`: place at the repository root when running locally (matches `backend/app/core/config.py` which loads `.env` from the current working directory).
 - Frontend `.env`: place at `frontend/.env` (Vite reads variables prefixed with `VITE_`).
 - Docker Compose: variables are set inline in `docker-compose.yml`. Override via environment or edit the compose file.
@@ -42,6 +43,7 @@ Place variables in the root `.env` or export them in the shell. Defaults are sho
 - `DATABASE_ECHO` (False) — Verbose SQL logging.
 
 Notes
+
 - Legacy `REDIS_*` variables are still accepted as aliases for Valkey settings.
 - `.env` loading is handled by Pydantic Settings with `env_file=".env"`.
 
@@ -58,6 +60,7 @@ Place variables in `frontend/.env` (or use `frontend/.env.local` for local overr
 ## Examples
 
 Backend `.env` (repository root):
+
 ```
 VALKEY_URL=valkey://localhost:6379/0
 DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
@@ -68,6 +71,7 @@ CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
 Frontend `.env` (frontend/.env):
+
 ```
 VITE_API_BASE_URL=http://localhost:8000
 VITE_ENABLE_DEBUG_LOGS=false
