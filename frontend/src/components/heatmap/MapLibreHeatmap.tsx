@@ -308,8 +308,7 @@ export function MapLibreHeatmap({
   const geoJsonDataRef = useRef<GeoJSON.FeatureCollection | null>(null)
   const zoomDebounceTimerRef = useRef<number | null>(null)
   const saveViewTimerRef = useRef<number | null>(null)
-  const hotspotMarkersRef = useRef<Map<number, maplibregl.Marker>>(new Map())
-  const hotspotUpdateTimerRef = useRef<number | null>(null)
+
   const [isStyleTransitioning, setIsStyleTransitioning] = useState(false)
   const [mapKey, setMapKey] = useState(Date.now())
 
@@ -369,71 +368,6 @@ export function MapLibreHeatmap({
     }, 500)
   }, [])
 
-  const clearHotspotMarkers = useCallback(() => {
-    hotspotMarkersRef.current.forEach(marker => marker.remove())
-    hotspotMarkersRef.current.clear()
-  }, [])
-
-  const scheduleHotspotUpdate = useCallback(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    if (hotspotUpdateTimerRef.current) {
-      window.clearTimeout(hotspotUpdateTimerRef.current)
-    }
-
-    hotspotUpdateTimerRef.current = window.setTimeout(() => {
-      // Hotspot markers are a light DOM overlay for high-intensity clusters.
-      // Keep them capped to preserve scroll/zoom performance.
-      const theme = resolvedThemeRef.current
-      const isDark = theme === 'dark'
-
-      const clusterFeatures = map.queryRenderedFeatures({ layers: ['clusters'] })
-      const scored = clusterFeatures
-        .map(f => {
-          const clusterId = Number(f.properties?.cluster_id)
-          const pointCount = Number(f.properties?.point_count)
-          const intensitySum = Number(f.properties?.intensity_sum)
-          if (!Number.isFinite(clusterId) || !Number.isFinite(pointCount) || pointCount <= 0)
-            return null
-          const avgIntensity = Number.isFinite(intensitySum) ? intensitySum / pointCount : 0
-          return {
-            feature: f,
-            clusterId,
-            pointCount,
-            avgIntensity,
-            score: avgIntensity * Math.log10(pointCount + 1),
-          }
-        })
-        .filter((x): x is NonNullable<typeof x> => x !== null)
-        .filter(x => x.avgIntensity >= 0.75)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 25)
-
-      const nextIds = new Set(scored.map(s => s.clusterId))
-      // Remove stale markers
-      hotspotMarkersRef.current.forEach((marker, id) => {
-        if (!nextIds.has(id)) {
-          marker.remove()
-          hotspotMarkersRef.current.delete(id)
-        }
-      })
-
-      for (const s of scored) {
-        if (hotspotMarkersRef.current.has(s.clusterId)) continue
-        if (s.feature.geometry.type !== 'Point') continue
-
-        const el = document.createElement('div')
-        el.className = `heatmap-hotspot ${isDark ? 'heatmap-hotspot--warm' : 'heatmap-hotspot--cool'}`
-        const coords = s.feature.geometry.coordinates as [number, number]
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(coords)
-          .addTo(map)
-        hotspotMarkersRef.current.set(s.clusterId, marker)
-      }
-    }, 250)
-  }, [])
-
   // Initialize map - recreate when theme changes for reliable style switching
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -442,8 +376,6 @@ export function MapLibreHeatmap({
     if (mapRef.current) {
       if (zoomDebounceTimerRef.current) window.clearTimeout(zoomDebounceTimerRef.current)
       if (saveViewTimerRef.current) window.clearTimeout(saveViewTimerRef.current)
-      if (hotspotUpdateTimerRef.current) window.clearTimeout(hotspotUpdateTimerRef.current)
-      clearHotspotMarkers()
       popupRef.current?.remove()
       mapRef.current.remove()
       mapRef.current = null
@@ -565,22 +497,9 @@ export function MapLibreHeatmap({
         'rgba(139, 92, 246, 1.0)',
       ] as unknown as ExpressionSpecification
 
-      const clusterColor = (isDark ? clusterColorWarm : clusterColorCool) as ExpressionSpecification
+      const clusterColor = (isDark ? clusterColorCool : clusterColorWarm) as ExpressionSpecification
       const clusterGlowColor = (isDark
         ? [
-            'interpolate',
-            ['linear'],
-            avgIntensityExpr,
-            0,
-            'rgba(255, 168, 0, 0.18)',
-            0.5,
-            'rgba(255, 98, 0, 0.25)',
-            0.8,
-            'rgba(255, 20, 60, 0.30)',
-            1,
-            'rgba(190, 0, 60, 0.35)',
-          ]
-        : [
             'interpolate',
             ['linear'],
             avgIntensityExpr,
@@ -592,6 +511,19 @@ export function MapLibreHeatmap({
             'rgba(99, 102, 241, 0.28)',
             1,
             'rgba(139, 92, 246, 0.32)',
+          ]
+        : [
+            'interpolate',
+            ['linear'],
+            avgIntensityExpr,
+            0,
+            'rgba(255, 168, 0, 0.18)',
+            0.5,
+            'rgba(255, 98, 0, 0.25)',
+            0.8,
+            'rgba(255, 20, 60, 0.30)',
+            1,
+            'rgba(190, 0, 60, 0.35)',
           ]) as unknown as ExpressionSpecification
 
       // Cluster glow (beneath clusters)
@@ -674,7 +606,7 @@ export function MapLibreHeatmap({
         'rgba(139, 92, 246, 1.0)',
       ] as unknown as ExpressionSpecification
 
-      const pointColor = (isDark ? pointColorWarm : pointColorCool) as ExpressionSpecification
+      const pointColor = (isDark ? pointColorCool : pointColorWarm) as ExpressionSpecification
 
       // Unclustered glow (beneath points)
       if (!map.getLayer('unclustered-glow')) {
@@ -721,26 +653,22 @@ export function MapLibreHeatmap({
     map.on('style.load', () => {
       ensureLayers()
       setIsStyleTransitioning(false)
-      scheduleHotspotUpdate()
     })
 
     map.on('load', () => {
       ensureLayers()
       scheduleZoomCallback()
-      scheduleHotspotUpdate()
     })
 
     // Handle zoom changes (debounced to avoid thrashing API calls)
     map.on('zoomend', () => {
       scheduleZoomCallback()
-      scheduleHotspotUpdate()
       scheduleViewSave()
     })
 
     // Persist view position
     map.on('moveend', () => {
       scheduleViewSave()
-      scheduleHotspotUpdate()
     })
 
     // Click on cluster to zoom in
@@ -895,20 +823,12 @@ export function MapLibreHeatmap({
       window.removeEventListener('keydown', handleKeyDown)
       if (zoomDebounceTimerRef.current) window.clearTimeout(zoomDebounceTimerRef.current)
       if (saveViewTimerRef.current) window.clearTimeout(saveViewTimerRef.current)
-      if (hotspotUpdateTimerRef.current) window.clearTimeout(hotspotUpdateTimerRef.current)
-      clearHotspotMarkers()
       popupRef.current?.remove()
       map.remove()
       mapRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- geoJsonData accessed via ref; resolvedTheme triggers map recreation
-  }, [
-    clearHotspotMarkers,
-    resolvedTheme,
-    scheduleHotspotUpdate,
-    scheduleViewSave,
-    scheduleZoomCallback,
-  ])
+  }, [resolvedTheme, scheduleViewSave, scheduleZoomCallback])
 
   const resetView = useCallback(() => {
     const map = mapRef.current
