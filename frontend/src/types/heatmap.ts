@@ -15,6 +15,17 @@ export interface TransportStats {
 /** Heatmap metric types */
 export type HeatmapMetric = 'cancellations' | 'delays'
 
+/** Enabled metrics state - tracks which metrics are visible on the heatmap */
+export interface HeatmapEnabledMetrics {
+  cancellations: boolean
+  delays: boolean
+}
+
+export const DEFAULT_ENABLED_METRICS: HeatmapEnabledMetrics = {
+  cancellations: true,
+  delays: true,
+}
+
 export const HEATMAP_METRIC_LABELS: Record<HeatmapMetric, string> = {
   cancellations: 'Cancellations',
   delays: 'Delays',

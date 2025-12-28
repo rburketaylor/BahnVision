@@ -4,7 +4,7 @@
  */
 
 import type { TransportType } from '../../types/api'
-import type { TimeRangePreset, HeatmapMetric } from '../../types/heatmap'
+import type { TimeRangePreset, HeatmapEnabledMetrics } from '../../types/heatmap'
 import { TIME_RANGE_LABELS, HEATMAP_METRIC_LABELS } from '../../types/heatmap'
 
 interface HeatmapControlsProps {
@@ -12,8 +12,8 @@ interface HeatmapControlsProps {
   onTimeRangeChange: (range: TimeRangePreset) => void
   selectedTransportModes: TransportType[]
   onTransportModesChange: (modes: TransportType[]) => void
-  metric: HeatmapMetric
-  onMetricChange: (metric: HeatmapMetric) => void
+  enabledMetrics: HeatmapEnabledMetrics
+  onEnabledMetricsChange: (metrics: HeatmapEnabledMetrics) => void
   isLoading?: boolean
 }
 
@@ -32,8 +32,8 @@ export function HeatmapControls({
   onTimeRangeChange,
   selectedTransportModes,
   onTransportModesChange,
-  metric,
-  onMetricChange,
+  enabledMetrics,
+  onEnabledMetricsChange,
   isLoading = false,
 }: HeatmapControlsProps) {
   const toggleTransportMode = (mode: TransportType) => {
@@ -50,6 +50,15 @@ export function HeatmapControls({
 
   const clearAllModes = () => {
     onTransportModesChange([])
+  }
+
+  const toggleMetric = (metric: keyof HeatmapEnabledMetrics) => {
+    // Don't allow both to be disabled
+    const newEnabled = { ...enabledMetrics, [metric]: !enabledMetrics[metric] }
+    if (!newEnabled.cancellations && !newEnabled.delays) {
+      return // Keep at least one enabled
+    }
+    onEnabledMetricsChange(newEnabled)
   }
 
   return (
@@ -77,25 +86,50 @@ export function HeatmapControls({
         </div>
       </div>
 
-      {/* Metric Selection */}
+      {/* Metric Toggles */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground">Metric</label>
-        <div className="flex flex-wrap gap-2">
-          {(['cancellations', 'delays'] as HeatmapMetric[]).map(m => (
-            <button
-              key={m}
-              onClick={() => onMetricChange(m)}
-              disabled={isLoading}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                metric === m
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {HEATMAP_METRIC_LABELS[m]}
-            </button>
-          ))}
+        <label className="text-xs font-medium text-muted-foreground">Show Metrics</label>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => toggleMetric('cancellations')}
+            disabled={isLoading}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              enabledMetrics.cancellations
+                ? 'bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/40'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80 border border-transparent'
+            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            aria-pressed={enabledMetrics.cancellations}
+          >
+            <span
+              className={`w-3 h-3 rounded-full transition-colors ${
+                enabledMetrics.cancellations ? 'bg-red-500' : 'bg-muted-foreground/30'
+              }`}
+            />
+            {HEATMAP_METRIC_LABELS.cancellations}
+          </button>
+          <button
+            onClick={() => toggleMetric('delays')}
+            disabled={isLoading}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              enabledMetrics.delays
+                ? 'bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/40'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80 border border-transparent'
+            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            aria-pressed={enabledMetrics.delays}
+          >
+            <span
+              className={`w-3 h-3 rounded-full transition-colors ${
+                enabledMetrics.delays ? 'bg-orange-500' : 'bg-muted-foreground/30'
+              }`}
+            />
+            {HEATMAP_METRIC_LABELS.delays}
+          </button>
         </div>
+        {enabledMetrics.cancellations && enabledMetrics.delays && (
+          <p className="text-xs text-muted-foreground italic">
+            Showing combined cancellation & delay intensity
+          </p>
+        )}
       </div>
 
       {/* Transport Mode Filters */}

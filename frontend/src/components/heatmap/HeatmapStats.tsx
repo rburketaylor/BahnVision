@@ -3,15 +3,15 @@
  * Displays summary statistics for cancellation and delay data
  */
 
-import type { HeatmapSummary, HeatmapMetric } from '../../types/heatmap'
+import type { HeatmapSummary, HeatmapEnabledMetrics } from '../../types/heatmap'
 
 interface HeatmapStatsProps {
   summary: HeatmapSummary | null
-  metric: HeatmapMetric
+  enabledMetrics: HeatmapEnabledMetrics
   isLoading?: boolean
 }
 
-export function HeatmapStats({ summary, metric, isLoading = false }: HeatmapStatsProps) {
+export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: HeatmapStatsProps) {
   if (isLoading) {
     return (
       <div className="bg-card rounded-lg border border-border p-4 animate-pulse">
@@ -37,31 +37,58 @@ export function HeatmapStats({ summary, metric, isLoading = false }: HeatmapStat
   const formatPercent = (rate: number) => `${(rate * 100).toFixed(1)}%`
   const formatNumber = (num: number) => num.toLocaleString()
 
-  // Calculate selected overall rate based on metric
-  const overallRate =
-    metric === 'delays' ? (summary.overall_delay_rate ?? 0) : summary.overall_cancellation_rate
+  // Calculate overall rate based on enabled metrics
+  const getOverallRateInfo = () => {
+    const cancellationRate = summary.overall_cancellation_rate
+    const delayRate = summary.overall_delay_rate ?? 0
+
+    if (enabledMetrics.cancellations && enabledMetrics.delays) {
+      // Combined rate
+      const combinedRate = cancellationRate + delayRate
+      return {
+        rate: combinedRate,
+        label: 'combined',
+        highThreshold: 0.25,
+        mediumThreshold: 0.12,
+      }
+    }
+    if (enabledMetrics.delays) {
+      return {
+        rate: delayRate,
+        label: 'delays',
+        highThreshold: 0.2,
+        mediumThreshold: 0.1,
+      }
+    }
+    return {
+      rate: cancellationRate,
+      label: 'cancellations',
+      highThreshold: 0.05,
+      mediumThreshold: 0.02,
+    }
+  }
+
+  const rateInfo = getOverallRateInfo()
 
   return (
     <div className="bg-card rounded-lg border border-border p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3">Statistics</h3>
 
       <div className="space-y-3">
-        {/* Overall rate - highlighted based on selected metric */}
+        {/* Overall rate - highlighted based on enabled metrics */}
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Overall Rate</span>
           <span
             className={`text-sm font-medium ${
-              overallRate > (metric === 'delays' ? 0.2 : 0.05)
+              rateInfo.rate > rateInfo.highThreshold
                 ? 'text-red-500'
-                : overallRate > (metric === 'delays' ? 0.1 : 0.02)
+                : rateInfo.rate > rateInfo.mediumThreshold
                   ? 'text-yellow-500'
                   : 'text-green-500'
             }`}
           >
-            {formatPercent(overallRate)}
-            <span className="text-xs text-muted-foreground ml-1">
-              ({metric === 'delays' ? 'delays' : 'cancellations'})
-            </span>
+            {formatPercent(rateInfo.rate)}
+            <span className="text-xs text-muted-foreground ml-1">({rateInfo.label})</span>
           </span>
         </div>
 

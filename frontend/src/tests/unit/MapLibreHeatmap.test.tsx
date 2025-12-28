@@ -203,7 +203,11 @@ describe('MapLibreHeatmap Component', () => {
   it('should show loading state when isLoading is true', () => {
     render(
       <ThemeProvider>
-        <MapLibreHeatmap dataPoints={[]} isLoading={true} metric="cancellations" />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          isLoading={true}
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
       </ThemeProvider>
     )
 
@@ -213,7 +217,11 @@ describe('MapLibreHeatmap Component', () => {
   it('should not show loading overlay when isLoading is false', () => {
     render(
       <ThemeProvider>
-        <MapLibreHeatmap dataPoints={[]} isLoading={false} metric="cancellations" />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          isLoading={false}
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
       </ThemeProvider>
     )
 
@@ -223,7 +231,7 @@ describe('MapLibreHeatmap Component', () => {
   it('should render the map container', () => {
     const { container } = render(
       <ThemeProvider>
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
       </ThemeProvider>
     )
 
@@ -234,7 +242,7 @@ describe('MapLibreHeatmap Component', () => {
   it('initializes map and installs heatmap layers on load', async () => {
     render(
       <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
       </ThemeProvider>
     )
 
@@ -258,7 +266,11 @@ describe('MapLibreHeatmap Component', () => {
 
     render(
       <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" onStationSelect={onStationSelect} />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          enabledMetrics={{ cancellations: true, delays: true }}
+          onStationSelect={onStationSelect}
+        />
       </ThemeProvider>
     )
 
@@ -313,7 +325,11 @@ describe('MapLibreHeatmap Component', () => {
 
     render(
       <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" onStationSelect={onStationSelect} />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          enabledMetrics={{ cancellations: true, delays: true }}
+          onStationSelect={onStationSelect}
+        />
       </ThemeProvider>
     )
 
@@ -335,7 +351,7 @@ describe('MapLibreHeatmap Component', () => {
     render(
       <ThemeProvider defaultTheme="light">
         <ThemeToggler />
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
       </ThemeProvider>
     )
 

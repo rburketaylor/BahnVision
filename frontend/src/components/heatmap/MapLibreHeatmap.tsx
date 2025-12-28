@@ -15,7 +15,7 @@ import DOMPurify from 'dompurify'
 import maplibregl from 'maplibre-gl'
 import React from 'react'
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec'
-import type { HeatmapDataPoint, HeatmapMetric } from '../../types/heatmap'
+import type { HeatmapDataPoint, HeatmapEnabledMetrics } from '../../types/heatmap'
 import {
   DEFAULT_ZOOM,
   GERMANY_CENTER,
@@ -159,7 +159,7 @@ function saveView(center: maplibregl.LngLat, zoom: number) {
 
 interface MapLibreHeatmapProps {
   dataPoints: HeatmapDataPoint[]
-  metric: HeatmapMetric
+  enabledMetrics: HeatmapEnabledMetrics
   isLoading?: boolean
   onStationSelect?: (stationId: string | null) => void
   onZoomChange?: (zoom: number) => void
@@ -202,7 +202,7 @@ function validateHeatmapData(dataPoints: HeatmapDataPoint[]): HeatmapDataPoint[]
  */
 function toGeoJSON(
   dataPoints: HeatmapDataPoint[],
-  metric: HeatmapMetric
+  enabledMetrics: HeatmapEnabledMetrics
 ): GeoJSON.FeatureCollection {
   // Validate and filter data first
   const validPoints = validateHeatmapData(dataPoints)
@@ -216,17 +216,46 @@ function toGeoJSON(
     }
   }
 
+  // Filter out points with no relevant data based on enabled metrics
+  const filteredPoints = validPoints.filter(point => {
+    const cancellationRate = point.cancellation_rate ?? 0
+    const delayRate = point.delay_rate ?? 0
+
+    if (enabledMetrics.cancellations && enabledMetrics.delays) {
+      // Both enabled: show if either has data
+      return cancellationRate > 0 || delayRate > 0
+    } else if (enabledMetrics.delays) {
+      // Delays only: show only if there are delays
+      return delayRate > 0
+    } else {
+      // Cancellations only: show only if there are cancellations
+      return cancellationRate > 0
+    }
+  })
+
   return {
     type: 'FeatureCollection',
-    features: validPoints.map(point => {
+    features: filteredPoints.map(point => {
       const cancellationRate = point.cancellation_rate ?? 0
       const delayRate = point.delay_rate ?? 0
-      const rate = metric === 'delays' ? delayRate : cancellationRate
 
-      // Calculate intensity based on metric-specific scaling
-      // Cancellations: saturate at 10% (rate * 10)
-      // Delays: saturate at 20% (rate * 5)
-      const intensity = metric === 'delays' ? Math.min(rate * 5, 1) : Math.min(rate * 10, 1)
+      // Calculate rate and intensity based on enabled metrics
+      let rate: number
+      let intensity: number
+
+      if (enabledMetrics.cancellations && enabledMetrics.delays) {
+        // Combined: sum of both rates, saturate at 25%
+        rate = cancellationRate + delayRate
+        intensity = Math.min(rate * 4, 1) // saturate at 25%
+      } else if (enabledMetrics.delays) {
+        // Delays only: saturate at 20%
+        rate = delayRate
+        intensity = Math.min(rate * 5, 1)
+      } else {
+        // Cancellations only (or fallback): saturate at 10%
+        rate = cancellationRate
+        intensity = Math.min(rate * 10, 1)
+      }
 
       return {
         type: 'Feature' as const,
@@ -239,7 +268,7 @@ function toGeoJSON(
           station_name: point.station_name ?? 'Unknown',
           cancellation_rate: cancellationRate,
           delay_rate: delayRate,
-          rate: rate, // Active rate based on selected metric
+          rate: rate, // Active rate based on enabled metrics
           total_departures: point.total_departures ?? 0,
           cancelled_count: point.cancelled_count ?? 0,
           delayed_count: point.delayed_count ?? 0,
@@ -252,12 +281,13 @@ function toGeoJSON(
 
 /**
  * Get marker color based on normalized intensity (0..1).
+ * Uses orange-to-red gradient matching the Show Metrics toggles.
  */
 function getMarkerColor(intensity: number): string {
-  if (intensity > 0.8) return '#ef4444' // red
-  if (intensity > 0.6) return '#f97316' // orange
-  if (intensity > 0.4) return '#eab308' // yellow
-  return '#22c55e' // green
+  if (intensity > 0.8) return '#ef4444' // red-500
+  if (intensity > 0.5) return '#dc2626' // red-600
+  if (intensity > 0.3) return '#ea580c' // orange-600
+  return '#f97316' // orange-500
 }
 
 function sanitize(value: string): string {
@@ -286,7 +316,7 @@ function setupWebGLWarningSuppression() {
 
 export function MapLibreHeatmap({
   dataPoints,
-  metric,
+  enabledMetrics,
   isLoading = false,
   onStationSelect,
   onZoomChange,
@@ -302,7 +332,7 @@ export function MapLibreHeatmap({
   const mapRef = useRef<maplibregl.Map | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
   const onStationSelectRef = useRef(onStationSelect)
-  const metricRef = useRef(metric)
+  const enabledMetricsRef = useRef(enabledMetrics)
   const resolvedThemeRef = useRef<HeatmapResolvedTheme>(resolvedTheme)
   const styleUrlRef = useRef<string | null>(null)
   const geoJsonDataRef = useRef<GeoJSON.FeatureCollection | null>(null)
@@ -313,8 +343,8 @@ export function MapLibreHeatmap({
   const [mapKey, setMapKey] = useState(Date.now())
 
   useEffect(() => {
-    metricRef.current = metric
-  }, [metric])
+    enabledMetricsRef.current = enabledMetrics
+  }, [enabledMetrics])
 
   useEffect(() => {
     onStationSelectRef.current = onStationSelect
@@ -325,13 +355,16 @@ export function MapLibreHeatmap({
   }, [resolvedTheme])
 
   // Memoize GeoJSON conversion to avoid recalculating on every render
-  const geoJsonData = useMemo(() => toGeoJSON(dataPoints, metric), [dataPoints, metric])
+  const geoJsonData = useMemo(
+    () => toGeoJSON(dataPoints, enabledMetrics),
+    [dataPoints, enabledMetrics]
+  )
 
   useEffect(() => {
     geoJsonDataRef.current = geoJsonData
   }, [geoJsonData])
 
-  // Update map data when dataPoints or metric change
+  // Update map data when dataPoints or enabledMetrics change
   const updateMapData = useCallback(() => {
     const map = mapRef.current
     if (!map || !map.isStyleLoaded()) return
@@ -469,62 +502,35 @@ export function MapLibreHeatmap({
         ['max', 1, ['coalesce', ['get', 'point_count'], 1]],
       ] as unknown as ExpressionSpecification
 
-      const clusterColorWarm = [
+      // Cluster colors: red (#ef4444) to orange (#f97316) gradient
+      // Same colors in both dark and light mode to match Show Metrics toggles
+      const clusterColor = [
         'interpolate',
         ['linear'],
         avgIntensityExpr,
         0,
-        'rgba(255, 168, 0, 0.50)',
+        'rgba(249, 115, 22, 0.55)', // orange-500
         0.5,
-        'rgba(255, 98, 0, 0.75)',
+        'rgba(234, 88, 12, 0.75)', // orange-600
         0.8,
-        'rgba(255, 20, 60, 0.92)',
+        'rgba(220, 38, 38, 0.90)', // red-600
         1,
-        'rgba(190, 0, 60, 1.0)',
+        'rgba(239, 68, 68, 1.0)', // red-500
       ] as unknown as ExpressionSpecification
 
-      const clusterColorCool = [
+      const clusterGlowColor = [
         'interpolate',
         ['linear'],
         avgIntensityExpr,
         0,
-        'rgba(34, 211, 238, 0.45)',
+        'rgba(249, 115, 22, 0.20)', // orange-500
         0.5,
-        'rgba(59, 130, 246, 0.70)',
+        'rgba(234, 88, 12, 0.28)', // orange-600
         0.8,
-        'rgba(99, 102, 241, 0.88)',
+        'rgba(220, 38, 38, 0.32)', // red-600
         1,
-        'rgba(139, 92, 246, 1.0)',
+        'rgba(239, 68, 68, 0.38)', // red-500
       ] as unknown as ExpressionSpecification
-
-      const clusterColor = (isDark ? clusterColorCool : clusterColorWarm) as ExpressionSpecification
-      const clusterGlowColor = (isDark
-        ? [
-            'interpolate',
-            ['linear'],
-            avgIntensityExpr,
-            0,
-            'rgba(34, 211, 238, 0.15)',
-            0.5,
-            'rgba(59, 130, 246, 0.22)',
-            0.8,
-            'rgba(99, 102, 241, 0.28)',
-            1,
-            'rgba(139, 92, 246, 0.32)',
-          ]
-        : [
-            'interpolate',
-            ['linear'],
-            avgIntensityExpr,
-            0,
-            'rgba(255, 168, 0, 0.18)',
-            0.5,
-            'rgba(255, 98, 0, 0.25)',
-            0.8,
-            'rgba(255, 20, 60, 0.30)',
-            1,
-            'rgba(190, 0, 60, 0.35)',
-          ]) as unknown as ExpressionSpecification
 
       // Cluster glow (beneath clusters)
       if (!map.getLayer('cluster-glow')) {
@@ -579,34 +585,21 @@ export function MapLibreHeatmap({
         })
       }
 
-      const pointColorWarm = [
+      // Point colors: orange to red gradient matching Show Metrics toggles
+      // Same colors in both dark and light mode
+      const pointColor = [
         'interpolate',
         ['linear'],
         ['coalesce', ['get', 'intensity'], 0],
         0,
-        'rgba(255, 168, 0, 0.65)',
+        'rgba(249, 115, 22, 0.65)', // orange-500
         0.5,
-        'rgba(255, 98, 0, 0.85)',
+        'rgba(234, 88, 12, 0.82)', // orange-600
         0.8,
-        'rgba(255, 20, 60, 0.95)',
+        'rgba(220, 38, 38, 0.92)', // red-600
         1,
-        'rgba(190, 0, 60, 1.0)',
+        'rgba(239, 68, 68, 1.0)', // red-500
       ] as unknown as ExpressionSpecification
-      const pointColorCool = [
-        'interpolate',
-        ['linear'],
-        ['coalesce', ['get', 'intensity'], 0],
-        0,
-        'rgba(34, 211, 238, 0.55)',
-        0.5,
-        'rgba(59, 130, 246, 0.78)',
-        0.8,
-        'rgba(99, 102, 241, 0.92)',
-        1,
-        'rgba(139, 92, 246, 1.0)',
-      ] as unknown as ExpressionSpecification
-
-      const pointColor = (isDark ? pointColorCool : pointColorWarm) as ExpressionSpecification
 
       // Unclustered glow (beneath points)
       if (!map.getLayer('unclustered-glow')) {
@@ -747,8 +740,11 @@ export function MapLibreHeatmap({
       const color = getMarkerColor(intensity)
       const stationName = sanitize(String(props.station_name ?? 'Unknown'))
 
-      // Show popup with both metrics
-      const isDelaySelected = metricRef.current === 'delays'
+      // Show popup with both metrics - highlight based on what's enabled
+      const em = enabledMetricsRef.current
+      const bothEnabled = em.cancellations && em.delays
+      const onlyDelays = !em.cancellations && em.delays
+      const onlyCancellations = em.cancellations && !em.delays
 
       const stationId = sanitize(String(props.station_id ?? ''))
       const popupContent = `
@@ -756,17 +752,29 @@ export function MapLibreHeatmap({
           <h4 class="bv-map-popup__title">${stationName}</h4>
           <div class="bv-map-popup__rows">
             <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label ${!isDelaySelected ? 'bv-map-popup__label--active' : ''}">Cancel Rate:</span>
-              <span class="bv-map-popup__value" style="color: ${!isDelaySelected ? color : 'currentColor'}">
+              <span class="bv-map-popup__label ${bothEnabled || onlyCancellations ? 'bv-map-popup__label--active' : ''}">Cancel Rate:</span>
+              <span class="bv-map-popup__value" style="color: ${bothEnabled || onlyCancellations ? color : 'currentColor'}">
                 ${(cancellationRate * 100).toFixed(1)}%
               </span>
             </div>
             <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label ${isDelaySelected ? 'bv-map-popup__label--active' : ''}">Delay Rate:</span>
-              <span class="bv-map-popup__value" style="color: ${isDelaySelected ? color : 'currentColor'}">
+              <span class="bv-map-popup__label ${bothEnabled || onlyDelays ? 'bv-map-popup__label--active' : ''}">Delay Rate:</span>
+              <span class="bv-map-popup__value" style="color: ${bothEnabled || onlyDelays ? color : 'currentColor'}">
                 ${(delayRate * 100).toFixed(1)}%
               </span>
             </div>
+            ${
+              bothEnabled
+                ? `
+            <div class="bv-map-popup__row">
+              <span class="bv-map-popup__label bv-map-popup__label--active">Combined:</span>
+              <span class="bv-map-popup__value" style="color: ${color}">
+                ${((cancellationRate + delayRate) * 100).toFixed(1)}%
+              </span>
+            </div>
+            `
+                : ''
+            }
             <div class="bv-map-popup__row">
               <span class="bv-map-popup__label">Departures:</span>
               <span class="bv-map-popup__value">${(props.total_departures as number).toLocaleString()}</span>
