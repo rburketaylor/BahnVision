@@ -68,8 +68,9 @@ export default function PerformanceTab() {
         }
       }
 
-      const hits = parsedMetrics.cacheEvents['transit_departures_hit'] || 0
-      const misses = parsedMetrics.cacheEvents['transit_departures_miss'] || 0
+      // Calculate cache hit rate from json cache events (used by transit endpoints)
+      const hits = parsedMetrics.cacheEvents['json_hit'] || 0
+      const misses = parsedMetrics.cacheEvents['json_miss'] || 0
       const total = hits + misses
       parsedMetrics.cacheHitRate = total > 0 ? (hits / total) * 100 : 0
 
