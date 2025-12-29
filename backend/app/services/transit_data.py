@@ -54,6 +54,52 @@ except ImportError as e:
     logger.warning(f"GTFS realtime service not available: {e}")
 
 
+def _serialize_alert(alert) -> Dict:
+    """Serialize ServiceAlert to dict"""
+    if not alert:
+        return {}
+    data = asdict(alert)
+    if alert.start_time:
+        data["start_time"] = alert.start_time.isoformat()
+    if alert.end_time:
+        data["end_time"] = alert.end_time.isoformat()
+    if alert.timestamp:
+        data["timestamp"] = alert.timestamp.isoformat()
+    data["affected_routes"] = list(alert.affected_routes)
+    data["affected_stops"] = list(alert.affected_stops)
+    return data
+
+
+def _deserialize_alert(data: Dict) -> Optional[ServiceAlert]:
+    """Deserialize dict to ServiceAlert"""
+    if not ServiceAlert:
+        return None
+
+    # Handle potentially missing fields or None values
+    if data.get("start_time"):
+        try:
+            data["start_time"] = datetime.fromisoformat(data["start_time"])
+        except (ValueError, TypeError):
+            data["start_time"] = None
+
+    if data.get("end_time"):
+        try:
+            data["end_time"] = datetime.fromisoformat(data["end_time"])
+        except (ValueError, TypeError):
+            data["end_time"] = None
+
+    if data.get("timestamp"):
+        try:
+            data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+        except (ValueError, TypeError):
+            data["timestamp"] = None
+
+    data["affected_routes"] = set(data.get("affected_routes", []))
+    data["affected_stops"] = set(data.get("affected_stops", []))
+
+    return ServiceAlert(**data)
+
+
 class ScheduleRelationship(Enum):
     """Schedule relationship for stop times"""
 
@@ -89,6 +135,50 @@ class DepartureInfo:
         if self.alerts is None:
             self.alerts = []
 
+    def to_dict(self) -> Dict:
+        """Convert to JSON-serializable dictionary"""
+        data = asdict(self)
+        data["scheduled_departure"] = self.scheduled_departure.isoformat()
+
+        if self.scheduled_arrival:
+            data["scheduled_arrival"] = self.scheduled_arrival.isoformat()
+
+        if self.real_time_departure:
+            data["real_time_departure"] = self.real_time_departure.isoformat()
+
+        if self.real_time_arrival:
+            data["real_time_arrival"] = self.real_time_arrival.isoformat()
+
+        data["schedule_relationship"] = self.schedule_relationship.value
+
+        if self.alerts:
+            data["alerts"] = [_serialize_alert(a) for a in self.alerts]
+
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "DepartureInfo":
+        """Create from dictionary"""
+        if data.get("scheduled_departure"):
+            data["scheduled_departure"] = datetime.fromisoformat(data["scheduled_departure"])
+
+        if data.get("scheduled_arrival"):
+            data["scheduled_arrival"] = datetime.fromisoformat(data["scheduled_arrival"])
+
+        if data.get("real_time_departure"):
+            data["real_time_departure"] = datetime.fromisoformat(data["real_time_departure"])
+
+        if data.get("real_time_arrival"):
+            data["real_time_arrival"] = datetime.fromisoformat(data["real_time_arrival"])
+
+        if data.get("schedule_relationship"):
+            data["schedule_relationship"] = ScheduleRelationship(data["schedule_relationship"])
+
+        if data.get("alerts"):
+            data["alerts"] = [a for a in (_deserialize_alert(a_data) for a_data in data["alerts"]) if a]
+
+        return cls(**data)
+
 
 @dataclass
 class RouteInfo:
@@ -106,6 +196,20 @@ class RouteInfo:
     def __post_init__(self) -> None:
         if self.alerts is None:
             self.alerts = []
+
+    def to_dict(self) -> Dict:
+        """Convert to JSON-serializable dictionary"""
+        data = asdict(self)
+        if self.alerts:
+            data["alerts"] = [_serialize_alert(a) for a in self.alerts]
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "RouteInfo":
+        """Create from dictionary"""
+        if data.get("alerts"):
+            data["alerts"] = [a for a in (_deserialize_alert(a_data) for a_data in data["alerts"]) if a]
+        return cls(**data)
 
 
 @dataclass
@@ -126,6 +230,29 @@ class StopInfo:
             self.upcoming_departures = []
         if self.alerts is None:
             self.alerts = []
+
+    def to_dict(self) -> Dict:
+        """Convert to JSON-serializable dictionary"""
+        data = asdict(self)
+
+        if self.upcoming_departures:
+            data["upcoming_departures"] = [d.to_dict() for d in self.upcoming_departures]
+
+        if self.alerts:
+            data["alerts"] = [_serialize_alert(a) for a in self.alerts]
+
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "StopInfo":
+        """Create from dictionary"""
+        if data.get("upcoming_departures"):
+            data["upcoming_departures"] = [DepartureInfo.from_dict(d) for d in data["upcoming_departures"]]
+
+        if data.get("alerts"):
+            data["alerts"] = [a for a in (_deserialize_alert(a_data) for a_data in data["alerts"]) if a]
+
+        return cls(**data)
 
 
 class TransitDataService:
@@ -153,8 +280,12 @@ class TransitDataService:
     ) -> List[DepartureInfo]:
         """Get departures for a stop with optional real-time updates"""
         try:
-            # Skip caching for now due to type issues
-            # TODO: Fix caching after resolving type issues
+            cache_key = (
+                f"departures:{stop_id}:{limit}:{offset_minutes}:{include_real_time}"
+            )
+            cached_result = await self.cache.get_json(cache_key)
+            if cached_result:
+                return [DepartureInfo.from_dict(d) for d in cached_result]
 
             # Get scheduled departures
             scheduled_time = datetime.now(timezone.utc) + timedelta(
@@ -202,7 +333,12 @@ class TransitDataService:
             if include_real_time and self.is_realtime_available():
                 await self._apply_real_time_updates(departures, stop_id)
 
-            # TODO: Add caching back after fixing type issues
+            # Cache the result
+            await self.cache.set_json(
+                cache_key,
+                [d.to_dict() for d in departures],
+                ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds,
+            )
 
             return departures
 
@@ -222,7 +358,7 @@ class TransitDataService:
             cache_key = f"route:{route_id}:{include_real_time}"
             cached_result = await self.cache.get_json(cache_key)
             if cached_result:
-                return RouteInfo(**cached_result)
+                return RouteInfo.from_dict(cached_result)
 
             # Get route from database
             stmt = select(GTFSRoute).where(GTFSRoute.route_id == route_id)
@@ -250,7 +386,7 @@ class TransitDataService:
             # Cache the result
             await self.cache.set_json(
                 cache_key,
-                asdict(route_info),
+                route_info.to_dict(),
                 ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds,
             )
 
@@ -268,7 +404,7 @@ class TransitDataService:
             cache_key = f"stop:{stop_id}:{include_departures}"
             cached_result = await self.cache.get_json(cache_key)
             if cached_result:
-                return StopInfo(**cached_result)
+                return StopInfo.from_dict(cached_result)
 
             # Get stop from database
             stmt = select(GTFSStop).where(GTFSStop.stop_id == stop_id)
@@ -296,7 +432,7 @@ class TransitDataService:
             # Cache the result
             await self.cache.set_json(
                 cache_key,
-                asdict(stop_info),
+                stop_info.to_dict(),
                 ttl_seconds=self.settings.gtfs_stop_cache_ttl_seconds,
             )
 
