@@ -255,6 +255,12 @@ class GTFSScheduleService:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_route_type_map(self) -> dict[str, int]:
+        """Get mapping of route_id to route_type for all routes."""
+        stmt = select(GTFSRoute.route_id, GTFSRoute.route_type)
+        result = await self.session.execute(stmt)
+        return {row.route_id: row.route_type for row in result}
+
 
 def time_to_interval(dt: datetime) -> timedelta:
     """Convert datetime time to a timedelta for PostgreSQL interval comparison."""

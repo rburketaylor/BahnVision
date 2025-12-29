@@ -204,6 +204,10 @@ class GtfsRealtimeService:
 
             # Store in cache
             await self._store_trip_updates(trip_updates)
+
+            # Create and store heatmap snapshot
+            await self._store_heatmap_snapshot(trip_updates)
+
             self._record_success()
 
             logger.info(f"Processed {len(trip_updates)} trip updates")
@@ -438,6 +442,63 @@ class GtfsRealtimeService:
                 list(alert_ids),
                 ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
+
+    async def _store_heatmap_snapshot(self, trip_updates: List[TripUpdate]):
+        """Aggregate trip updates for heatmap and store snapshot in Redis."""
+        if not trip_updates:
+            return
+
+        # Structure: stop_id -> { total, cancelled, delayed, routes: { route_id: { ... } } }
+        snapshot: dict[str, dict] = {}
+
+        for tu in trip_updates:
+            stop_id = tu.stop_id
+            route_id = tu.route_id
+
+            is_cancelled = tu.schedule_relationship == "CANCELED"
+            # 5 minutes delay threshold (300 seconds)
+            is_delayed = tu.departure_delay is not None and tu.departure_delay >= 300
+
+            if stop_id not in snapshot:
+                snapshot[stop_id] = {
+                    "total": 0,
+                    "cancelled": 0,
+                    "delayed": 0,
+                    "routes": {}
+                }
+
+            stop_stats = snapshot[stop_id]
+            stop_stats["total"] += 1
+            if is_cancelled:
+                stop_stats["cancelled"] += 1
+            if is_delayed:
+                stop_stats["delayed"] += 1
+
+            # Route breakdown
+            if route_id not in stop_stats["routes"]:
+                stop_stats["routes"][route_id] = {
+                    "total": 0,
+                    "cancelled": 0,
+                    "delayed": 0
+                }
+
+            route_stats = stop_stats["routes"][route_id]
+            route_stats["total"] += 1
+            if is_cancelled:
+                route_stats["cancelled"] += 1
+            if is_delayed:
+                route_stats["delayed"] += 1
+
+        try:
+            # Store with short TTL (e.g. 60s) so it expires if updates stop
+            await self.cache.set_json(
+                "heatmap:realtime_snapshot",
+                snapshot,
+                ttl_seconds=60
+            )
+            logger.debug(f"Stored heatmap snapshot for {len(snapshot)} stations")
+        except Exception as e:
+            logger.error(f"Failed to store heatmap snapshot: {e}")
 
     def _map_schedule_relationship(self, relationship) -> str:
         """Map GTFS-RT schedule relationship to string"""

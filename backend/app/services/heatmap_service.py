@@ -254,6 +254,15 @@ class HeatmapService:
             f"Returning {len(data_points)} data points after filtering and limiting"
         )
 
+        # Merge with live realtime snapshot if available
+        # This overlays the last ~1 minute of cancellation data on top of the DB stats
+        try:
+            snapshot = await self._fetch_realtime_snapshot()
+            if snapshot:
+                await self._merge_realtime_data(data_points, snapshot)
+        except Exception as e:
+            logger.warning(f"Failed to merge realtime snapshot: {e}")
+
         # Calculate summary
         try:
             summary = self._calculate_summary(data_points)
@@ -568,6 +577,67 @@ class HeatmapService:
             most_affected_station=most_affected_station,
             most_affected_line=most_affected_line,
         )
+
+    async def _fetch_realtime_snapshot(self) -> dict | None:
+        """Fetch realtime heatmap snapshot from Redis."""
+        try:
+            return await self._cache.get_json("heatmap:realtime_snapshot")
+        except Exception as e:
+            logger.warning(f"Failed to fetch realtime snapshot: {e}")
+            return None
+
+    async def _merge_realtime_data(
+        self,
+        data_points: list[HeatmapDataPoint],
+        snapshot: dict
+    ) -> None:
+        """Merge realtime snapshot data into existing data points."""
+        if not snapshot:
+            return
+
+        # Fetch route map for resolving route_id -> transport_type
+        try:
+            route_map = await self._gtfs_schedule.get_route_type_map()
+        except Exception as e:
+            logger.warning(f"Failed to fetch route map for merging: {e}")
+            route_map = {}
+
+        # Index data points by station_id for fast lookup
+        dp_map = {dp.station_id: dp for dp in data_points}
+
+        for stop_id, stats in snapshot.items():
+            if stop_id not in dp_map:
+                # Skipping new stations not in DB result to avoid overhead
+                # of fetching metadata (lat, lon, name) for now.
+                continue
+
+            dp = dp_map[stop_id]
+
+            # Update totals
+            dp.total_departures += stats.get("total", 0)
+            dp.cancelled_count += stats.get("cancelled", 0)
+            dp.delayed_count += stats.get("delayed", 0)
+
+            # Update rates
+            if dp.total_departures > 0:
+                dp.cancellation_rate = min(dp.cancelled_count / dp.total_departures, 1.0)
+                dp.delay_rate = min(dp.delayed_count / dp.total_departures, 1.0)
+
+            # Update transport breakdown
+            routes = stats.get("routes", {})
+            for route_id, r_stats in routes.items():
+                route_type = route_map.get(route_id)
+                transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS") if route_type is not None else "BUS"
+
+                if transport_type not in dp.by_transport:
+                    dp.by_transport[transport_type] = TransportStats(
+                        total=0, cancelled=0, delayed=0
+                    )
+
+                t_stats = dp.by_transport[transport_type]
+                t_stats.total += r_stats.get("total", 0)
+                t_stats.cancelled += r_stats.get("cancelled", 0)
+                t_stats.delayed += r_stats.get("delayed", 0)
 
 
 def get_heatmap_service(
