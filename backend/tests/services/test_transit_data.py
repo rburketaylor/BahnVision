@@ -5,7 +5,7 @@ Tests combined static and real-time transit data functionality.
 """
 
 from dataclasses import dataclass as dc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -355,6 +355,25 @@ class MockScheduledDeparture:
     trip_headsign: str
     departure_time: datetime
     arrival_time: datetime = None
+    route_short_name: str = "S1"
+    route_long_name: str = "Test Route"
+    route_type: int = 2
+    route_color: str = "00BFFF"
+    stop_name: str = "Marienplatz"
+
+    def model_dump(self, mode='python'):
+        return {
+            "trip_id": self.trip_id,
+            "route_id": self.route_id,
+            "trip_headsign": self.trip_headsign,
+            "departure_time": self.departure_time.isoformat() if mode == 'json' else self.departure_time,
+            "arrival_time": self.arrival_time.isoformat() if self.arrival_time and mode == 'json' else self.arrival_time,
+            "route_short_name": self.route_short_name,
+            "route_long_name": self.route_long_name,
+            "route_type": self.route_type,
+            "route_color": self.route_color,
+            "stop_name": self.stop_name
+        }
 
 
 class FakeGtfsSchedule:
@@ -382,6 +401,9 @@ class FakeGtfsSchedule:
 
     async def get_departures_for_stop(self, stop_id: str, scheduled_time, limit: int):
         return self.departures[:limit]
+
+    async def get_scheduled_departures_for_day(self, stop_id: str, date_obj):
+        return self.departures
 
     async def search_stops(self, query: str, limit: int = 10):
         return [s for s in self.stops if query.lower() in s.stop_name.lower()][:limit]
@@ -576,6 +598,11 @@ class TestTransitDataServiceMethods:
     @pytest.mark.asyncio
     async def test_get_departures_for_stop_returns_departures(self, transit_service):
         """Test get_departures_for_stop returns departure info."""
+        # Ensure departures have correct dates relative to now to pass filter
+        now = datetime.now(timezone.utc)
+        transit_service.gtfs_schedule.departures[0].departure_time = now + timedelta(minutes=10)
+        transit_service.gtfs_schedule.departures[1].departure_time = now + timedelta(minutes=20)
+
         result = await transit_service.get_departures_for_stop(
             "stop1", limit=10, include_real_time=False
         )

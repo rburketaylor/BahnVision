@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, time, timedelta, timezone, date
 from typing import List, Optional
 
+from pydantic import BaseModel
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -18,32 +19,24 @@ from app.models.gtfs import (
 logger = logging.getLogger(__name__)
 
 
-class ScheduledDeparture:
+class ScheduledDeparture(BaseModel):
     """Represents a scheduled departure from a stop with concrete datetimes."""
 
-    def __init__(
-        self,
-        departure_time: datetime,
-        trip_headsign: str,
-        route_short_name: str,
-        route_long_name: str,
-        route_type: int,
-        route_color: Optional[str],
-        stop_name: str,
-        trip_id: str,
-        route_id: str,
-        arrival_time: Optional[datetime] = None,
-    ):
-        self.departure_time = departure_time
-        self.trip_headsign = trip_headsign
-        self.route_short_name = route_short_name
-        self.route_long_name = route_long_name
-        self.route_type = route_type
-        self.route_color = route_color
-        self.stop_name = stop_name
-        self.trip_id = trip_id
-        self.route_id = route_id
-        self.arrival_time = arrival_time or departure_time
+    departure_time: datetime
+    trip_headsign: str
+    route_short_name: str
+    route_long_name: str
+    route_type: int
+    route_color: Optional[str] = None
+    stop_name: str
+    trip_id: str
+    route_id: str
+    arrival_time: Optional[datetime] = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.arrival_time is None:
+            self.arrival_time = self.departure_time
 
     @classmethod
     def from_row(cls, row) -> "ScheduledDeparture":
@@ -189,6 +182,24 @@ class GTFSScheduleService:
                 )
 
         return departures
+
+    async def get_scheduled_departures_for_day(
+        self,
+        stop_id: str,
+        date_obj: date,
+    ) -> List[ScheduledDeparture]:
+        """Get all scheduled departures for a stop on a specific day."""
+        # Use midnight UTC as reference for the day
+        from_time = datetime.combine(date_obj, time(0, 0), tzinfo=timezone.utc)
+
+        # Call get_stop_departures with a very high limit to get all departures
+        # Note: get_stop_departures uses from_time.date() to determine the service day,
+        # and filters by from_time (via from_interval).
+        # Since we pass midnight, from_interval is 0, so we get everything from start of day.
+        # It handles "next day" early hours (e.g. 25:00) correctly as they are > 0.
+
+        # We assume 10,000 is enough for one day at one stop
+        return await self.get_stop_departures(stop_id, from_time, limit=10000)
 
     async def get_departures_for_stop(
         self,

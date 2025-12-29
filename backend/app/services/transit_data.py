@@ -153,18 +153,62 @@ class TransitDataService:
     ) -> List[DepartureInfo]:
         """Get departures for a stop with optional real-time updates"""
         try:
-            # Skip caching for now due to type issues
-            # TODO: Fix caching after resolving type issues
-
-            # Get scheduled departures
+            # Determine schedule time
             scheduled_time = datetime.now(timezone.utc) + timedelta(
                 minutes=offset_minutes
             )
-            scheduled_departures = await self.gtfs_schedule.get_departures_for_stop(
-                stop_id, scheduled_time, limit
-            )
+            today = scheduled_time.date()
+
+            # Cache key for the full day schedule
+            cache_key = f"gtfs:schedule:stop:{stop_id}:{today}"
+
+            # Try to get from cache
+            scheduled_departures_data = await self.cache.get_json(cache_key)
+
+            scheduled_departures = []
+
+            if scheduled_departures_data:
+                # Deserialize
+                for item in scheduled_departures_data:
+                    # Parse datetimes (assuming ISO format strings from Pydantic)
+                    item["departure_time"] = datetime.fromisoformat(item["departure_time"])
+                    if item.get("arrival_time"):
+                        item["arrival_time"] = datetime.fromisoformat(item["arrival_time"])
+                    scheduled_departures.append(ScheduledDeparture(**item))
+            else:
+                # Fetch full day from DB
+                if self.gtfs_schedule:
+                    scheduled_departures = await self.gtfs_schedule.get_scheduled_departures_for_day(
+                        stop_id, today
+                    )
+
+                    # Cache the result
+                    # Serialize list of Pydantic models
+                    serialized = [d.model_dump(mode='json') for d in scheduled_departures]
+                    await self.cache.set_json(
+                        cache_key,
+                        serialized,
+                        ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds
+                    )
 
             if not scheduled_departures:
+                return []
+
+            # Filter in memory
+            # We want departures >= scheduled_time
+            # And limit count
+            filtered_departures = [
+                d for d in scheduled_departures
+                if d.departure_time >= scheduled_time
+            ]
+
+            # Sort by departure time (should be already sorted, but to be safe)
+            filtered_departures.sort(key=lambda x: x.departure_time)
+
+            # Apply limit
+            final_departures = filtered_departures[:limit]
+
+            if not final_departures:
                 return []
 
             # Get stop information
@@ -174,12 +218,12 @@ class TransitDataService:
                 return []
 
             # Get route information
-            route_ids = {dep.route_id for dep in scheduled_departures}
+            route_ids = {dep.route_id for dep in final_departures}
             route_info = await self._get_route_info_batch(route_ids)
 
             # Convert to departure info
             departures = []
-            for dep in scheduled_departures:
+            for dep in final_departures:
                 route = route_info.get(dep.route_id)
                 if not route:
                     continue
@@ -201,8 +245,6 @@ class TransitDataService:
             # Apply real-time updates if requested
             if include_real_time and self.is_realtime_available():
                 await self._apply_real_time_updates(departures, stop_id)
-
-            # TODO: Add caching back after fixing type issues
 
             return departures
 
