@@ -334,6 +334,33 @@ class CacheService:
 
         return result
 
+    async def mget_json(self, keys: list[str]) -> dict[str, Any | None]:
+        """Retrieve multiple JSON documents and decode them.
+
+        Args:
+            keys: List of cache keys to retrieve
+
+        Returns:
+            Dict mapping keys to their decoded values (None if not found or invalid)
+        """
+        raw_values = await self.mget(keys)
+        result = {}
+
+        for key, value in raw_values.items():
+            if value is not None:
+                try:
+                    result[key] = json.loads(value)
+                    record_cache_event("json", "hit")
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode JSON for key %s", key)
+                    result[key] = None
+                    record_cache_event("json", "miss")
+            else:
+                result[key] = None
+                record_cache_event("json", "miss")
+
+        return result
+
     async def mset(
         self,
         items: dict[str, str],

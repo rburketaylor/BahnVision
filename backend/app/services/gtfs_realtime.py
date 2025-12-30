@@ -542,6 +542,24 @@ class GtfsRealtimeService:
             logger.error(f"Failed to get vehicle position for trip {trip_id}: {e}")
             return None
 
+    async def get_vehicle_positions_by_trips(
+        self, trip_ids: List[str]
+    ) -> dict[str, VehiclePosition]:
+        """Get cached vehicle positions for multiple trip IDs"""
+        try:
+            keys = [f"vehicle_position:trip:{trip_id}" for trip_id in trip_ids]
+            data_map = await self.cache.mget_json(keys)
+
+            result = {}
+            for trip_id, key in zip(trip_ids, keys):
+                data = data_map.get(key)
+                if data:
+                    result[trip_id] = VehiclePosition(**data)
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get vehicle positions for trips: {e}")
+            return {}
+
     async def get_alerts_for_route(self, route_id: str) -> List[ServiceAlert]:
         """Get cached alerts for a specific route using the route-based index"""
         try:
