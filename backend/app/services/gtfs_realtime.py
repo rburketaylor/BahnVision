@@ -10,7 +10,7 @@ Handles fetching, parsing, and storing GTFS-RT data including:
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 from dataclasses import dataclass
 
 import httpx
@@ -352,6 +352,18 @@ class GtfsRealtimeService:
             logger.error(f"Failed to fetch alerts: {e}")
             return []
 
+    def _serialize_dataclass(self, obj) -> dict[str, Any]:
+        """Serialize a dataclass to a JSON-safe dict, converting datetime to ISO format"""
+        result: dict[str, Any] = {}
+        for key, value in obj.__dict__.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+            elif isinstance(value, set):
+                result[key] = list(value)
+            else:
+                result[key] = value
+        return result
+
     async def _store_trip_updates(self, trip_updates: List[TripUpdate]):
         """Store trip updates in Valkey cache with stop-based indexing"""
         if not trip_updates:
@@ -364,7 +376,9 @@ class GtfsRealtimeService:
         for tu in trip_updates:
             key = f"trip_update:{tu.trip_id}:{tu.stop_id}"
             await self.cache.set_json(
-                key, tu.__dict__, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
+                key,
+                self._serialize_dataclass(tu),
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
             # Build stop-to-trips index
@@ -392,7 +406,7 @@ class GtfsRealtimeService:
             vehicle_key = f"vehicle_position:{vp.vehicle_id}"
             await self.cache.set_json(
                 vehicle_key,
-                vp.__dict__,
+                self._serialize_dataclass(vp),
                 ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
@@ -401,7 +415,7 @@ class GtfsRealtimeService:
                 trip_vehicle_key = f"vehicle_position:trip:{vp.trip_id}"
                 await self.cache.set_json(
                     trip_vehicle_key,
-                    vp.__dict__,
+                    self._serialize_dataclass(vp),
                     ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
                 )
 
@@ -416,12 +430,11 @@ class GtfsRealtimeService:
         # Store by alert_id
         for alert in alerts:
             key = f"service_alert:{alert.alert_id}"
-            # Convert sets to lists for JSON serialization
-            alert_dict = alert.__dict__.copy()
-            alert_dict["affected_routes"] = list(alert.affected_routes)
-            alert_dict["affected_stops"] = list(alert.affected_stops)
+            # Use helper method that handles datetime and set serialization
             await self.cache.set_json(
-                key, alert_dict, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
+                key,
+                self._serialize_dataclass(alert),
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
             # Build route-to-alerts index
@@ -477,8 +490,13 @@ class GtfsRealtimeService:
         }
         return mapping.get(effect, "UNKNOWN_EFFECT")
 
-    def _extract_text(self, translations) -> str:
-        """Extract text from GTFS-RT translated string"""
+    def _extract_text(self, translated_string) -> str:
+        """Extract text from GTFS-RT TranslatedString message"""
+        if not translated_string:
+            return ""
+
+        # Access the .translation repeated field of the TranslatedString message
+        translations = translated_string.translation
         if not translations:
             return ""
 

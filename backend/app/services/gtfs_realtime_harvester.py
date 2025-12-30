@@ -234,8 +234,15 @@ class GTFSRTDataHarvester:
 
         try:
             logger.debug(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
+            # Use explicit timeout for large feed download (~27MB)
+            timeout = httpx.Timeout(
+                connect=30.0,
+                read=180.0,  # 3 minutes for large feed
+                write=30.0,
+                pool=30.0,
+            )
             async with httpx.AsyncClient(
-                timeout=self.settings.gtfs_rt_timeout_seconds,
+                timeout=timeout,
                 headers={"User-Agent": "BahnVision-GTFS-RT-Harvester/1.0"},
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
@@ -286,7 +293,9 @@ class GTFSRTDataHarvester:
             return trip_updates
 
         except Exception as e:
-            logger.error("Failed to fetch trip updates: %s", e)
+            logger.exception(
+                "Failed to fetch trip updates: %s: %s", type(e).__name__, e
+            )
             return []
 
     def _map_schedule_relationship(self, relationship: int) -> ScheduleRelationship:
