@@ -21,6 +21,7 @@ def mock_cache_service():
     cache_service = AsyncMock(spec=CacheService)
     cache_service.set_json = AsyncMock()
     cache_service.get_json = AsyncMock()
+    cache_service.mget_json = AsyncMock()
     return cache_service
 
 
@@ -88,10 +89,12 @@ class TestTripUpdates:
     @pytest.mark.asyncio
     async def test_get_trip_updates_for_stop(self, gtfs_service, mock_cache_service):
         """Test retrieving trip updates for a specific stop."""
-        # Mock the index response
-        mock_cache_service.get_json.side_effect = [
-            ["trip1", "trip2"],  # Index for stop1
-            {  # Trip update for trip1 at stop1
+        # Mock the index response (first call gets the stop index)
+        mock_cache_service.get_json.return_value = ["trip1", "trip2"]
+
+        # Mock the mget_json response for batch fetch
+        mock_cache_service.mget_json.return_value = {
+            "trip_update:trip1:stop1": {
                 "trip_id": "trip1",
                 "route_id": "route1",
                 "stop_id": "stop1",
@@ -100,7 +103,7 @@ class TestTripUpdates:
                 "departure_delay": 60,
                 "schedule_relationship": "SCHEDULED",
             },
-            {  # Trip update for trip2 at stop1
+            "trip_update:trip2:stop1": {
                 "trip_id": "trip2",
                 "route_id": "route1",
                 "stop_id": "stop1",
@@ -109,13 +112,14 @@ class TestTripUpdates:
                 "departure_delay": 120,
                 "schedule_relationship": "SCHEDULED",
             },
-        ]
+        }
 
         result = await gtfs_service.get_trip_updates_for_stop("stop1")
 
         assert len(result) == 2
-        assert result[0].trip_id == "trip1"
-        assert result[1].trip_id == "trip2"
+        # Note: Dict order may vary, so check both exist
+        trip_ids = {tu.trip_id for tu in result}
+        assert trip_ids == {"trip1", "trip2"}
         assert all(tu.stop_id == "stop1" for tu in result)
 
     @pytest.mark.asyncio
@@ -207,6 +211,51 @@ class TestVehiclePositions:
         assert result is not None
         assert result.vehicle_id == "vehicle1"
 
+    @pytest.mark.asyncio
+    async def test_get_vehicle_positions_by_trips(
+        self, gtfs_service, mock_cache_service
+    ):
+        """Test retrieving multiple vehicle positions by trip IDs in batch."""
+        # Mock the mget_json response
+        mock_cache_service.mget_json.return_value = {
+            "vehicle_position:trip:trip1": {
+                "trip_id": "trip1",
+                "vehicle_id": "vehicle1",
+                "route_id": "route1",
+                "latitude": 48.1351,
+                "longitude": 11.5820,
+            },
+            "vehicle_position:trip:trip2": {
+                "trip_id": "trip2",
+                "vehicle_id": "vehicle2",
+                "route_id": "route1",
+                "latitude": 48.1352,
+                "longitude": 11.5821,
+            },
+            "vehicle_position:trip:trip3": None,  # Trip with no vehicle position
+        }
+
+        result = await gtfs_service.get_vehicle_positions_by_trips(
+            ["trip1", "trip2", "trip3"]
+        )
+
+        assert len(result) == 2
+        assert "trip1" in result
+        assert "trip2" in result
+        assert "trip3" not in result  # Should not include None values
+        assert result["trip1"].vehicle_id == "vehicle1"
+        assert result["trip2"].vehicle_id == "vehicle2"
+
+    @pytest.mark.asyncio
+    async def test_get_vehicle_positions_by_trips_empty_list(
+        self, gtfs_service, mock_cache_service
+    ):
+        """Test batch vehicle positions with empty trip list."""
+        result = await gtfs_service.get_vehicle_positions_by_trips([])
+
+        assert result == {}
+        mock_cache_service.mget_json.assert_not_called()
+
 
 class TestServiceAlerts:
     """Test service alert functionality."""
@@ -247,10 +296,12 @@ class TestServiceAlerts:
     @pytest.mark.asyncio
     async def test_get_alerts_for_route(self, gtfs_service, mock_cache_service):
         """Test retrieving alerts for a specific route."""
-        # Mock the index response
-        mock_cache_service.get_json.side_effect = [
-            ["alert1", "alert2"],  # Index for route1
-            {  # Alert 1
+        # Mock the index response (first call gets the route index)
+        mock_cache_service.get_json.return_value = ["alert1", "alert2"]
+
+        # Mock the mget_json response for batch fetch
+        mock_cache_service.mget_json.return_value = {
+            "service_alert:alert1": {
                 "alert_id": "alert1",
                 "cause": "TECHNICAL_PROBLEM",
                 "effect": "SIGNIFICANT_DELAYS",
@@ -259,7 +310,7 @@ class TestServiceAlerts:
                 "affected_routes": ["route1", "route2"],
                 "affected_stops": ["stop1", "stop2"],
             },
-            {  # Alert 2
+            "service_alert:alert2": {
                 "alert_id": "alert2",
                 "cause": "ACCIDENT",
                 "effect": "DETOUR",
@@ -268,14 +319,14 @@ class TestServiceAlerts:
                 "affected_routes": ["route3"],
                 "affected_stops": ["stop3"],
             },
-        ]
+        }
 
         result = await gtfs_service.get_alerts_for_route("route1")
 
         assert len(result) == 2
-        assert result[0].alert_id == "alert1"
-        assert result[1].alert_id == "alert2"
-        assert "route1" in result[0].affected_routes
+        # Note: Dict order may vary, so check by alert_id
+        alert_ids = {alert.alert_id for alert in result}
+        assert alert_ids == {"alert1", "alert2"}
 
     @pytest.mark.asyncio
     async def test_get_alerts_for_empty_route(self, gtfs_service, mock_cache_service):
