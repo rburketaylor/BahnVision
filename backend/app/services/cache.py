@@ -384,6 +384,33 @@ class CacheService:
             return None
         return json.loads(fallback_payload)
 
+    async def mget_json(self, keys: list[str]) -> dict[str, dict[str, Any] | None]:
+        """Retrieve multiple JSON documents from the cache in a single call.
+
+        Args:
+            keys: List of cache keys to retrieve
+
+        Returns:
+            Dict mapping keys to their decoded JSON values (None if not found)
+        """
+        raw_values = await self.mget(keys)
+        result: dict[str, dict[str, Any] | None] = {}
+
+        for key, value in raw_values.items():
+            if value is not None:
+                try:
+                    result[key] = json.loads(value)
+                    record_cache_event("json", "hit")
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode JSON for key: %s", key)
+                    result[key] = None
+                    record_cache_event("json", "miss")  # Treat decode error as miss
+            else:
+                result[key] = None
+                record_cache_event("json", "miss")
+
+        return result
+
     async def get_stale_json(self, key: str) -> dict[str, Any] | None:
         """Retrieve a stale JSON document stored for graceful fallbacks."""
         stale_key = f"{key}{self._STALE_SUFFIX}"

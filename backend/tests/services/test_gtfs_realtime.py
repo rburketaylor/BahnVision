@@ -89,9 +89,11 @@ class TestTripUpdates:
     async def test_get_trip_updates_for_stop(self, gtfs_service, mock_cache_service):
         """Test retrieving trip updates for a specific stop."""
         # Mock the index response
-        mock_cache_service.get_json.side_effect = [
-            ["trip1", "trip2"],  # Index for stop1
-            {  # Trip update for trip1 at stop1
+        mock_cache_service.get_json.return_value = ["trip1", "trip2"]
+
+        # Mock the mget_json response
+        mock_cache_service.mget_json.return_value = {
+            "trip_update:trip1:stop1": {
                 "trip_id": "trip1",
                 "route_id": "route1",
                 "stop_id": "stop1",
@@ -100,7 +102,7 @@ class TestTripUpdates:
                 "departure_delay": 60,
                 "schedule_relationship": "SCHEDULED",
             },
-            {  # Trip update for trip2 at stop1
+            "trip_update:trip2:stop1": {
                 "trip_id": "trip2",
                 "route_id": "route1",
                 "stop_id": "stop1",
@@ -109,7 +111,7 @@ class TestTripUpdates:
                 "departure_delay": 120,
                 "schedule_relationship": "SCHEDULED",
             },
-        ]
+        }
 
         result = await gtfs_service.get_trip_updates_for_stop("stop1")
 
@@ -248,9 +250,11 @@ class TestServiceAlerts:
     async def test_get_alerts_for_route(self, gtfs_service, mock_cache_service):
         """Test retrieving alerts for a specific route."""
         # Mock the index response
-        mock_cache_service.get_json.side_effect = [
-            ["alert1", "alert2"],  # Index for route1
-            {  # Alert 1
+        mock_cache_service.get_json.return_value = ["alert1", "alert2"]
+
+        # Mock the mget_json response
+        mock_cache_service.mget_json.return_value = {
+            "service_alert:alert1": {
                 "alert_id": "alert1",
                 "cause": "TECHNICAL_PROBLEM",
                 "effect": "SIGNIFICANT_DELAYS",
@@ -259,7 +263,7 @@ class TestServiceAlerts:
                 "affected_routes": ["route1", "route2"],
                 "affected_stops": ["stop1", "stop2"],
             },
-            {  # Alert 2
+            "service_alert:alert2": {
                 "alert_id": "alert2",
                 "cause": "ACCIDENT",
                 "effect": "DETOUR",
@@ -268,7 +272,7 @@ class TestServiceAlerts:
                 "affected_routes": ["route3"],
                 "affected_stops": ["stop3"],
             },
-        ]
+        }
 
         result = await gtfs_service.get_alerts_for_route("route1")
 
