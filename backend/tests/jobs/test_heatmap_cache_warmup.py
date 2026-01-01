@@ -202,8 +202,11 @@ class TestHeatmapCacheWarmer:
 
                 warmer = HeatmapCacheWarmer(mock_cache)
 
-                # Should not raise, just log the error
+                # Should not raise, just log the error - if this completes, the test passes
                 await warmer._warmup(reason="test")
+
+        # Verify no cache writes occurred due to the early failure
+        mock_cache.set_json.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_warmup_caches_results(self, mock_cache, mock_settings_enabled):

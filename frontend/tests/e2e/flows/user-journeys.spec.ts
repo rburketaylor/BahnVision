@@ -17,7 +17,7 @@ test.describe('Complete User Journeys', () => {
     await setupStationMocks(page)
     await setupHealthMocks(page)
 
-    // Also mock metrics for insights page
+    // Also mock metrics for monitoring page
     await page.route('**/metrics**', async route => {
       return route.fulfill({
         status: 200,
@@ -75,15 +75,15 @@ test.describe('Complete User Journeys', () => {
     await expect(page).toHaveURL('/')
   })
 
-  test('user can check system insights after viewing stations', async ({ page }) => {
+  test('user can check system monitoring after viewing stations', async ({ page }) => {
     // View a station first
     await page.goto(`/station/${mockStation.id}`)
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
 
-    // Navigate to insights
-    await page.getByRole('link', { name: 'Insights' }).click()
-    await expect(page).toHaveURL('/insights')
-    await expect(page.getByText('System Insights')).toBeVisible()
+    // Navigate to monitoring
+    await page.getByRole('link', { name: 'Monitoring' }).click()
+    await expect(page).toHaveURL('/monitoring')
+    await expect(page.getByText('System Monitoring')).toBeVisible()
   })
 
   test('user can search multiple stations in sequence', async ({ page }) => {
@@ -124,8 +124,8 @@ test.describe('Navigation Flow', () => {
     await page.getByRole('link', { name: 'Stations' }).click()
     await expect(page).toHaveURL('/search')
 
-    await page.getByRole('link', { name: 'Insights' }).click()
-    await expect(page).toHaveURL('/insights')
+    await page.getByRole('link', { name: 'Monitoring' }).click()
+    await expect(page).toHaveURL('/monitoring')
 
     // Go back
     await page.goBack()
@@ -162,8 +162,8 @@ test.describe('Navigation Flow', () => {
     await page.goto(`/station/${mockStation.id}`)
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
 
-    await page.goto('/insights')
-    await expect(page.getByRole('heading', { name: 'System Insights' })).toBeVisible()
+    await page.goto('/monitoring')
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
   })
 })
 

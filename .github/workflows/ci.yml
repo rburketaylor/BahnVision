@@ -58,6 +58,11 @@ jobs:
       - name: Run Ruff formatter
         run: ruff format --check backend/
 
+      - name: Run MyPy type check
+        run: |
+          pip install mypy pydantic fastapi
+          mypy backend/app --ignore-missing-imports --no-error-summary
+
   # =============================================================================
   # TEST JOBS - Always run (deps can break things)
   # =============================================================================
@@ -138,6 +143,19 @@ jobs:
           name: backend-test-results
           path: backend/htmlcov/
 
+      - name: Enforce coverage threshold
+        run: |
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('backend/coverage.xml')
+          rate = float(tree.find('.').get('line-rate'))
+          pct = rate * 100
+          print(f'Backend line coverage: {pct:.1f}%')
+          if pct < 70:
+              print('::error::Coverage below 70% threshold')
+              exit(1)
+          "
+
   test-frontend:
     runs-on: ubuntu-latest
     steps:
@@ -146,7 +164,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .nvmrc
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -179,6 +197,47 @@ jobs:
           flags: frontend
           name: frontend-coverage
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Test quality scan - Detect tests without assertions
+  test-quality:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Check backend test quality
+        run: python scripts/check_test_quality.py backend/tests
+      - name: Check frontend test quality
+        run: python scripts/check_test_quality.py frontend/src
+
+  # Mutation testing - Measure test suite effectiveness
+  mutation-testing:
+    runs-on: ubuntu-latest
+    needs: [test-frontend]
+    if: github.actor != 'dependabot[bot]' && github.ref == 'refs/heads/main'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --prefer-offline --prefix frontend
+      - name: Run Stryker mutation testing
+        run: npm run stryker --prefix frontend
+        timeout-minutes: 30
+      - name: Upload mutation reports
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mutation-report
+          path: frontend/reports/mutation/
 
   # =============================================================================
   # SECURITY JOBS - Consolidated and optimized
@@ -228,7 +287,7 @@ jobs:
         if: matrix.setup == 'node'
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .nvmrc
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -372,7 +431,7 @@ jobs:
       - name: Set up Node.js for E2E tests
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .nvmrc
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 

@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { HeatmapControls } from '../../components/heatmap/HeatmapControls'
 import type { TransportType } from '../../types/api'
-import type { TimeRangePreset } from '../../types/heatmap'
+import type { TimeRangePreset, HeatmapEnabledMetrics } from '../../types/heatmap'
 
 describe('HeatmapControls', () => {
   const defaultProps = {
@@ -11,8 +11,8 @@ describe('HeatmapControls', () => {
     onTimeRangeChange: vi.fn(),
     selectedTransportModes: [] as TransportType[],
     onTransportModesChange: vi.fn(),
-    metric: 'cancellations' as const,
-    onMetricChange: vi.fn(),
+    enabledMetrics: { cancellations: true, delays: true } as HeatmapEnabledMetrics,
+    onEnabledMetricsChange: vi.fn(),
   }
 
   it('renders time range buttons', () => {
@@ -93,7 +93,7 @@ describe('HeatmapControls', () => {
   it('disables buttons when loading', () => {
     render(<HeatmapControls {...defaultProps} isLoading={true} />)
 
-    // Metric buttons should be disabled
+    // Metric toggle buttons should be disabled
     expect(screen.getByText('Cancellations')).toBeDisabled()
     expect(screen.getByText('Delays')).toBeDisabled()
 
@@ -112,14 +112,45 @@ describe('HeatmapControls', () => {
     expect(screen.getByText('Showing all transport types')).toBeInTheDocument()
   })
 
-  it('renders metric buttons and calls onMetricChange', () => {
-    const onMetricChange = vi.fn()
-    render(<HeatmapControls {...defaultProps} onMetricChange={onMetricChange} />)
+  it('renders metric toggle buttons and calls onEnabledMetricsChange', () => {
+    const onEnabledMetricsChange = vi.fn()
+    render(
+      <HeatmapControls
+        {...defaultProps}
+        enabledMetrics={{ cancellations: true, delays: true }}
+        onEnabledMetricsChange={onEnabledMetricsChange}
+      />
+    )
 
     expect(screen.getByText('Cancellations')).toBeInTheDocument()
     expect(screen.getByText('Delays')).toBeInTheDocument()
 
+    // Toggle delays off (should still have cancellations on)
     fireEvent.click(screen.getByText('Delays'))
-    expect(onMetricChange).toHaveBeenCalledWith('delays')
+    expect(onEnabledMetricsChange).toHaveBeenCalledWith({ cancellations: true, delays: false })
+  })
+
+  it('shows combined message when both metrics are enabled', () => {
+    render(
+      <HeatmapControls {...defaultProps} enabledMetrics={{ cancellations: true, delays: true }} />
+    )
+
+    expect(screen.getByText('Showing combined cancellation & delay intensity')).toBeInTheDocument()
+  })
+
+  it('prevents disabling both metrics', () => {
+    const onEnabledMetricsChange = vi.fn()
+    render(
+      <HeatmapControls
+        {...defaultProps}
+        enabledMetrics={{ cancellations: true, delays: false }}
+        onEnabledMetricsChange={onEnabledMetricsChange}
+      />
+    )
+
+    // Try to toggle off the only enabled metric (cancellations)
+    fireEvent.click(screen.getByText('Cancellations'))
+    // Should not be called because it would disable both
+    expect(onEnabledMetricsChange).not.toHaveBeenCalled()
   })
 })

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { HeatmapStats } from '../../components/heatmap/HeatmapStats'
-import type { HeatmapSummary } from '../../types/heatmap'
+import type { HeatmapSummary, HeatmapEnabledMetrics } from '../../types/heatmap'
 
 describe('HeatmapStats', () => {
   const mockSummary: HeatmapSummary = {
@@ -16,9 +16,14 @@ describe('HeatmapStats', () => {
     most_affected_line: 'U-Bahn',
   }
 
+  const defaultEnabledMetrics: HeatmapEnabledMetrics = {
+    cancellations: true,
+    delays: false,
+  }
+
   it('renders loading state', () => {
     const { container } = render(
-      <HeatmapStats summary={null} isLoading={true} metric="cancellations" />
+      <HeatmapStats summary={null} isLoading={true} enabledMetrics={defaultEnabledMetrics} />
     )
 
     expect(screen.getByText('Statistics')).toBeInTheDocument()
@@ -27,13 +32,13 @@ describe('HeatmapStats', () => {
   })
 
   it('renders no data message when summary is null', () => {
-    render(<HeatmapStats summary={null} isLoading={false} metric="cancellations" />)
+    render(<HeatmapStats summary={null} isLoading={false} enabledMetrics={defaultEnabledMetrics} />)
 
     expect(screen.getByText('No data available')).toBeInTheDocument()
   })
 
   it('renders summary statistics', () => {
-    render(<HeatmapStats summary={mockSummary} metric="cancellations" />)
+    render(<HeatmapStats summary={mockSummary} enabledMetrics={defaultEnabledMetrics} />)
 
     // Overall rate
     expect(screen.getByText('Overall Rate')).toBeInTheDocument()
@@ -53,14 +58,14 @@ describe('HeatmapStats', () => {
   })
 
   it('renders most affected station', () => {
-    render(<HeatmapStats summary={mockSummary} metric="cancellations" />)
+    render(<HeatmapStats summary={mockSummary} enabledMetrics={defaultEnabledMetrics} />)
 
     expect(screen.getByText('Most Affected Station')).toBeInTheDocument()
     expect(screen.getByText('Marienplatz')).toBeInTheDocument()
   })
 
   it('renders most affected line', () => {
-    render(<HeatmapStats summary={mockSummary} metric="cancellations" />)
+    render(<HeatmapStats summary={mockSummary} enabledMetrics={defaultEnabledMetrics} />)
 
     expect(screen.getByText('Most Affected Line')).toBeInTheDocument()
     expect(screen.getByText('U-Bahn')).toBeInTheDocument()
@@ -73,7 +78,7 @@ describe('HeatmapStats', () => {
       most_affected_line: null,
     }
 
-    render(<HeatmapStats summary={summaryWithNulls} metric="cancellations" />)
+    render(<HeatmapStats summary={summaryWithNulls} enabledMetrics={defaultEnabledMetrics} />)
 
     // Should still render basic stats
     expect(screen.getByText('Total Departures')).toBeInTheDocument()
@@ -88,7 +93,7 @@ describe('HeatmapStats', () => {
       overall_cancellation_rate: 0.08, // 8%
     }
 
-    render(<HeatmapStats summary={highRateSummary} metric="cancellations" />)
+    render(<HeatmapStats summary={highRateSummary} enabledMetrics={defaultEnabledMetrics} />)
 
     const rateValue = screen.getByText('8.0%')
     expect(rateValue).toBeInTheDocument()
@@ -101,19 +106,32 @@ describe('HeatmapStats', () => {
       overall_cancellation_rate: 0.03, // 3%
     }
 
-    render(<HeatmapStats summary={moderateRateSummary} metric="cancellations" />)
+    render(<HeatmapStats summary={moderateRateSummary} enabledMetrics={defaultEnabledMetrics} />)
 
     const rateValue = screen.getByText('3.0%')
     expect(rateValue).toBeInTheDocument()
     expect(rateValue).toHaveClass('text-yellow-500')
   })
 
-  it('displays delay rate when metric is delays', () => {
-    render(<HeatmapStats summary={mockSummary} metric="delays" />)
+  it('displays delay rate when only delays enabled', () => {
+    render(
+      <HeatmapStats summary={mockSummary} enabledMetrics={{ cancellations: false, delays: true }} />
+    )
 
     const rateValue = screen.getByText('5.0%')
     expect(rateValue).toBeInTheDocument()
     expect(rateValue).toHaveClass('text-green-500')
     expect(screen.getByText('(delays)')).toBeInTheDocument()
+  })
+
+  it('displays combined rate when both metrics enabled', () => {
+    render(
+      <HeatmapStats summary={mockSummary} enabledMetrics={{ cancellations: true, delays: true }} />
+    )
+
+    // Combined rate = 3.5% + 5% = 8.5%
+    const rateValue = screen.getByText('8.5%')
+    expect(rateValue).toBeInTheDocument()
+    expect(screen.getByText('(combined)')).toBeInTheDocument()
   })
 })

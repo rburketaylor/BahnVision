@@ -3,16 +3,16 @@
  * Displays the color legend for cancellation/delay intensity
  */
 
-import type { HeatmapMetric } from '../../types/heatmap'
+import type { HeatmapEnabledMetrics } from '../../types/heatmap'
 import { DARK_HEATMAP_CONFIG, LIGHT_HEATMAP_CONFIG } from '../../types/heatmap'
 import { useTheme } from '../../contexts/ThemeContext'
 
 interface HeatmapLegendProps {
   className?: string
-  metric: HeatmapMetric
+  enabledMetrics: HeatmapEnabledMetrics
 }
 
-export function HeatmapLegend({ className = '', metric }: HeatmapLegendProps) {
+export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendProps) {
   const { resolvedTheme } = useTheme()
 
   const config = resolvedTheme === 'dark' ? DARK_HEATMAP_CONFIG : LIGHT_HEATMAP_CONFIG
@@ -40,11 +40,20 @@ export function HeatmapLegend({ className = '', metric }: HeatmapLegendProps) {
           'rgba(139, 92, 246, 0.95)',
         ]
 
+  // Determine legend title based on enabled metrics
+  const getTitle = () => {
+    if (enabledMetrics.cancellations && enabledMetrics.delays) {
+      return 'Combined Intensity'
+    }
+    if (enabledMetrics.delays) {
+      return 'Delay Intensity'
+    }
+    return 'Cancellation Intensity'
+  }
+
   return (
     <div className={`bg-card rounded-lg border border-border p-4 ${className}`}>
-      <h3 className="text-sm font-semibold text-foreground mb-3">
-        {metric === 'delays' ? 'Delay Intensity' : 'Cancellation Intensity'}
-      </h3>
+      <h3 className="text-sm font-semibold text-foreground mb-3">{getTitle()}</h3>
 
       <div className="flex items-center gap-2">
         {/* Gradient bar */}
@@ -62,9 +71,29 @@ export function HeatmapLegend({ className = '', metric }: HeatmapLegendProps) {
         <span className="text-xs text-muted-foreground">High</span>
       </div>
 
-      {/* Legend items */}
+      {/* Legend items - show relevant items based on enabled metrics */}
       <div className="mt-4 space-y-2 text-xs">
-        {metric === 'delays' ? (
+        {enabledMetrics.cancellations && enabledMetrics.delays ? (
+          // Combined view - show simplified combined legend
+          <>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: swatches[0] }} />
+              <span className="text-muted-foreground">Low impact (0-5%)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: swatches[1] }} />
+              <span className="text-muted-foreground">Moderate impact (5-15%)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: swatches[2] }} />
+              <span className="text-muted-foreground">High impact (15-25%)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: swatches[3] }} />
+              <span className="text-muted-foreground">{'>'}25% combined rate</span>
+            </div>
+          </>
+        ) : enabledMetrics.delays ? (
           <>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: swatches[0] }} />

@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator, Callable, TypeVar
 import valkey.asyncio as valkey
 
 from app.core.config import get_settings
+from app.core.metrics import record_cache_event
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -274,8 +275,11 @@ class CacheService:
         """
         value = await self._get_from_valkey(key)
         if value is not None:
+            record_cache_event("raw", "hit")
             return value
-        return await self._fallback.get(key)
+        fallback = await self._fallback.get(key)
+        record_cache_event("raw", "miss")
+        return fallback
 
     async def set(
         self,
@@ -330,6 +334,41 @@ class CacheService:
 
         return result
 
+    async def mget_json(self, keys: list[str]) -> dict[str, Any | None]:
+        """Retrieve multiple JSON documents and decode them.
+
+        Uses the underlying mget for efficient batch retrieval from Valkey,
+        then deserializes each value. Falls back to in-memory cache for
+        keys not found in Valkey.
+
+        Args:
+            keys: List of cache keys to retrieve
+
+        Returns:
+            Dict mapping keys to their decoded JSON values (None if not found
+            or if JSON decoding fails)
+        """
+        if not keys:
+            return {}
+
+        raw_values = await self.mget(keys)
+        result: dict[str, Any | None] = {}
+
+        for key, value in raw_values.items():
+            if value is not None:
+                try:
+                    result[key] = json.loads(value)
+                    record_cache_event("json", "hit")
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode JSON for key %s", key)
+                    result[key] = None
+                    record_cache_event("json", "miss")
+            else:
+                result[key] = None
+                record_cache_event("json", "miss")
+
+        return result
+
     async def mset(
         self,
         items: dict[str, str],
@@ -371,12 +410,13 @@ class CacheService:
         """Retrieve a JSON document and decode it."""
         payload = await self._get_from_valkey(key)
         if payload is not None:
+            record_cache_event("json", "hit")
             return json.loads(payload)
 
         fallback_payload = await self._fallback.get(key)
+        record_cache_event("json", "miss")
         if fallback_payload is None:
             return None
-
         return json.loads(fallback_payload)
 
     async def get_stale_json(self, key: str) -> dict[str, Any] | None:
@@ -385,12 +425,13 @@ class CacheService:
 
         payload = await self._get_from_valkey(stale_key)
         if payload is not None:
+            record_cache_event("stale", "hit")
             return json.loads(payload)
 
         fallback_payload = await self._fallback.get(stale_key)
+        record_cache_event("stale", "miss")
         if fallback_payload is None:
             return None
-
         return json.loads(fallback_payload)
 
     async def set_json(

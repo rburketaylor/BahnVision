@@ -13,8 +13,8 @@ import {
   HeatmapSearchOverlay,
 } from '../components/heatmap'
 import type { TransportType } from '../types/api'
-import type { TimeRangePreset, HeatmapMetric } from '../types/heatmap'
-import { DEFAULT_ZOOM, HEATMAP_METRIC_LABELS } from '../types/heatmap'
+import type { TimeRangePreset, HeatmapEnabledMetrics } from '../types/heatmap'
+import { DEFAULT_ZOOM, HEATMAP_METRIC_LABELS, DEFAULT_ENABLED_METRICS } from '../types/heatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
 const CancellationHeatmap = lazy(() =>
@@ -60,11 +60,41 @@ function isTypingTarget(target: EventTarget | null) {
   return false
 }
 
+// Helper to generate title based on enabled metrics
+function getHeatmapTitle(enabledMetrics: HeatmapEnabledMetrics): string {
+  if (enabledMetrics.cancellations && enabledMetrics.delays) {
+    return 'Combined Impact Heatmap'
+  }
+  if (enabledMetrics.cancellations) {
+    return `${HEATMAP_METRIC_LABELS.cancellations} Heatmap`
+  }
+  if (enabledMetrics.delays) {
+    return `${HEATMAP_METRIC_LABELS.delays} Heatmap`
+  }
+  return 'Heatmap'
+}
+
+// Helper to generate description based on enabled metrics
+function getHeatmapDescription(enabledMetrics: HeatmapEnabledMetrics): string {
+  if (enabledMetrics.cancellations && enabledMetrics.delays) {
+    return 'Visualize combined cancellation and delay patterns across Germany'
+  }
+  if (enabledMetrics.cancellations) {
+    return 'Visualize transit cancellation patterns across Germany'
+  }
+  if (enabledMetrics.delays) {
+    return 'Visualize transit delay patterns across Germany'
+  }
+  return 'Enable at least one metric to view the heatmap'
+}
+
 export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
   const [zoom, setZoom] = useState<number>(() => loadInitialZoom())
-  const [metric, setMetric] = useState<HeatmapMetric>('cancellations')
+  const [enabledMetrics, setEnabledMetrics] = useState<HeatmapEnabledMetrics>(() => ({
+    ...DEFAULT_ENABLED_METRICS,
+  }))
   const [controlsOpen, setControlsOpen] = useState(true)
 
   const { data, isLoading, error, refetch } = useHeatmap(
@@ -127,17 +157,13 @@ export default function HeatmapPage() {
             dataPoints={dataPoints}
             isLoading={isLoading}
             onZoomChange={setZoom}
-            metric={metric}
+            enabledMetrics={enabledMetrics}
             overlay={
               <HeatmapOverlayPanel
                 open={controlsOpen}
                 onOpenChange={setControlsOpen}
-                title={`${HEATMAP_METRIC_LABELS[metric]} Heatmap`}
-                description={
-                  metric === 'delays'
-                    ? 'Visualize transit delay patterns across Germany'
-                    : 'Visualize transit cancellation patterns across Germany'
-                }
+                title={getHeatmapTitle(enabledMetrics)}
+                description={getHeatmapDescription(enabledMetrics)}
                 hasError={Boolean(error)}
                 isLoading={isLoading}
                 onRefresh={refetch}
@@ -205,14 +231,18 @@ export default function HeatmapPage() {
                   onTimeRangeChange={setTimeRange}
                   selectedTransportModes={transportModes}
                   onTransportModesChange={setTransportModes}
-                  metric={metric}
-                  onMetricChange={setMetric}
+                  enabledMetrics={enabledMetrics}
+                  onEnabledMetricsChange={setEnabledMetrics}
                   isLoading={isLoading}
                 />
 
-                <HeatmapLegend metric={metric} />
+                <HeatmapLegend enabledMetrics={enabledMetrics} />
 
-                <HeatmapStats summary={summary} isLoading={isLoading} metric={metric} />
+                <HeatmapStats
+                  summary={summary}
+                  isLoading={isLoading}
+                  enabledMetrics={enabledMetrics}
+                />
 
                 <div className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-3">
                   <p>

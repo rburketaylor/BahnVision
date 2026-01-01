@@ -10,7 +10,7 @@ Handles fetching, parsing, and storing GTFS-RT data including:
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 from dataclasses import dataclass
 
 import httpx
@@ -352,6 +352,18 @@ class GtfsRealtimeService:
             logger.error(f"Failed to fetch alerts: {e}")
             return []
 
+    def _serialize_dataclass(self, obj) -> dict[str, Any]:
+        """Serialize a dataclass to a JSON-safe dict, converting datetime to ISO format"""
+        result: dict[str, Any] = {}
+        for key, value in obj.__dict__.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+            elif isinstance(value, set):
+                result[key] = list(value)
+            else:
+                result[key] = value
+        return result
+
     async def _store_trip_updates(self, trip_updates: List[TripUpdate]):
         """Store trip updates in Valkey cache with stop-based indexing"""
         if not trip_updates:
@@ -364,7 +376,9 @@ class GtfsRealtimeService:
         for tu in trip_updates:
             key = f"trip_update:{tu.trip_id}:{tu.stop_id}"
             await self.cache.set_json(
-                key, tu.__dict__, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
+                key,
+                self._serialize_dataclass(tu),
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
             # Build stop-to-trips index
@@ -392,7 +406,7 @@ class GtfsRealtimeService:
             vehicle_key = f"vehicle_position:{vp.vehicle_id}"
             await self.cache.set_json(
                 vehicle_key,
-                vp.__dict__,
+                self._serialize_dataclass(vp),
                 ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
@@ -401,7 +415,7 @@ class GtfsRealtimeService:
                 trip_vehicle_key = f"vehicle_position:trip:{vp.trip_id}"
                 await self.cache.set_json(
                     trip_vehicle_key,
-                    vp.__dict__,
+                    self._serialize_dataclass(vp),
                     ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
                 )
 
@@ -416,12 +430,11 @@ class GtfsRealtimeService:
         # Store by alert_id
         for alert in alerts:
             key = f"service_alert:{alert.alert_id}"
-            # Convert sets to lists for JSON serialization
-            alert_dict = alert.__dict__.copy()
-            alert_dict["affected_routes"] = list(alert.affected_routes)
-            alert_dict["affected_stops"] = list(alert.affected_stops)
+            # Use helper method that handles datetime and set serialization
             await self.cache.set_json(
-                key, alert_dict, ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds
+                key,
+                self._serialize_dataclass(alert),
+                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
             )
 
             # Build route-to-alerts index
@@ -477,8 +490,13 @@ class GtfsRealtimeService:
         }
         return mapping.get(effect, "UNKNOWN_EFFECT")
 
-    def _extract_text(self, translations) -> str:
-        """Extract text from GTFS-RT translated string"""
+    def _extract_text(self, translated_string) -> str:
+        """Extract text from GTFS-RT TranslatedString message"""
+        if not translated_string:
+            return ""
+
+        # Access the .translation repeated field of the TranslatedString message
+        translations = translated_string.translation
         if not translations:
             return ""
 
@@ -499,14 +517,16 @@ class GtfsRealtimeService:
             if not trip_ids:
                 return []
 
-            # Fetch all trip updates for these trips at this stop
-            trip_updates = []
-            for trip_id in trip_ids:
-                trip_update_key = f"trip_update:{trip_id}:{stop_id}"
-                trip_update_data = await self.cache.get_json(trip_update_key)
+            # Batch fetch all trip updates for these trips
+            trip_update_keys = [
+                f"trip_update:{trip_id}:{stop_id}" for trip_id in trip_ids
+            ]
+            trip_updates_data = await self.cache.mget_json(trip_update_keys)
 
-                if trip_update_data:
-                    trip_updates.append(TripUpdate(**trip_update_data))
+            trip_updates = []
+            for data in trip_updates_data.values():
+                if data:
+                    trip_updates.append(TripUpdate(**data))
 
             return trip_updates
 
@@ -542,6 +562,34 @@ class GtfsRealtimeService:
             logger.error(f"Failed to get vehicle position for trip {trip_id}: {e}")
             return None
 
+    async def get_vehicle_positions_by_trips(
+        self, trip_ids: List[str]
+    ) -> dict[str, VehiclePosition]:
+        """Get cached vehicle positions for multiple trip IDs in a single batch call.
+
+        Args:
+            trip_ids: List of trip IDs to fetch vehicle positions for
+
+        Returns:
+            Dict mapping trip_id to VehiclePosition (only includes trips with positions)
+        """
+        try:
+            if not trip_ids:
+                return {}
+
+            keys = [f"vehicle_position:trip:{trip_id}" for trip_id in trip_ids]
+            data_map = await self.cache.mget_json(keys)
+
+            result: dict[str, VehiclePosition] = {}
+            for trip_id, key in zip(trip_ids, keys):
+                data = data_map.get(key)
+                if data:
+                    result[trip_id] = VehiclePosition(**data)
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get vehicle positions for trips: {e}")
+            return {}
+
     async def get_alerts_for_route(self, route_id: str) -> List[ServiceAlert]:
         """Get cached alerts for a specific route using the route-based index"""
         try:
@@ -552,17 +600,17 @@ class GtfsRealtimeService:
             if not alert_ids:
                 return []
 
-            # Fetch all alerts for these IDs
-            alerts = []
-            for alert_id in alert_ids:
-                alert_key = f"service_alert:{alert_id}"
-                alert_data = await self.cache.get_json(alert_key)
+            # Batch fetch all alerts
+            alert_keys = [f"service_alert:{alert_id}" for alert_id in alert_ids]
+            alerts_data = await self.cache.mget_json(alert_keys)
 
-                if alert_data:
+            alerts = []
+            for data in alerts_data.values():
+                if data:
                     # Convert lists back to sets for the ServiceAlert constructor
-                    alert_data["affected_routes"] = set(alert_data["affected_routes"])
-                    alert_data["affected_stops"] = set(alert_data["affected_stops"])
-                    alerts.append(ServiceAlert(**alert_data))
+                    data["affected_routes"] = set(data["affected_routes"])
+                    data["affected_stops"] = set(data["affected_stops"])
+                    alerts.append(ServiceAlert(**data))
 
             return alerts
 

@@ -106,6 +106,9 @@ class GTFSRTDataHarvester:
         )
         self._running = False
         self._task: asyncio.Task | None = None
+        # Status tracking for monitoring
+        self._last_harvest_at: datetime | None = None
+        self._last_stations_updated: int = 0
 
     async def start(self) -> None:
         """Start the harvesting background loop."""
@@ -130,6 +133,18 @@ class GTFSRTDataHarvester:
                 pass
             self._task = None
         logger.info("GTFS-RT harvester stopped")
+
+    def get_status(self) -> dict:
+        """Get current harvester status for monitoring.
+
+        Returns:
+            Dict with running status and last harvest info.
+        """
+        return {
+            "is_running": self._running,
+            "last_harvest_at": self._last_harvest_at,
+            "stations_updated_last_harvest": self._last_stations_updated,
+        }
 
     async def _run_polling_loop(self) -> None:
         """Main polling loop that runs until stopped."""
@@ -189,6 +204,10 @@ class GTFSRTDataHarvester:
                 await session.commit()
                 updated_count = len(stop_stats)
 
+            # Update status tracking
+            self._last_harvest_at = datetime.now(timezone.utc)
+            self._last_stations_updated = updated_count
+
             logger.info(
                 "Harvested and aggregated stats for %d station-route combinations",
                 updated_count,
@@ -215,8 +234,15 @@ class GTFSRTDataHarvester:
 
         try:
             logger.debug(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
+            # Use explicit timeout for large feed download (~27MB)
+            timeout = httpx.Timeout(
+                connect=30.0,
+                read=180.0,  # 3 minutes for large feed
+                write=30.0,
+                pool=30.0,
+            )
             async with httpx.AsyncClient(
-                timeout=self.settings.gtfs_rt_timeout_seconds,
+                timeout=timeout,
                 headers={"User-Agent": "BahnVision-GTFS-RT-Harvester/1.0"},
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
@@ -267,7 +293,9 @@ class GTFSRTDataHarvester:
             return trip_updates
 
         except Exception as e:
-            logger.error("Failed to fetch trip updates: %s", e)
+            logger.exception(
+                "Failed to fetch trip updates: %s: %s", type(e).__name__, e
+            )
             return []
 
     def _map_schedule_relationship(self, relationship: int) -> ScheduleRelationship:

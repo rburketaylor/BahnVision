@@ -66,12 +66,67 @@ get_node_lts_version() {
     echo "$version"
 }
 
+# Fetch the latest patch version for a given major from nodejs.org (e.g. 24 -> v24.x.y)
+get_node_latest_for_major() {
+    local major="$1"
+    local version
+
+    version=$(curl -fsSL https://nodejs.org/dist/index.json 2>/dev/null \
+        | grep -o "\"version\":\"v${major}\\.[0-9.]*\"" \
+        | head -1 \
+        | cut -d'"' -f4)
+
+    if [[ -z "$version" ]]; then
+        error "Failed to fetch latest Node.js v${major}.x version"
+        exit 1
+    fi
+
+    echo "$version"
+}
+
+# Determine which Node.js version to install.
+# - If .nvmrc exists, use its version (major like 24, or full like v24.12.0).
+# - Otherwise, default to the latest LTS.
+get_node_version() {
+    local version_file="$REPO_ROOT/.nvmrc"
+
+    if [[ -f "$version_file" ]]; then
+        local raw_version
+        raw_version=$(tr -d '\r' < "$version_file" | head -n 1 | xargs)
+
+        if [[ -z "$raw_version" ]]; then
+            error "$version_file is empty"
+            exit 1
+        fi
+
+        if [[ "$raw_version" == lts/* ]]; then
+            get_node_lts_version
+            return 0
+        fi
+
+        if [[ "$raw_version" =~ ^v?[0-9]+$ ]]; then
+            get_node_latest_for_major "${raw_version#v}"
+            return 0
+        fi
+
+        if [[ "$raw_version" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+            echo "v${raw_version#v}"
+            return 0
+        fi
+
+        error "Unsupported Node.js version format in $version_file: $raw_version"
+        exit 1
+    fi
+
+    get_node_lts_version
+}
+
 # Install Node.js locally
 install_node() {
     local platform version node_archive node_url node_extracted
 
     platform=$(detect_platform)
-    version=$(get_node_lts_version)
+    version=$(get_node_version)
 
     info "Installing Node.js $version for $platform..."
 

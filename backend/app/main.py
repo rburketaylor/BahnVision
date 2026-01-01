@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
-
+import sys
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -23,6 +23,15 @@ from app.jobs.rt_processor import gtfs_rt_lifespan_manager
 from app.jobs.gtfs_scheduler import GTFSFeedScheduler
 from app.services.cache import get_cache_service
 from app.services.gtfs_realtime_harvester import GTFSRTDataHarvester
+
+# Configure logging for the application (after imports per PEP 8)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
+# Ensure app modules log at INFO level
+logging.getLogger("app").setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-Id"

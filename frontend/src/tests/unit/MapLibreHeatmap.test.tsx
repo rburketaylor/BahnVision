@@ -203,7 +203,11 @@ describe('MapLibreHeatmap Component', () => {
   it('should show loading state when isLoading is true', () => {
     render(
       <ThemeProvider>
-        <MapLibreHeatmap dataPoints={[]} isLoading={true} metric="cancellations" />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          isLoading={true}
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
       </ThemeProvider>
     )
 
@@ -213,7 +217,11 @@ describe('MapLibreHeatmap Component', () => {
   it('should not show loading overlay when isLoading is false', () => {
     render(
       <ThemeProvider>
-        <MapLibreHeatmap dataPoints={[]} isLoading={false} metric="cancellations" />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          isLoading={false}
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
       </ThemeProvider>
     )
 
@@ -223,7 +231,7 @@ describe('MapLibreHeatmap Component', () => {
   it('should render the map container', () => {
     const { container } = render(
       <ThemeProvider>
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
       </ThemeProvider>
     )
 
@@ -234,7 +242,7 @@ describe('MapLibreHeatmap Component', () => {
   it('initializes map and installs heatmap layers on load', async () => {
     render(
       <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
       </ThemeProvider>
     )
 
@@ -250,46 +258,19 @@ describe('MapLibreHeatmap Component', () => {
     expect(map.addLayer).toHaveBeenCalled()
   })
 
-  it('creates hotspot markers for high-intensity clusters', async () => {
-    render(
-      <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
-      </ThemeProvider>
-    )
-
-    await waitFor(() =>
-      expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
-    )
-    const map = getMockMapInstance()
-    map._emit('load')
-    map._emit('style.load')
-
-    map.queryRenderedFeatures.mockImplementation((query: { layers?: string[] }) => {
-      if (query?.layers?.includes('clusters')) {
-        return [
-          {
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [10.4, 51.1] },
-            properties: { cluster_id: 1, point_count: 50, intensity_sum: 50 },
-          },
-        ]
-      }
-      return []
-    })
-
-    vi.useFakeTimers()
-    map._emit('zoomend')
-    vi.advanceTimersByTime(300)
-
-    expect((maplibregl as unknown as { Marker: { mock: unknown } }).Marker).toHaveBeenCalled()
-  })
+  // NOTE: The "creates hotspot markers for high-intensity clusters" test was removed
+  // because the pulsing hotspot marker feature was removed from the MapLibreHeatmap component
 
   it('opens a popup and sanitizes station name on point click, and clears selection on Escape', async () => {
     const onStationSelect = vi.fn()
 
     render(
       <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" onStationSelect={onStationSelect} />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          enabledMetrics={{ cancellations: true, delays: true }}
+          onStationSelect={onStationSelect}
+        />
       </ThemeProvider>
     )
 
@@ -344,7 +325,11 @@ describe('MapLibreHeatmap Component', () => {
 
     render(
       <ThemeProvider defaultTheme="light">
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" onStationSelect={onStationSelect} />
+        <MapLibreHeatmap
+          dataPoints={[]}
+          enabledMetrics={{ cancellations: true, delays: true }}
+          onStationSelect={onStationSelect}
+        />
       </ThemeProvider>
     )
 
@@ -366,7 +351,7 @@ describe('MapLibreHeatmap Component', () => {
     render(
       <ThemeProvider defaultTheme="light">
         <ThemeToggler />
-        <MapLibreHeatmap dataPoints={[]} metric="cancellations" />
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
       </ThemeProvider>
     )
 

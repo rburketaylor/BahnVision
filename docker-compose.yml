@@ -14,7 +14,15 @@ services:
     depends_on:
       - backend
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health" ]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:80/health",
+        ]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -51,7 +59,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bahnvision}
       POSTGRES_DB: ${POSTGRES_DB:-bahnvision}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bahnvision}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bahnvision}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -62,9 +70,9 @@ services:
 
   valkey:
     image: valkey/valkey:latest
-    command: [ "valkey-server", "--save", "", "--appendonly", "no" ]
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
-      test: [ "CMD", "valkey-cli", "ping" ]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
