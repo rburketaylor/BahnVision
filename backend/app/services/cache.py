@@ -334,6 +334,41 @@ class CacheService:
 
         return result
 
+    async def mget_json(self, keys: list[str]) -> dict[str, Any | None]:
+        """Retrieve multiple JSON documents and decode them.
+
+        Uses the underlying mget for efficient batch retrieval from Valkey,
+        then deserializes each value. Falls back to in-memory cache for
+        keys not found in Valkey.
+
+        Args:
+            keys: List of cache keys to retrieve
+
+        Returns:
+            Dict mapping keys to their decoded JSON values (None if not found
+            or if JSON decoding fails)
+        """
+        if not keys:
+            return {}
+
+        raw_values = await self.mget(keys)
+        result: dict[str, Any | None] = {}
+
+        for key, value in raw_values.items():
+            if value is not None:
+                try:
+                    result[key] = json.loads(value)
+                    record_cache_event("json", "hit")
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode JSON for key %s", key)
+                    result[key] = None
+                    record_cache_event("json", "miss")
+            else:
+                result[key] = None
+                record_cache_event("json", "miss")
+
+        return result
+
     async def mset(
         self,
         items: dict[str, str],

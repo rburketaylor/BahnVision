@@ -454,25 +454,25 @@ class TransitDataService:
                         tu.schedule_relationship
                     )
 
-            # Get vehicle positions for active trips
-            trip_ids = {dep.trip_id for dep in departures}
-            for trip_id in trip_ids:
-                # Note: This is a simplified approach
-                # In practice, you'd need to map vehicles to trips
-                vehicle_pos = await self.gtfs_realtime.get_vehicle_position_by_trip(
-                    trip_id
-                )
+            # Get vehicle positions for active trips (batch fetch)
+            trip_ids = list({dep.trip_id for dep in departures})
+
+            # Batch fetch vehicle positions for all trips
+            vehicle_positions = await self.gtfs_realtime.get_vehicle_positions_by_trips(
+                trip_ids
+            )
+
+            # Update departures with vehicle info
+            for departure in departures:
+                vehicle_pos = vehicle_positions.get(departure.trip_id)
                 if vehicle_pos:
-                    for departure in departures:
-                        if departure.trip_id == trip_id:
-                            departure.vehicle_id = vehicle_pos.vehicle_id
-                            departure.vehicle_position = {
-                                "latitude": vehicle_pos.latitude,
-                                "longitude": vehicle_pos.longitude,
-                                "bearing": vehicle_pos.bearing,
-                                "speed": vehicle_pos.speed,
-                            }
-                            break
+                    departure.vehicle_id = vehicle_pos.vehicle_id
+                    departure.vehicle_position = {
+                        "latitude": vehicle_pos.latitude,
+                        "longitude": vehicle_pos.longitude,
+                        "bearing": vehicle_pos.bearing,
+                        "speed": vehicle_pos.speed,
+                    }
 
         except Exception as e:
             logger.error(f"Failed to apply real-time updates for stop {stop_id}: {e}")
