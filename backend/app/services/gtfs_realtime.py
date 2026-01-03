@@ -365,77 +365,77 @@ class GtfsRealtimeService:
         return result
 
     async def _store_trip_updates(self, trip_updates: List[TripUpdate]):
-        """Store trip updates in Valkey cache with stop-based indexing"""
+        """Store trip updates in Valkey cache with stop-based indexing using batch writes."""
         if not trip_updates:
             return
 
         # Track trip IDs by stop for the secondary index
         stop_to_trips: dict[str, set[str]] = {}
 
-        # Store by trip_id for quick lookup
+        # Build batch of items to store
+        items_to_store: dict[str, Any] = {}
+
         for tu in trip_updates:
             key = f"trip_update:{tu.trip_id}:{tu.stop_id}"
-            await self.cache.set_json(
-                key,
-                self._serialize_dataclass(tu),
-                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-            )
+            items_to_store[key] = self._serialize_dataclass(tu)
 
             # Build stop-to-trips index
             if tu.stop_id not in stop_to_trips:
                 stop_to_trips[tu.stop_id] = set()
             stop_to_trips[tu.stop_id].add(tu.trip_id)
 
-        # Store the stop-based indexes
+        # Batch write all trip updates
+        await self.cache.mset_json(
+            items_to_store,
+            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+        )
+
+        # Batch write all stop-based indexes
+        index_items: dict[str, Any] = {}
         for stop_id, trip_ids in stop_to_trips.items():
             index_key = f"trip_updates:stop:{stop_id}"
-            await self.cache.set_json(
-                index_key,
-                list(trip_ids),
-                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-            )
+            index_items[index_key] = list(trip_ids)
+
+        await self.cache.mset_json(
+            index_items,
+            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+        )
 
     async def _store_vehicle_positions(self, vehicle_positions: List[VehiclePosition]):
-        """Store vehicle positions in Valkey cache with trip-based indexing"""
+        """Store vehicle positions in Valkey cache with trip-based indexing using batch writes."""
         if not vehicle_positions:
             return
 
-        # Store by vehicle_id for quick lookup and create trip-to-vehicle index
+        items_to_store: dict[str, Any] = {}
+
         for vp in vehicle_positions:
             # Store by vehicle_id
             vehicle_key = f"vehicle_position:{vp.vehicle_id}"
-            await self.cache.set_json(
-                vehicle_key,
-                self._serialize_dataclass(vp),
-                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-            )
+            items_to_store[vehicle_key] = self._serialize_dataclass(vp)
 
             # Create trip-to-vehicle index if trip_id is available
             if vp.trip_id:
                 trip_vehicle_key = f"vehicle_position:trip:{vp.trip_id}"
-                await self.cache.set_json(
-                    trip_vehicle_key,
-                    self._serialize_dataclass(vp),
-                    ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-                )
+                items_to_store[trip_vehicle_key] = self._serialize_dataclass(vp)
+
+        # Batch write all vehicle positions and indexes
+        await self.cache.mset_json(
+            items_to_store,
+            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+        )
 
     async def _store_alerts(self, alerts: List[ServiceAlert]):
-        """Store service alerts in Valkey cache with route-based indexing"""
+        """Store service alerts in Valkey cache with route-based indexing using batch writes."""
         if not alerts:
             return
 
         # Track alerts by route for the secondary index
         route_to_alerts: dict[str, set[str]] = {}
+        items_to_store: dict[str, Any] = {}
 
-        # Store by alert_id
         for alert in alerts:
             key = f"service_alert:{alert.alert_id}"
-            # Use helper method that handles datetime and set serialization
-            await self.cache.set_json(
-                key,
-                self._serialize_dataclass(alert),
-                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-            )
+            items_to_store[key] = self._serialize_dataclass(alert)
 
             # Build route-to-alerts index
             for route_id in alert.affected_routes:
@@ -443,14 +443,22 @@ class GtfsRealtimeService:
                     route_to_alerts[route_id] = set()
                 route_to_alerts[route_id].add(alert.alert_id)
 
-        # Store the route-based indexes
+        # Batch write all alerts
+        await self.cache.mset_json(
+            items_to_store,
+            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+        )
+
+        # Batch write all route-based indexes
+        index_items: dict[str, Any] = {}
         for route_id, alert_ids in route_to_alerts.items():
             index_key = f"service_alerts:route:{route_id}"
-            await self.cache.set_json(
-                index_key,
-                list(alert_ids),
-                ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-            )
+            index_items[index_key] = list(alert_ids)
+
+        await self.cache.mset_json(
+            index_items,
+            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
+        )
 
     def _map_schedule_relationship(self, relationship) -> str:
         """Map GTFS-RT schedule relationship to string"""

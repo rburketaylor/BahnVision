@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, time, timedelta, timezone, date
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +68,7 @@ class StopNotFoundError(Exception):
     pass
 
 
-def _get_weekday_column(calendar: GTFSCalendar, weekday: str):
+def _get_weekday_column(calendar: Any, weekday: str):
     """Get the appropriate weekday column from GTFSCalendar model.
 
     This returns the SQLAlchemy column object, not a string,

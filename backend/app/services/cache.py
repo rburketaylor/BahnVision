@@ -406,7 +406,25 @@ class CacheService:
         for key, value in items.items():
             await self._fallback.set(key, value, effective_ttl)
 
-    async def get_json(self, key: str) -> dict[str, Any] | None:
+    async def mset_json(
+        self,
+        items: dict[str, Any],
+        ttl_seconds: int | None = None,
+    ) -> None:
+        """Store multiple JSON documents in a single batch call.
+
+        Args:
+            items: Dict mapping keys to JSON-serializable values
+            ttl_seconds: Optional TTL for all keys
+        """
+        if not items:
+            return
+
+        # Serialize all values to JSON
+        serialized = {key: json.dumps(value) for key, value in items.items()}
+        await self.mset(serialized, ttl_seconds)
+
+    async def get_json(self, key: str) -> Any | None:
         """Retrieve a JSON document and decode it."""
         payload = await self._get_from_valkey(key)
         if payload is not None:
@@ -419,7 +437,7 @@ class CacheService:
             return None
         return json.loads(fallback_payload)
 
-    async def get_stale_json(self, key: str) -> dict[str, Any] | None:
+    async def get_stale_json(self, key: str) -> Any | None:
         """Retrieve a stale JSON document stored for graceful fallbacks."""
         stale_key = f"{key}{self._STALE_SUFFIX}"
 
@@ -540,8 +558,14 @@ def get_valkey_client() -> valkey.Valkey:
     )
 
 
+@lru_cache
 def get_cache_service() -> CacheService:
-    """FastAPI dependency hook for cache usage."""
+    """FastAPI dependency hook for cache usage.
+
+    Returns a singleton CacheService instance to preserve:
+    - FallbackCache state across requests
+    - CircuitBreaker state across requests
+    """
     return CacheService(get_valkey_client())
 
 

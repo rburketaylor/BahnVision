@@ -723,8 +723,16 @@ class FakeCacheService:
     async def get_json(self, key: str):
         return self._cache.get(key)
 
+    async def get_stale_json(self, key: str):
+        """Get stale JSON from cache (returns None by default)."""
+        return self._cache.get(f"{key}:stale")
+
     async def set_json(self, key: str, value, ttl_seconds=None, stale_ttl_seconds=None):
         self._cache[key] = value
+
+    async def mget_json(self, keys: list):
+        """Batch get JSON from cache."""
+        return {key: self._cache.get(key) for key in keys}
 
 
 class FakeDbSession:
@@ -945,7 +953,6 @@ class TestTransitDataServiceMethods:
     async def test_get_departures_for_stop_returns_cached_data(self, transit_service):
         """Test get_departures_for_stop returns cached data on cache hit."""
         # Pre-populate cache with serialized departures
-        from datetime import datetime, timezone
 
         cached_departures = [
             {
@@ -969,10 +976,8 @@ class TestTransitDataServiceMethods:
             }
         ]
 
-        # Calculate the cache key that will be used
-        now = datetime.now(timezone.utc)
-        bucket = int(now.timestamp()) // 15
-        cache_key = f"departures:stop1:10:0:False:{bucket}"
+        # Cache key without time bucket (Issue 5 fix: removed time bucket for stale-while-revalidate)
+        cache_key = "departures:stop1:10:0:False"
 
         # Pre-populate the cache
         await transit_service.cache.set_json(cache_key, cached_departures)
@@ -996,12 +1001,8 @@ class TestTransitDataServiceMethods:
 
         assert len(result) == 2
 
-        # Verify something was cached
-        from datetime import datetime, timezone
-
-        now = datetime.now(timezone.utc)
-        bucket = int(now.timestamp()) // 15
-        cache_key = f"departures:stop1:10:0:False:{bucket}"
+        # Cache key without time bucket (Issue 5 fix: removed time bucket for stale-while-revalidate)
+        cache_key = "departures:stop1:10:0:False"
 
         cached = await transit_service.cache.get_json(cache_key)
         assert cached is not None
