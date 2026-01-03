@@ -102,7 +102,7 @@ class DepartureInfo:
             "scheduled_departure",
             "scheduled_arrival",
             "real_time_departure",
-            "real_time_arrival"
+            "real_time_arrival",
         ]:
             if data.get(field):
                 data[field] = data[field].isoformat()
@@ -116,9 +116,13 @@ class DepartureInfo:
                 alert_dict = asdict(alert)
 
                 # Convert sets to lists for JSON serialization
-                if "affected_routes" in alert_dict and isinstance(alert_dict["affected_routes"], set):
+                if "affected_routes" in alert_dict and isinstance(
+                    alert_dict["affected_routes"], set
+                ):
                     alert_dict["affected_routes"] = list(alert_dict["affected_routes"])
-                if "affected_stops" in alert_dict and isinstance(alert_dict["affected_stops"], set):
+                if "affected_stops" in alert_dict and isinstance(
+                    alert_dict["affected_stops"], set
+                ):
                     alert_dict["affected_stops"] = list(alert_dict["affected_stops"])
 
                 # Convert datetimes in alerts
@@ -133,25 +137,36 @@ class DepartureInfo:
 
     @staticmethod
     def from_dict(data: Dict) -> "DepartureInfo":
-        """Create from dictionary handling type conversions"""
+        """Create from dictionary handling type conversions.
+
+        Note: This method creates a shallow copy of the input dict to avoid
+        mutating the caller's data.
+        """
+        # Copy to avoid mutating the input
+        data = data.copy()
+
         # Convert string to enum
         if "schedule_relationship" in data:
-            data["schedule_relationship"] = ScheduleRelationship(data["schedule_relationship"])
+            data["schedule_relationship"] = ScheduleRelationship(
+                data["schedule_relationship"]
+            )
 
         # Convert ISO strings back to datetime
         for field in [
             "scheduled_departure",
             "scheduled_arrival",
             "real_time_departure",
-            "real_time_arrival"
+            "real_time_arrival",
         ]:
             if data.get(field):
                 data[field] = datetime.fromisoformat(data[field])
 
         # Reconstruct ServiceAlert objects
-        if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert:
+        if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert is not None:
             alerts = []
             for alert_data in data["alerts"]:
+                # Copy alert data to avoid mutating nested structures
+                alert_data = alert_data.copy()
                 # Convert lists back to sets
                 if "affected_routes" in alert_data:
                     alert_data["affected_routes"] = set(alert_data["affected_routes"])
@@ -161,14 +176,17 @@ class DepartureInfo:
                 # Convert ISO strings back to datetime
                 for alert_field in ["start_time", "end_time", "timestamp"]:
                     if alert_data.get(alert_field):
-                        alert_data[alert_field] = datetime.fromisoformat(alert_data[alert_field])
+                        alert_data[alert_field] = datetime.fromisoformat(
+                            alert_data[alert_field]
+                        )
 
                 alerts.append(ServiceAlert(**alert_data))
             data["alerts"] = alerts
         elif data.get("alerts") and not GTFS_REALTIME_AVAILABLE:
             # If realtime service is not available, we can't reconstruct ServiceAlert objects
-            # but we should probably keep the raw data or clear it.
-            # Keeping as is might break type hints, so let's empty it to be safe
+            logger.warning(
+                f"Discarding {len(data['alerts'])} cached alerts: GTFS-RT service unavailable"
+            )
             data["alerts"] = []
 
         return DepartureInfo(**data)
@@ -235,20 +253,27 @@ class TransitDataService:
         offset_minutes: int = 0,
         include_real_time: bool = True,
     ) -> List[DepartureInfo]:
-        """Get departures for a stop with optional real-time updates"""
+        """Get departures for a stop with optional real-time updates.
+
+        Results are cached for 15 seconds to prevent thundering herd on popular stops
+        while keeping real-time data reasonably fresh.
+        """
         try:
-            # Generate cache key based on inputs and current time (bucketed to minute)
-            # We bucket to 1 minute to allow caching while keeping results reasonably fresh
-            current_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M")
-            cache_key = f"departures:{stop_id}:{limit}:{offset_minutes}:{include_real_time}:{current_minute}"
+            # Generate cache key based on inputs and current time (bucketed to 15 seconds)
+            # We use 15-second buckets matching our TTL for consistent cache behavior
+            now = datetime.now(timezone.utc)
+            bucket = int(now.timestamp()) // 15  # 15-second buckets
+            cache_key = f"departures:{stop_id}:{limit}:{offset_minutes}:{include_real_time}:{bucket}"
 
             # Try to get from cache
             try:
                 cached_data = await self.cache.get_json(cache_key)
                 if cached_data:
-                    return [DepartureInfo.from_dict(d) for d in cached_data]
+                    return [DepartureInfo.from_dict(d) for d in cached_data]  # type: ignore[arg-type]
             except Exception as cache_error:
-                logger.warning(f"Failed to read from cache for {stop_id}: {cache_error}")
+                logger.warning(
+                    f"Failed to read from cache for {stop_id}: {cache_error}"
+                )
 
             # Get scheduled departures
             scheduled_time = datetime.now(timezone.utc) + timedelta(
@@ -302,9 +327,13 @@ class TransitDataService:
             # for popular stops.
             try:
                 serialized_departures = [d.to_dict() for d in departures]
-                await self.cache.set_json(cache_key, serialized_departures, ttl_seconds=10)
+                await self.cache.set_json(
+                    cache_key, serialized_departures, ttl_seconds=15
+                )
             except Exception as cache_error:
-                logger.warning(f"Failed to cache departures for {stop_id}: {cache_error}")
+                logger.warning(
+                    f"Failed to cache departures for {stop_id}: {cache_error}"
+                )
 
             return departures
 
