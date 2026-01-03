@@ -13,6 +13,8 @@ describe('HeatmapControls', () => {
     onTransportModesChange: vi.fn(),
     enabledMetrics: { cancellations: true, delays: true } as HeatmapEnabledMetrics,
     onEnabledMetricsChange: vi.fn(),
+    isLive: true,
+    onLiveChange: vi.fn(),
   }
 
   it('renders time range buttons', () => {
@@ -152,5 +154,72 @@ describe('HeatmapControls', () => {
     fireEvent.click(screen.getByText('Cancellations'))
     // Should not be called because it would disable both
     expect(onEnabledMetricsChange).not.toHaveBeenCalled()
+  })
+
+  describe('Live Mode', () => {
+    it('renders live mode toggle showing "Live" when enabled', () => {
+      render(<HeatmapControls {...defaultProps} isLive={true} />)
+
+      expect(screen.getByText('Live')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /live/i, pressed: true })).toBeInTheDocument()
+    })
+
+    it('renders live mode toggle showing "Paused" when disabled', () => {
+      render(<HeatmapControls {...defaultProps} isLive={false} />)
+
+      expect(screen.getByText('Paused')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /paused/i, pressed: false })).toBeInTheDocument()
+    })
+
+    it('calls onLiveChange when live toggle is clicked', () => {
+      const onLiveChange = vi.fn()
+      render(<HeatmapControls {...defaultProps} isLive={true} onLiveChange={onLiveChange} />)
+
+      fireEvent.click(screen.getByText('Live'))
+      expect(onLiveChange).toHaveBeenCalledWith(false)
+    })
+
+    it('toggles from paused to live when clicked', () => {
+      const onLiveChange = vi.fn()
+      render(<HeatmapControls {...defaultProps} isLive={false} onLiveChange={onLiveChange} />)
+
+      fireEvent.click(screen.getByText('Paused'))
+      expect(onLiveChange).toHaveBeenCalledWith(true)
+    })
+
+    it('displays last updated time when provided', () => {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+      render(<HeatmapControls {...defaultProps} lastUpdatedAt={fiveMinutesAgo} />)
+
+      expect(screen.getByText(/Last updated:/)).toBeInTheDocument()
+      expect(screen.getByText(/5m ago/)).toBeInTheDocument()
+    })
+
+    it('displays "just now" for recent updates', () => {
+      const justNow = Date.now() - 30 * 1000 // 30 seconds ago
+      render(<HeatmapControls {...defaultProps} lastUpdatedAt={justNow} />)
+
+      expect(screen.getByText(/just now/)).toBeInTheDocument()
+    })
+
+    it('shows auto-refresh message when live mode is enabled', () => {
+      const recentTime = Date.now() - 60 * 1000
+      render(<HeatmapControls {...defaultProps} isLive={true} lastUpdatedAt={recentTime} />)
+
+      expect(screen.getByText(/Auto-refresh in 5 min/)).toBeInTheDocument()
+    })
+
+    it('does not show auto-refresh message when paused', () => {
+      const recentTime = Date.now() - 60 * 1000
+      render(<HeatmapControls {...defaultProps} isLive={false} lastUpdatedAt={recentTime} />)
+
+      expect(screen.queryByText(/Auto-refresh in 5 min/)).not.toBeInTheDocument()
+    })
+
+    it('disables live toggle when loading', () => {
+      render(<HeatmapControls {...defaultProps} isLoading={true} />)
+
+      expect(screen.getByText('Live')).toBeDisabled()
+    })
   })
 })

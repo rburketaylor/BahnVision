@@ -96,14 +96,15 @@ export default function HeatmapPage() {
     ...DEFAULT_ENABLED_METRICS,
   }))
   const [controlsOpen, setControlsOpen] = useState(true)
+  const [isLive, setIsLive] = useState(true)
 
-  const { data, isLoading, error, refetch } = useHeatmap(
+  const { data, isLoading, error, refetch, dataUpdatedAt } = useHeatmap(
     {
       time_range: timeRange,
       transport_modes: transportModes.length > 0 ? transportModes : undefined,
       zoom: Math.round(zoom), // API requires integer zoom
     },
-    { autoRefresh: true }
+    { autoRefresh: isLive }
   )
 
   const dataPoints = data?.data_points ?? []
@@ -233,6 +234,9 @@ export default function HeatmapPage() {
                   onTransportModesChange={setTransportModes}
                   enabledMetrics={enabledMetrics}
                   onEnabledMetricsChange={setEnabledMetrics}
+                  isLive={isLive}
+                  onLiveChange={setIsLive}
+                  lastUpdatedAt={dataUpdatedAt}
                   isLoading={isLoading}
                 />
 
