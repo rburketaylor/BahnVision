@@ -3,6 +3,7 @@
  * Time range selector and transport mode filters for the heatmap
  */
 
+import { useState, useEffect } from 'react'
 import type { TransportType } from '../../types/api'
 import type { TimeRangePreset, HeatmapEnabledMetrics } from '../../types/heatmap'
 import { TIME_RANGE_LABELS, HEATMAP_METRIC_LABELS } from '../../types/heatmap'
@@ -14,6 +15,9 @@ interface HeatmapControlsProps {
   onTransportModesChange: (modes: TransportType[]) => void
   enabledMetrics: HeatmapEnabledMetrics
   onEnabledMetricsChange: (metrics: HeatmapEnabledMetrics) => void
+  isLive: boolean
+  onLiveChange: (live: boolean) => void
+  lastUpdatedAt?: number
   isLoading?: boolean
 }
 
@@ -34,8 +38,27 @@ export function HeatmapControls({
   onTransportModesChange,
   enabledMetrics,
   onEnabledMetricsChange,
+  isLive,
+  onLiveChange,
+  lastUpdatedAt,
   isLoading = false,
 }: HeatmapControlsProps) {
+  // Track current time for relative time display (updates every 30s)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Format last updated time as relative time
+  const formatLastUpdated = (timestamp: number) => {
+    const seconds = Math.floor((now - timestamp) / 1000)
+    if (seconds < 60) return 'just now'
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes}m ago`
+  }
+
   const toggleTransportMode = (mode: TransportType) => {
     if (selectedTransportModes.includes(mode)) {
       onTransportModesChange(selectedTransportModes.filter(m => m !== mode))
@@ -63,7 +86,36 @@ export function HeatmapControls({
 
   return (
     <div className="bg-card rounded-lg border border-border p-4 space-y-4">
-      <h3 className="text-sm font-semibold text-foreground">Filters</h3>
+      {/* Live Mode Toggle */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground">Filters</h3>
+        <button
+          onClick={() => onLiveChange(!isLive)}
+          disabled={isLoading}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            isLive
+              ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40'
+              : 'bg-muted text-muted-foreground hover:bg-muted/80 border border-transparent'
+          } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          aria-pressed={isLive}
+          title={isLive ? 'Auto-refreshing every 5 minutes' : 'Click to enable auto-refresh'}
+        >
+          <span
+            className={`w-2 h-2 rounded-full transition-all ${
+              isLive ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30'
+            }`}
+          />
+          {isLive ? 'Live' : 'Paused'}
+        </button>
+      </div>
+
+      {/* Last Updated Info */}
+      {lastUpdatedAt && (
+        <div className="text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1 text-center">
+          Last updated: {formatLastUpdated(lastUpdatedAt)}
+          {isLive && ' • Auto-refresh in 5 min'}
+        </div>
+      )}
 
       {/* Time Range Selection */}
       <div className="space-y-2">
