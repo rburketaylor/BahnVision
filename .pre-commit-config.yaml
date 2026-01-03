@@ -74,8 +74,8 @@ repos:
   - repo: local
     hooks:
       - id: backend-tests
-        name: backend tests (pytest)
-        entry: bash -c 'source backend/.venv/bin/activate && pytest backend/tests -q --tb=short -x'
+        name: backend tests (pytest + coverage)
+        entry: bash -c 'source backend/.venv/bin/activate && pytest backend/tests -q --tb=short -x --cov=app --cov-fail-under=70'
         language: system
         files: ^backend/.*\.py$
         pass_filenames: false
