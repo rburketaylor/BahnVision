@@ -99,6 +99,300 @@ class TestDepartureInfo:
         assert dep.vehicle_position is None
 
 
+class TestDepartureInfoSerialization:
+    """Tests for DepartureInfo to_dict and from_dict methods."""
+
+    def test_to_dict_and_from_dict_roundtrip(self):
+        """Test that to_dict and from_dict are inverse operations."""
+        original = DepartureInfo(
+            trip_id="trip1",
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            trip_headsign="Destination",
+            stop_id="stop1",
+            stop_name="Test Stop",
+            scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+            scheduled_arrival=datetime(2025, 12, 8, 8, 29, tzinfo=timezone.utc),
+            real_time_departure=datetime(2025, 12, 8, 8, 35, tzinfo=timezone.utc),
+            real_time_arrival=datetime(2025, 12, 8, 8, 34, tzinfo=timezone.utc),
+            departure_delay_seconds=300,
+            arrival_delay_seconds=300,
+            schedule_relationship=ScheduleRelationship.SCHEDULED,
+            vehicle_id="vehicle123",
+            vehicle_position={"latitude": 48.1351, "longitude": 11.5820},
+        )
+
+        serialized = original.to_dict()
+        restored = DepartureInfo.from_dict(serialized)
+
+        assert restored.trip_id == original.trip_id
+        assert restored.route_id == original.route_id
+        assert restored.scheduled_departure == original.scheduled_departure
+        assert restored.scheduled_arrival == original.scheduled_arrival
+        assert restored.real_time_departure == original.real_time_departure
+        assert restored.departure_delay_seconds == original.departure_delay_seconds
+        assert restored.schedule_relationship == original.schedule_relationship
+        assert restored.vehicle_id == original.vehicle_id
+        assert restored.vehicle_position == original.vehicle_position
+
+    def test_to_dict_converts_datetimes_to_iso_strings(self):
+        """Test that to_dict converts datetime fields to ISO format strings."""
+        dep = DepartureInfo(
+            trip_id="trip1",
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            trip_headsign="Destination",
+            stop_id="stop1",
+            stop_name="Test Stop",
+            scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+            real_time_departure=datetime(2025, 12, 8, 8, 35, tzinfo=timezone.utc),
+        )
+
+        result = dep.to_dict()
+
+        assert isinstance(result["scheduled_departure"], str)
+        assert result["scheduled_departure"] == "2025-12-08T08:30:00+00:00"
+        assert isinstance(result["real_time_departure"], str)
+        assert result["real_time_departure"] == "2025-12-08T08:35:00+00:00"
+
+    def test_to_dict_converts_enum_to_string(self):
+        """Test that to_dict converts ScheduleRelationship enum to string."""
+        dep = DepartureInfo(
+            trip_id="trip1",
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            trip_headsign="Destination",
+            stop_id="stop1",
+            stop_name="Test Stop",
+            scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+            schedule_relationship=ScheduleRelationship.SKIPPED,
+        )
+
+        result = dep.to_dict()
+
+        assert result["schedule_relationship"] == "SKIPPED"
+
+    def test_from_dict_converts_string_to_enum(self):
+        """Test that from_dict converts string to ScheduleRelationship enum."""
+        data = {
+            "trip_id": "trip1",
+            "route_id": "route1",
+            "route_short_name": "S1",
+            "route_long_name": "Test Route",
+            "trip_headsign": "Destination",
+            "stop_id": "stop1",
+            "stop_name": "Test Stop",
+            "scheduled_departure": "2025-12-08T08:30:00+00:00",
+            "schedule_relationship": "SKIPPED",
+            "alerts": [],
+        }
+
+        result = DepartureInfo.from_dict(data)
+
+        assert result.schedule_relationship == ScheduleRelationship.SKIPPED
+
+    def test_from_dict_does_not_mutate_input(self):
+        """Test that from_dict does not modify the input dictionary."""
+        data = {
+            "trip_id": "trip1",
+            "route_id": "route1",
+            "route_short_name": "S1",
+            "route_long_name": "Test Route",
+            "trip_headsign": "Destination",
+            "stop_id": "stop1",
+            "stop_name": "Test Stop",
+            "scheduled_departure": "2025-12-08T08:30:00+00:00",
+            "schedule_relationship": "SCHEDULED",
+            "alerts": [],
+        }
+        original_schedule_relationship = data["schedule_relationship"]
+        original_scheduled_departure = data["scheduled_departure"]
+
+        DepartureInfo.from_dict(data)
+
+        # Input should not be mutated
+        assert data["schedule_relationship"] == original_schedule_relationship
+        assert data["scheduled_departure"] == original_scheduled_departure
+
+    def test_to_dict_handles_none_optional_fields(self):
+        """Test that to_dict handles None optional fields correctly."""
+        dep = DepartureInfo(
+            trip_id="trip1",
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            trip_headsign="Destination",
+            stop_id="stop1",
+            stop_name="Test Stop",
+            scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+        )
+
+        result = dep.to_dict()
+
+        assert result["scheduled_arrival"] is None
+        assert result["real_time_departure"] is None
+        assert result["vehicle_id"] is None
+
+    def test_from_dict_handles_none_optional_fields(self):
+        """Test that from_dict handles None optional fields correctly."""
+        data = {
+            "trip_id": "trip1",
+            "route_id": "route1",
+            "route_short_name": "S1",
+            "route_long_name": "Test Route",
+            "trip_headsign": "Destination",
+            "stop_id": "stop1",
+            "stop_name": "Test Stop",
+            "scheduled_departure": "2025-12-08T08:30:00+00:00",
+            "scheduled_arrival": None,
+            "real_time_departure": None,
+            "real_time_arrival": None,
+            "departure_delay_seconds": None,
+            "arrival_delay_seconds": None,
+            "schedule_relationship": "SCHEDULED",
+            "vehicle_id": None,
+            "vehicle_position": None,
+            "alerts": [],
+        }
+
+        result = DepartureInfo.from_dict(data)
+
+        assert result.scheduled_arrival is None
+        assert result.real_time_departure is None
+        assert result.vehicle_id is None
+
+    def test_to_dict_with_service_alerts(self):
+        """Test that to_dict properly serializes ServiceAlert objects."""
+        from app.services.gtfs_realtime import ServiceAlert
+
+        alert = ServiceAlert(
+            alert_id="alert1",
+            cause="TECHNICAL_PROBLEM",
+            effect="SIGNIFICANT_DELAYS",
+            header_text="S-Bahn delays",
+            description_text="Due to technical issues",
+            affected_routes={"S1", "S2"},
+            affected_stops={"stop1", "stop2"},
+            start_time=datetime(2025, 12, 8, 6, 0, tzinfo=timezone.utc),
+            end_time=datetime(2025, 12, 8, 18, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2025, 12, 8, 5, 30, tzinfo=timezone.utc),
+        )
+
+        dep = DepartureInfo(
+            trip_id="trip1",
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            trip_headsign="Destination",
+            stop_id="stop1",
+            stop_name="Test Stop",
+            scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+            alerts=[alert],
+        )
+
+        result = dep.to_dict()
+
+        assert len(result["alerts"]) == 1
+        alert_dict = result["alerts"][0]
+        assert alert_dict["alert_id"] == "alert1"
+        assert alert_dict["cause"] == "TECHNICAL_PROBLEM"
+        # Sets should be converted to lists
+        assert isinstance(alert_dict["affected_routes"], list)
+        assert set(alert_dict["affected_routes"]) == {"S1", "S2"}
+        # Datetimes should be ISO strings
+        assert isinstance(alert_dict["start_time"], str)
+        assert alert_dict["start_time"] == "2025-12-08T06:00:00+00:00"
+
+    def test_from_dict_with_service_alerts(self):
+        """Test that from_dict properly reconstructs ServiceAlert objects."""
+        data = {
+            "trip_id": "trip1",
+            "route_id": "route1",
+            "route_short_name": "S1",
+            "route_long_name": "Test Route",
+            "trip_headsign": "Destination",
+            "stop_id": "stop1",
+            "stop_name": "Test Stop",
+            "scheduled_departure": "2025-12-08T08:30:00+00:00",
+            "scheduled_arrival": None,
+            "real_time_departure": None,
+            "real_time_arrival": None,
+            "departure_delay_seconds": None,
+            "arrival_delay_seconds": None,
+            "schedule_relationship": "SCHEDULED",
+            "vehicle_id": None,
+            "vehicle_position": None,
+            "alerts": [
+                {
+                    "alert_id": "alert1",
+                    "cause": "TECHNICAL_PROBLEM",
+                    "effect": "SIGNIFICANT_DELAYS",
+                    "header_text": "Delays",
+                    "description_text": "Technical issues",
+                    "affected_routes": ["S1", "S2"],
+                    "affected_stops": ["stop1"],
+                    "start_time": "2025-12-08T06:00:00+00:00",
+                    "end_time": "2025-12-08T18:00:00+00:00",
+                    "timestamp": "2025-12-08T05:30:00+00:00",
+                }
+            ],
+        }
+
+        result = DepartureInfo.from_dict(data)
+
+        assert len(result.alerts) == 1
+        alert = result.alerts[0]
+        assert alert.alert_id == "alert1"
+        assert alert.cause == "TECHNICAL_PROBLEM"
+        # Lists should be converted back to sets
+        assert isinstance(alert.affected_routes, set)
+        assert alert.affected_routes == {"S1", "S2"}
+        # ISO strings should be converted back to datetimes
+        assert isinstance(alert.start_time, datetime)
+        assert alert.start_time == datetime(2025, 12, 8, 6, 0, tzinfo=timezone.utc)
+
+    def test_to_dict_from_dict_roundtrip_with_alerts(self):
+        """Test full round-trip serialization with ServiceAlert objects."""
+        from app.services.gtfs_realtime import ServiceAlert
+
+        alert = ServiceAlert(
+            alert_id="alert1",
+            cause="STRIKE",
+            effect="NO_SERVICE",
+            header_text="Strike",
+            description_text="Workers on strike",
+            affected_routes={"U1"},
+            affected_stops=set(),
+            start_time=datetime(2025, 12, 8, 0, 0, tzinfo=timezone.utc),
+            end_time=None,
+            timestamp=datetime(2025, 12, 7, 18, 0, tzinfo=timezone.utc),
+        )
+
+        original = DepartureInfo(
+            trip_id="trip1",
+            route_id="route1",
+            route_short_name="U1",
+            route_long_name="U-Bahn Line 1",
+            trip_headsign="Olympiazentrum",
+            stop_id="stop1",
+            stop_name="Marienplatz",
+            scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+            alerts=[alert],
+        )
+
+        serialized = original.to_dict()
+        restored = DepartureInfo.from_dict(serialized)
+
+        assert len(restored.alerts) == 1
+        restored_alert = restored.alerts[0]
+        assert restored_alert.alert_id == alert.alert_id
+        assert restored_alert.cause == alert.cause
+        assert restored_alert.affected_routes == alert.affected_routes
+
+
 class TestRouteInfo:
     """Tests for RouteInfo dataclass."""
 
@@ -416,6 +710,9 @@ class FakeGtfsRealtime:
     async def fetch_alerts(self):
         return self.alerts
 
+    async def get_vehicle_positions_by_trips(self, trip_ids):
+        return {}
+
 
 class FakeCacheService:
     """Fake cache service for testing."""
@@ -643,3 +940,70 @@ class TestTransitDataServiceMethods:
         result = await transit_service.get_vehicle_position("vehicle123")
 
         assert result is None  # Our fake returns None
+
+    @pytest.mark.asyncio
+    async def test_get_departures_for_stop_returns_cached_data(self, transit_service):
+        """Test get_departures_for_stop returns cached data on cache hit."""
+        # Pre-populate cache with serialized departures
+        from datetime import datetime, timezone
+
+        cached_departures = [
+            {
+                "trip_id": "cached_trip",
+                "route_id": "route1",
+                "route_short_name": "S1",
+                "route_long_name": "Cached Route",
+                "trip_headsign": "From Cache",
+                "stop_id": "stop1",
+                "stop_name": "Test Stop",
+                "scheduled_departure": "2025-12-08T10:00:00+00:00",
+                "scheduled_arrival": None,
+                "real_time_departure": None,
+                "real_time_arrival": None,
+                "departure_delay_seconds": None,
+                "arrival_delay_seconds": None,
+                "schedule_relationship": "SCHEDULED",
+                "vehicle_id": None,
+                "vehicle_position": None,
+                "alerts": [],
+            }
+        ]
+
+        # Calculate the cache key that will be used
+        now = datetime.now(timezone.utc)
+        bucket = int(now.timestamp()) // 15
+        cache_key = f"departures:stop1:10:0:False:{bucket}"
+
+        # Pre-populate the cache
+        await transit_service.cache.set_json(cache_key, cached_departures)
+
+        # Call should return cached data
+        result = await transit_service.get_departures_for_stop(
+            "stop1", limit=10, include_real_time=False
+        )
+
+        assert len(result) == 1
+        assert result[0].trip_id == "cached_trip"
+        assert result[0].trip_headsign == "From Cache"
+
+    @pytest.mark.asyncio
+    async def test_get_departures_for_stop_caches_result(self, transit_service):
+        """Test get_departures_for_stop stores result in cache."""
+        # First call - should populate cache
+        result = await transit_service.get_departures_for_stop(
+            "stop1", limit=10, include_real_time=False
+        )
+
+        assert len(result) == 2
+
+        # Verify something was cached
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        bucket = int(now.timestamp()) // 15
+        cache_key = f"departures:stop1:10:0:False:{bucket}"
+
+        cached = await transit_service.cache.get_json(cache_key)
+        assert cached is not None
+        assert len(cached) == 2
+        assert cached[0]["trip_id"] == "trip1"
