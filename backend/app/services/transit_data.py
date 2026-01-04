@@ -12,7 +12,7 @@ a unified view of transit information including:
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 from enum import Enum
 from types import SimpleNamespace
@@ -281,19 +281,50 @@ class TransitDataService:
                     f"Failed to read from cache for {stop_id}: {cache_error}"
                 )
 
-            # Get scheduled departures
+            # Fetch data concurrently: schedule, stop info, and real-time updates
             scheduled_time = datetime.now(timezone.utc) + timedelta(
                 minutes=offset_minutes
             )
-            scheduled_departures = await self.gtfs_schedule.get_departures_for_stop(
-                stop_id, scheduled_time, limit
-            )
+
+            tasks = [
+                self.gtfs_schedule.get_departures_for_stop(
+                    stop_id, scheduled_time, limit
+                ),
+                self.get_stop_info(stop_id, include_departures=False),
+            ]
+
+            fetch_realtime = include_real_time and self.is_realtime_available()
+            if fetch_realtime:
+                tasks.append(self.gtfs_realtime.get_trip_updates_for_stop(stop_id))
+
+            # Wait for all tasks
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Handle scheduled_departures result
+            scheduled_departures = results[0]
+            if isinstance(scheduled_departures, BaseException):
+                raise scheduled_departures
 
             if not scheduled_departures:
                 return []
 
-            # Get stop information (uses cached get_stop_info)
-            stop_info_obj = await self.get_stop_info(stop_id, include_departures=False)
+            # Handle stop_info result
+            stop_info_obj = results[1]
+            if isinstance(stop_info_obj, BaseException):
+                raise stop_info_obj
+
+            # Handle real-time updates result
+            trip_updates = None
+            if fetch_realtime:
+                trip_updates_result = results[2]
+                if isinstance(trip_updates_result, BaseException):
+                    logger.warning(
+                        f"Failed to fetch real-time updates for {stop_id}: {trip_updates_result}"
+                    )
+                    trip_updates = []  # Empty list avoids re-fetching in _apply_real_time_updates
+                else:
+                    trip_updates = trip_updates_result
+
             if not stop_info_obj:
                 logger.warning(f"Stop {stop_id} not found")
                 return []
@@ -324,8 +355,8 @@ class TransitDataService:
                 departures.append(departure_info)
 
             # Apply real-time updates if requested
-            if include_real_time and self.is_realtime_available():
-                await self._apply_real_time_updates(departures, stop_id)
+            if fetch_realtime:
+                await self._apply_real_time_updates(departures, stop_id, trip_updates)
 
             # Cache the result
             # We use a short TTL (10 seconds) because this includes real-time data
@@ -635,12 +666,16 @@ class TransitDataService:
         return result
 
     async def _apply_real_time_updates(
-        self, departures: List[DepartureInfo], stop_id: str
+        self,
+        departures: List[DepartureInfo],
+        stop_id: str,
+        trip_updates: Optional[List[Any]] = None,
     ):
         """Apply real-time updates to scheduled departures"""
         try:
-            # Get trip updates for this stop
-            trip_updates = await self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
+            # Get trip updates for this stop if not provided
+            if trip_updates is None:
+                trip_updates = await self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
 
             # Create lookup map
             update_map = {}
