@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _SLOW_HEATMAP_DB_QUERY_LOG_MS = 1000
 
 # Time range preset mappings (in hours)
-TIME_RANGE_HOURS: dict[TimeRangePreset, int] = {
+TIME_RANGE_HOURS: dict[str, int] = {
     "1h": 1,
     "6h": 6,
     "24h": 24,
@@ -112,6 +112,73 @@ def resolve_max_points(zoom_level: int, max_points: int | None) -> int:
         effective = max_points
 
     return min(int(effective), MAX_DATA_POINTS)
+
+
+def calculate_heatmap_summary(
+    data_points: list[HeatmapDataPoint],
+) -> HeatmapSummary:
+    """Calculate summary statistics from data points."""
+    if not data_points:
+        return HeatmapSummary(
+            total_stations=0,
+            total_departures=0,
+            total_cancellations=0,
+            overall_cancellation_rate=0.0,
+            total_delays=0,
+            overall_delay_rate=0.0,
+            most_affected_station=None,
+            most_affected_line=None,
+        )
+
+    total_departures = sum(dp.total_departures for dp in data_points)
+    total_cancellations = sum(dp.cancelled_count for dp in data_points)
+    total_delays = sum(dp.delayed_count for dp in data_points)
+    overall_cancellation_rate = (
+        min(total_cancellations / total_departures, 1.0) if total_departures > 0 else 0
+    )
+    overall_delay_rate = (
+        min(total_delays / total_departures, 1.0) if total_departures > 0 else 0
+    )
+
+    affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
+    most_affected_station = None
+    if affected_stations:
+        most_affected = max(
+            affected_stations,
+            key=lambda x: x.delay_rate + x.cancellation_rate,
+        )
+        most_affected_station = most_affected.station_name
+
+    line_stats: dict[str, dict[str, int]] = {}
+    for dp in data_points:
+        for transport, stats in dp.by_transport.items():
+            if transport not in line_stats:
+                line_stats[transport] = {"total": 0, "cancelled": 0, "delayed": 0}
+            line_stats[transport]["total"] += stats.total
+            line_stats[transport]["cancelled"] += stats.cancelled
+            line_stats[transport]["delayed"] += stats.delayed
+
+    most_affected_line = None
+    highest_line_rate = 0.0
+    for line, line_stat in line_stats.items():
+        if line_stat["total"] >= 100:
+            combined_rate = (line_stat["cancelled"] + line_stat["delayed"]) / line_stat[
+                "total"
+            ]
+            if combined_rate > highest_line_rate:
+                highest_line_rate = combined_rate
+                most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)
+
+    return HeatmapSummary(
+        total_stations=len(data_points),
+        total_departures=total_departures,
+        total_cancellations=total_cancellations,
+        overall_cancellation_rate=overall_cancellation_rate,
+        total_delays=total_delays,
+        overall_delay_rate=overall_delay_rate,
+        most_affected_station=most_affected_station,
+        most_affected_line=most_affected_line,
+    )
 
 
 @dataclass
@@ -495,79 +562,8 @@ class HeatmapService:
         self,
         data_points: list[HeatmapDataPoint],
     ) -> HeatmapSummary:
-        """Calculate summary statistics from data points.
-
-        Args:
-            data_points: List of aggregated station data
-
-        Returns:
-            HeatmapSummary with overall statistics
-        """
-        if not data_points:
-            return HeatmapSummary(
-                total_stations=0,
-                total_departures=0,
-                total_cancellations=0,
-                overall_cancellation_rate=0.0,
-                total_delays=0,
-                overall_delay_rate=0.0,
-                most_affected_station=None,
-                most_affected_line=None,
-            )
-
-        total_departures = sum(dp.total_departures for dp in data_points)
-        total_cancellations = sum(dp.cancelled_count for dp in data_points)
-        total_delays = sum(dp.delayed_count for dp in data_points)
-        overall_cancellation_rate = (
-            min(total_cancellations / total_departures, 1.0)
-            if total_departures > 0
-            else 0
-        )
-        overall_delay_rate = (
-            min(total_delays / total_departures, 1.0) if total_departures > 0 else 0
-        )
-
-        # Find most affected station (by combined delay+cancellation rate)
-        affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
-        most_affected_station = None
-        if affected_stations:
-            most_affected = max(
-                affected_stations,
-                key=lambda x: x.delay_rate + x.cancellation_rate,
-            )
-            most_affected_station = most_affected.station_name
-
-        # Find most affected line (aggregate by transport type)
-        line_stats: dict[str, dict[str, int]] = {}
-        for dp in data_points:
-            for transport, stats in dp.by_transport.items():
-                if transport not in line_stats:
-                    line_stats[transport] = {"total": 0, "cancelled": 0, "delayed": 0}
-                line_stats[transport]["total"] += stats.total
-                line_stats[transport]["cancelled"] += stats.cancelled
-                line_stats[transport]["delayed"] += stats.delayed
-
-        most_affected_line = None
-        highest_line_rate = 0.0
-        for line, line_stat in line_stats.items():
-            if line_stat["total"] >= 100:  # Minimum threshold
-                combined_rate = (
-                    line_stat["cancelled"] + line_stat["delayed"]
-                ) / line_stat["total"]
-                if combined_rate > highest_line_rate:
-                    highest_line_rate = combined_rate
-                    most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)
-
-        return HeatmapSummary(
-            total_stations=len(data_points),
-            total_departures=total_departures,
-            total_cancellations=total_cancellations,
-            overall_cancellation_rate=overall_cancellation_rate,
-            total_delays=total_delays,
-            overall_delay_rate=overall_delay_rate,
-            most_affected_station=most_affected_station,
-            most_affected_line=most_affected_line,
-        )
+        """Calculate summary statistics from data points."""
+        return calculate_heatmap_summary(data_points)
 
 
 def get_heatmap_service(
