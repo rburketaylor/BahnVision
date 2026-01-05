@@ -13,11 +13,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_session
-from app.models.heatmap import HeatmapResponse, TimeRangePreset
+from app.models.heatmap import HeatmapDataPoint, HeatmapResponse, TimeRangePreset
 from app.services.cache import CacheService, get_cache_service
-from app.services.heatmap_cache import heatmap_cancellations_cache_key
+from app.services.heatmap_cache import (
+    heatmap_cancellations_cache_key,
+    heatmap_live_snapshot_cache_key,
+)
 from app.services.gtfs_schedule import GTFSScheduleService
-from app.services.heatmap_service import HeatmapService, resolve_max_points
+from app.services.heatmap_service import (
+    HeatmapService,
+    calculate_heatmap_summary,
+    parse_transport_modes,
+    resolve_max_points,
+)
 
 import logging
 
@@ -27,6 +35,62 @@ router = APIRouter()
 
 _HEATMAP_SINGLEFLIGHT_LOCK_TTL_SECONDS = 60
 _SLOW_HEATMAP_REQUEST_LOG_MS = 1500
+
+
+def _filter_live_snapshot(
+    snapshot: HeatmapResponse,
+    transport_modes: str | None,
+    max_points: int,
+) -> HeatmapResponse:
+    transport_types = parse_transport_modes(transport_modes)
+    data_points: list[HeatmapDataPoint] = []
+
+    if transport_types:
+        for point in snapshot.data_points:
+            filtered_by_transport = {
+                key: value
+                for key, value in point.by_transport.items()
+                if key in transport_types
+            }
+            if not filtered_by_transport:
+                continue
+
+            total = sum(stats.total for stats in filtered_by_transport.values())
+            cancelled = sum(stats.cancelled for stats in filtered_by_transport.values())
+            delayed = sum(stats.delayed for stats in filtered_by_transport.values())
+            if total <= 0 or (cancelled <= 0 and delayed <= 0):
+                continue
+
+            cancellation_rate = min(cancelled / total, 1.0) if total > 0 else 0.0
+            delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
+            data_points.append(
+                point.model_copy(
+                    update={
+                        "total_departures": total,
+                        "cancelled_count": cancelled,
+                        "cancellation_rate": cancellation_rate,
+                        "delayed_count": delayed,
+                        "delay_rate": delay_rate,
+                        "by_transport": filtered_by_transport,
+                    }
+                )
+            )
+    else:
+        data_points = list(snapshot.data_points)
+
+    data_points.sort(
+        key=lambda x: (x.delay_rate + x.cancellation_rate) * x.total_departures,
+        reverse=True,
+    )
+    data_points = data_points[:max_points]
+
+    summary = calculate_heatmap_summary(data_points)
+    return HeatmapResponse(
+        time_range=snapshot.time_range,
+        data_points=data_points,
+        summary=summary,
+        last_updated_at=snapshot.last_updated_at,
+    )
 
 
 def _append_server_timing(
@@ -108,7 +172,7 @@ async def get_cancellation_heatmap(
     time_range: Annotated[
         TimeRangePreset | None,
         Query(
-            description="Time range preset for data aggregation. Options: 1h, 6h, 24h, 7d, 30d. Default: 24h.",
+            description="Time range preset for data aggregation. Options: live, 1h, 6h, 24h, 7d, 30d. Default: 24h.",
         ),
     ] = "24h",
     transport_modes: Annotated[
@@ -174,6 +238,33 @@ async def get_cancellation_heatmap(
         settings = get_settings()
 
         max_points_effective = resolve_max_points(zoom, max_points)
+
+        if time_range == "live":
+            cache_key = heatmap_live_snapshot_cache_key()
+            cached_data = await cache.get_json(cache_key)
+            if cached_data:
+                response.headers["X-Cache-Status"] = "hit"
+                snapshot = HeatmapResponse.model_validate(cached_data)
+                return _filter_live_snapshot(
+                    snapshot, transport_modes, max_points_effective
+                )
+
+            stale_data = await cache.get_stale_json(cache_key)
+            if stale_data:
+                response.headers["X-Cache-Status"] = "stale"
+                snapshot = HeatmapResponse.model_validate(stale_data)
+                return _filter_live_snapshot(
+                    snapshot, transport_modes, max_points_effective
+                )
+
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Live heatmap data is not available yet. "
+                    "The GTFS-RT harvester may not have run."
+                ),
+                headers={"X-Cache-Status": "miss"},
+            )
 
         # Generate cache key
         cache_key = heatmap_cancellations_cache_key(
@@ -265,6 +356,8 @@ async def get_cancellation_heatmap(
             )
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Heatmap generation failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate heatmap data")
