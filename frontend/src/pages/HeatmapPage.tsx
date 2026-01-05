@@ -5,6 +5,7 @@
 
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { useHeatmap } from '../hooks/useHeatmap'
+import { ApiError } from '../services/api'
 import {
   HeatmapControls,
   HeatmapLegend,
@@ -89,26 +90,29 @@ function getHeatmapDescription(enabledMetrics: HeatmapEnabledMetrics): string {
 }
 
 export default function HeatmapPage() {
-  const [timeRange, setTimeRange] = useState<TimeRangePreset>('24h')
+  const [timeRange, setTimeRange] = useState<TimeRangePreset>('live')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
   const [zoom, setZoom] = useState<number>(() => loadInitialZoom())
   const [enabledMetrics, setEnabledMetrics] = useState<HeatmapEnabledMetrics>(() => ({
     ...DEFAULT_ENABLED_METRICS,
   }))
   const [controlsOpen, setControlsOpen] = useState(true)
-  const [isLive, setIsLive] = useState(true)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
-  const { data, isLoading, error, refetch, dataUpdatedAt } = useHeatmap(
+  const { data, isLoading, error, refetch } = useHeatmap(
     {
       time_range: timeRange,
       transport_modes: transportModes.length > 0 ? transportModes : undefined,
       zoom: Math.round(zoom), // API requires integer zoom
     },
-    { autoRefresh: isLive }
+    { autoRefresh }
   )
 
   const dataPoints = data?.data_points ?? []
   const summary = data?.summary ?? null
+  const snapshotUpdatedAt = data?.last_updated_at
+  const liveUnavailable =
+    timeRange === 'live' && error instanceof ApiError && error.statusCode === 503
 
   useEffect(() => {
     try {
@@ -188,7 +192,12 @@ export default function HeatmapPage() {
                       <span className="text-sm font-medium">Failed to load heatmap data</span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {error instanceof Error ? error.message : 'An unexpected error occurred'}
+                      {liveUnavailable
+                        ? (error.detail ??
+                          'Live data not available yet — the harvester may not have run.')
+                        : error instanceof Error
+                          ? error.message
+                          : 'An unexpected error occurred'}
                     </p>
                   </div>
                 )}
@@ -234,9 +243,9 @@ export default function HeatmapPage() {
                   onTransportModesChange={setTransportModes}
                   enabledMetrics={enabledMetrics}
                   onEnabledMetricsChange={setEnabledMetrics}
-                  isLive={isLive}
-                  onLiveChange={setIsLive}
-                  lastUpdatedAt={dataUpdatedAt}
+                  autoRefresh={autoRefresh}
+                  onAutoRefreshChange={setAutoRefresh}
+                  snapshotUpdatedAt={snapshotUpdatedAt}
                   isLoading={isLoading}
                 />
 

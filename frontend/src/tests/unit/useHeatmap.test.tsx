@@ -115,6 +115,25 @@ describe('useHeatmap', () => {
     expect(query?.options.refetchInterval).toBe(5 * 60 * 1000)
   })
 
+  it('uses faster polling for live time range', async () => {
+    mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
+
+    const params = { time_range: 'live' as const }
+    const { result } = renderHook(() => useHeatmap(params, { autoRefresh: true }), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+
+    const query = queryClient
+      .getQueryCache()
+      .find({ queryKey: ['heatmap', 'cancellations', params] })
+    expect(query?.options.refetchInterval).toBe(60 * 1000)
+    expect(query?.options.staleTime).toBe(30 * 1000)
+  })
+
   it('disables auto-refresh when specified', async () => {
     mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
 
@@ -162,7 +181,7 @@ describe('useHeatmap', () => {
     })
   })
 
-  it('uses 5 minute stale time matching backend cache', async () => {
+  it('uses 5 minute stale time for historical ranges', async () => {
     mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
 
     const { result } = renderHook(() => useHeatmap(), {

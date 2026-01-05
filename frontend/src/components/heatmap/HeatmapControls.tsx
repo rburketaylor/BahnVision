@@ -15,9 +15,9 @@ interface HeatmapControlsProps {
   onTransportModesChange: (modes: TransportType[]) => void
   enabledMetrics: HeatmapEnabledMetrics
   onEnabledMetricsChange: (metrics: HeatmapEnabledMetrics) => void
-  isLive: boolean
-  onLiveChange: (live: boolean) => void
-  lastUpdatedAt?: number
+  autoRefresh: boolean
+  onAutoRefreshChange: (live: boolean) => void
+  snapshotUpdatedAt?: string
   isLoading?: boolean
 }
 
@@ -29,7 +29,7 @@ const TRANSPORT_MODES: { value: TransportType; label: string; color: string }[] 
   { value: 'BAHN', label: 'Regional', color: 'bg-gray-600' },
 ]
 
-const TIME_RANGES: TimeRangePreset[] = ['1h', '6h', '24h', '7d', '30d']
+const TIME_RANGES: TimeRangePreset[] = ['live', '1h', '6h', '24h', '7d', '30d']
 
 export function HeatmapControls({
   timeRange,
@@ -38,9 +38,9 @@ export function HeatmapControls({
   onTransportModesChange,
   enabledMetrics,
   onEnabledMetricsChange,
-  isLive,
-  onLiveChange,
-  lastUpdatedAt,
+  autoRefresh,
+  onAutoRefreshChange,
+  snapshotUpdatedAt,
   isLoading = false,
 }: HeatmapControlsProps) {
   // Track current time for relative time display (updates every 30s)
@@ -52,8 +52,10 @@ export function HeatmapControls({
   }, [])
 
   // Format last updated time as relative time
-  const formatLastUpdated = (timestamp: number) => {
-    const seconds = Math.floor((now - timestamp) / 1000)
+  const formatLastUpdated = (isoTimestamp: string) => {
+    const parsed = Date.parse(isoTimestamp)
+    if (Number.isNaN(parsed)) return 'unknown'
+    const seconds = Math.floor((now - parsed) / 1000)
     if (seconds < 60) return 'just now'
     const minutes = Math.floor(seconds / 60)
     return `${minutes}m ago`
@@ -90,30 +92,30 @@ export function HeatmapControls({
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Filters</h3>
         <button
-          onClick={() => onLiveChange(!isLive)}
+          onClick={() => onAutoRefreshChange(!autoRefresh)}
           disabled={isLoading}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            isLive
+            autoRefresh
               ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40'
               : 'bg-muted text-muted-foreground hover:bg-muted/80 border border-transparent'
           } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          aria-pressed={isLive}
-          title={isLive ? 'Auto-refreshing every 5 minutes' : 'Click to enable auto-refresh'}
+          aria-pressed={autoRefresh}
+          title={autoRefresh ? 'Auto-refresh enabled' : 'Click to enable auto-refresh'}
         >
           <span
             className={`w-2 h-2 rounded-full transition-all ${
-              isLive ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30'
+              autoRefresh ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30'
             }`}
           />
-          {isLive ? 'Live' : 'Paused'}
+          {autoRefresh ? 'Auto-refresh' : 'Paused'}
         </button>
       </div>
 
       {/* Last Updated Info */}
-      {lastUpdatedAt && (
+      {timeRange === 'live' && snapshotUpdatedAt && (
         <div className="text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1 text-center">
-          Last updated: {formatLastUpdated(lastUpdatedAt)}
-          {isLive && ' • Auto-refresh in 5 min'}
+          Snapshot updated {formatLastUpdated(snapshotUpdatedAt)}
+          {autoRefresh && ' • Auto-refresh on'}
         </div>
       )}
 
