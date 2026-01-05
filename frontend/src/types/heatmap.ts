@@ -68,10 +68,11 @@ export interface HeatmapResponse {
   time_range: HeatmapTimeRange
   data_points: HeatmapDataPoint[]
   summary: HeatmapSummary
+  last_updated_at?: string
 }
 
 /** Time range preset options */
-export type TimeRangePreset = '1h' | '6h' | '24h' | '7d' | '30d'
+export type TimeRangePreset = 'live' | '1h' | '6h' | '24h' | '7d' | '30d'
 
 /** Parameters for heatmap API requests */
 export interface HeatmapParams {
@@ -146,6 +147,7 @@ export const LIGHT_HEATMAP_CONFIG: HeatmapConfig = {
 
 /** Time range labels for display */
 export const TIME_RANGE_LABELS: Record<TimeRangePreset, string> = {
+  live: 'Live',
   '1h': 'Last hour',
   '6h': 'Last 6 hours',
   '24h': 'Last 24 hours',

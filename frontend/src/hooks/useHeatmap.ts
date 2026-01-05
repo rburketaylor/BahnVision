@@ -9,12 +9,15 @@ import type { HeatmapParams } from '../types/heatmap'
 
 interface UseHeatmapOptions {
   enabled?: boolean
-  /** Enable auto-refresh every 5 minutes */
+  /** Enable auto-refresh (live uses a faster cadence) */
   autoRefresh?: boolean
 }
 
 export function useHeatmap(params: HeatmapParams = {}, options: UseHeatmapOptions = {}) {
   const { enabled = true, autoRefresh = true } = options
+  const isLive = params.time_range === 'live'
+  const refetchIntervalMs = isLive ? 60 * 1000 : 5 * 60 * 1000
+  const staleTimeMs = isLive ? 30 * 1000 : 5 * 60 * 1000
 
   return useQuery({
     queryKey: ['heatmap', 'cancellations', params],
@@ -45,8 +48,8 @@ export function useHeatmap(params: HeatmapParams = {}, options: UseHeatmapOption
     // Keep the previous response while refetching (e.g. after zoom changes)
     // to prevent the map from momentarily going blank.
     placeholderData: keepPreviousData,
-    // Cache heatmap data for 5 minutes (matches backend cache TTL)
-    staleTime: 5 * 60 * 1000,
+    // Cache heatmap data; live uses a shorter stale time for freshness.
+    staleTime: staleTimeMs,
     // Prevent duplicate requests
     refetchOnMount: false,
     refetchOnWindowFocus: false,
@@ -54,7 +57,7 @@ export function useHeatmap(params: HeatmapParams = {}, options: UseHeatmapOption
     // Auto-refresh every 5 minutes when enabled
     ...(autoRefresh
       ? {
-          refetchInterval: 5 * 60 * 1000,
+          refetchInterval: refetchIntervalMs,
         }
       : {
           refetchInterval: false,
