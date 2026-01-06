@@ -322,10 +322,10 @@ class TestHeatmapService:
     async def test_get_cancellation_heatmap_fetches_breakdown_for_selected_stations(
         self,
     ):
-        """Ensure service fetches route_type breakdown only for selected stations."""
+        """Ensure service fetches route_type breakdown using a single query."""
 
         @dataclass
-        class StationAggRow:
+        class CombinedRow:
             stop_id: str
             stop_name: str
             stop_lat: float
@@ -333,18 +333,13 @@ class TestHeatmapService:
             total_departures: int
             cancelled_count: int
             delayed_count: int
-            impact_score: int = 0
-
-        @dataclass
-        class BreakdownRow:
-            stop_id: str
             route_type: int
-            total_departures: int
-            cancelled_count: int
-            delayed_count: int
+            rt_total: int
+            rt_cancelled: int
+            rt_delayed: int
 
-        station_rows = [
-            StationAggRow(
+        rows = [
+            CombinedRow(
                 stop_id="de:09162:6",
                 stop_name="Marienplatz",
                 stop_lat=48.13743,
@@ -352,27 +347,21 @@ class TestHeatmapService:
                 total_departures=100,
                 cancelled_count=5,
                 delayed_count=10,
-                impact_score=15,
-            )
-        ]
-        breakdown_rows = [
-            BreakdownRow(
-                stop_id="de:09162:6",
                 route_type=2,
-                total_departures=100,
-                cancelled_count=5,
-                delayed_count=10,
+                rt_total=100,
+                rt_cancelled=5,
+                rt_delayed=10,
             )
         ]
 
-        session = FakeAsyncSession(row_sets=[station_rows, breakdown_rows])
+        session = FakeAsyncSession(rows=rows)
         gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache, session=session)
 
         result = await service.get_cancellation_heatmap(max_points=1)
 
-        assert len(session.executed_statements) == 2
+        assert len(session.executed_statements) == 1
         assert len(result.data_points) == 1
         assert result.data_points[0].station_id == "de:09162:6"
         assert result.data_points[0].by_transport["BAHN"].total == 100
