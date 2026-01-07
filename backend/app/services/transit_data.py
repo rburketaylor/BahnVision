@@ -298,22 +298,17 @@ class TransitDataService:
                 logger.warning(f"Stop {stop_id} not found")
                 return []
 
-            # Get route information (batch, but check cache first)
-            route_ids = {dep.route_id for dep in scheduled_departures}
-            route_info = await self._get_route_info_batch_cached(route_ids)
-
             # Convert to departure info
             departures = []
             for dep in scheduled_departures:
-                route = route_info.get(dep.route_id)
-                if not route:
-                    continue
-
+                # We use route info directly from the scheduled departure which
+                # already joins with the route table. This avoids a redundant
+                # cache/DB lookup.
                 departure_info = DepartureInfo(
                     trip_id=str(dep.trip_id),
                     route_id=str(dep.route_id),
-                    route_short_name=str(route.route_short_name or ""),
-                    route_long_name=str(route.route_long_name or ""),
+                    route_short_name=str(dep.route_short_name or ""),
+                    route_long_name=str(dep.route_long_name or ""),
                     trip_headsign=str(dep.trip_headsign or ""),
                     stop_id=str(stop_id),
                     stop_name=str(stop_info_obj.stop_name),
