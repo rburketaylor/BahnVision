@@ -16,13 +16,21 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import httpx
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory
 from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
+from app.models.heatmap import (
+    HeatmapDataPoint,
+    HeatmapResponse,
+    TimeRange,
+    TransportStats,
+)
 from app.persistence.models import RealtimeStationStats, ScheduleRelationship
+from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
+from app.services.heatmap_service import GTFS_ROUTE_TYPES, calculate_heatmap_summary
 
 if TYPE_CHECKING:
     from app.services.cache import CacheService
@@ -172,8 +180,19 @@ class GTFSRTDataHarvester:
             # 1. Fetch trip updates from feed
             trip_updates = await self._fetch_trip_updates()
 
+            now = datetime.now(timezone.utc)
+
             if not trip_updates:
-                logger.debug("No trip updates received")
+                # Even with no trip updates, cache an empty live snapshot so the
+                # API can distinguish "harvester not running" (503) from
+                # "harvester running but no impacted stations" (200 with empty list).
+                logger.info("No trip updates received - caching empty live snapshot")
+                async with AsyncSessionFactory() as session:
+                    await self._cache_live_snapshot(session, {}, now)
+
+                # Update status tracking to reflect successful (but empty) harvest
+                self._last_harvest_at = now
+                self._last_stations_updated = 0
                 return 0
 
             logger.info(f"Received {len(trip_updates)} trip updates from GTFS-RT feed")
@@ -184,7 +203,6 @@ class GTFSRTDataHarvester:
                 route_type_map = await self._get_route_type_map(session)
 
                 # 3. Calculate current time bucket (hourly)
-                now = datetime.now(timezone.utc)
                 bucket_start = now.replace(minute=0, second=0, microsecond=0)
                 logger.debug(
                     f"Processing data for bucket starting at {bucket_start.isoformat()}"
@@ -195,8 +213,22 @@ class GTFSRTDataHarvester:
                     trip_updates, bucket_start, route_type_map
                 )
 
+                snapshot_stats = self._aggregate_snapshot_by_stop_and_route(
+                    trip_updates, route_type_map
+                )
+                snapshot_timestamp = self._resolve_snapshot_timestamp(trip_updates)
+
+                # Always cache the live snapshot, even if no stop_stats for DB upsert.
+                # This ensures the API can serve a 200 response when the harvester
+                # is running but there are no impacted stations.
+                await self._cache_live_snapshot(
+                    session, snapshot_stats, snapshot_timestamp
+                )
+
                 if not stop_stats:
                     logger.debug("No stop statistics generated from trip updates")
+                    self._last_harvest_at = now
+                    self._last_stations_updated = 0
                     return 0
 
                 # 5. Upsert aggregations to database
@@ -437,6 +469,200 @@ class GTFSRTDataHarvester:
             final_stats[agg_key] = deltas
 
         return final_stats
+
+    def _aggregate_snapshot_by_stop_and_route(
+        self,
+        trip_updates: list[dict],
+        route_type_map: dict[str, int],
+    ) -> dict[tuple[str, int | None], dict]:
+        """Aggregate trip updates into a point-in-time snapshot.
+
+        Counts delays/cancellations per unique trip in the current feed.
+        """
+        trip_status_by_stop: dict[tuple[str, int | None, str], dict] = {}
+
+        for update in trip_updates:
+            stop_id = update["stop_id"]
+            trip_id = update["trip_id"]
+            route_id = update.get("route_id")
+            route_type = route_type_map.get(route_id) if route_id else None
+
+            key = (stop_id, route_type, trip_id)
+
+            delay = update.get("departure_delay_seconds") or 0
+            is_cancelled = (
+                update["schedule_relationship"] == ScheduleRelationship.CANCELED
+            )
+
+            if key not in trip_status_by_stop:
+                trip_status_by_stop[key] = {
+                    "delay": delay,
+                    "cancelled": is_cancelled,
+                }
+            else:
+                existing = trip_status_by_stop[key]
+                existing["delay"] = max(existing["delay"], delay)
+                existing["cancelled"] = existing["cancelled"] or is_cancelled
+
+        snapshot_stats: dict[tuple[str, int | None], dict] = defaultdict(
+            lambda: {
+                "trip_count": 0,
+                "total_delay_seconds": 0,
+                "delayed": 0,
+                "on_time": 0,
+                "cancelled": 0,
+            }
+        )
+
+        for (stop_id, route_type, _trip_id), status in trip_status_by_stop.items():
+            entry = snapshot_stats[(stop_id, route_type)]
+            entry["trip_count"] += 1
+            entry["total_delay_seconds"] += status["delay"]
+            classified = self._classify_status(status["delay"], status["cancelled"])
+            if classified == STATUS_DELAYED:
+                entry["delayed"] += 1
+            elif classified == STATUS_ON_TIME:
+                entry["on_time"] += 1
+            elif classified == STATUS_CANCELLED:
+                entry["cancelled"] += 1
+
+        return snapshot_stats
+
+    def _resolve_snapshot_timestamp(self, trip_updates: list[dict]) -> datetime:
+        """Pick the snapshot timestamp from feed metadata."""
+        timestamps: list[datetime] = [
+            update["feed_timestamp"]
+            for update in trip_updates
+            if isinstance(update.get("feed_timestamp"), datetime)
+        ]
+        if timestamps:
+            return max(timestamps)
+        return datetime.now(timezone.utc)
+
+    async def _cache_live_snapshot(
+        self,
+        session: AsyncSession,
+        snapshot_stats: dict[tuple[str, int | None], dict],
+        snapshot_timestamp: datetime,
+    ) -> None:
+        """Build and cache the live heatmap snapshot."""
+        if not self._cache or not hasattr(self._cache, "set_json"):
+            return
+
+        by_stop: dict[str, dict] = {}
+        for (stop_id, route_type), stats in snapshot_stats.items():
+            total = int(stats.get("trip_count", 0) or 0)
+            if total <= 0:
+                continue
+
+            cancelled = int(stats.get("cancelled", 0) or 0)
+            delayed = int(stats.get("delayed", 0) or 0)
+
+            entry = by_stop.setdefault(
+                stop_id, {"total": 0, "cancelled": 0, "delayed": 0, "by_transport": {}}
+            )
+            entry["total"] += total
+            entry["cancelled"] += cancelled
+            entry["delayed"] += delayed
+
+            if route_type is None:
+                continue
+            transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
+            transport_entry = entry["by_transport"].setdefault(
+                transport_type, {"total": 0, "cancelled": 0, "delayed": 0}
+            )
+            transport_entry["total"] += total
+            transport_entry["cancelled"] += cancelled
+            transport_entry["delayed"] += delayed
+
+        impacted_stop_ids = [
+            stop_id
+            for stop_id, stats in by_stop.items()
+            if stats["cancelled"] > 0 or stats["delayed"] > 0
+        ]
+
+        stop_metadata: dict[str, tuple[str, float, float]] = {}
+        if impacted_stop_ids:
+            from app.models.gtfs import GTFSStop
+
+            stmt = (
+                select(
+                    GTFSStop.stop_id,
+                    GTFSStop.stop_name,
+                    GTFSStop.stop_lat,
+                    GTFSStop.stop_lon,
+                )
+                .where(GTFSStop.stop_id.in_(impacted_stop_ids))
+                .where(GTFSStop.stop_lat.isnot(None))
+                .where(GTFSStop.stop_lon.isnot(None))
+            )
+            result = await session.execute(stmt)
+            for row in result.all():
+                stop_metadata[row.stop_id] = (
+                    row.stop_name or row.stop_id,
+                    float(row.stop_lat),
+                    float(row.stop_lon),
+                )
+
+        data_points: list[HeatmapDataPoint] = []
+        for stop_id in impacted_stop_ids:
+            info = stop_metadata.get(stop_id)
+            if not info:
+                continue
+            station_name, lat, lon = info
+            stats = by_stop[stop_id]
+            total = int(stats["total"])
+            cancelled = int(stats["cancelled"])
+            delayed = int(stats["delayed"])
+            if total <= 0:
+                continue
+            cancellation_rate = min(cancelled / total, 1.0) if total > 0 else 0.0
+            delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
+
+            by_transport = {
+                key: TransportStats(
+                    total=int(val["total"]),
+                    cancelled=int(val["cancelled"]),
+                    delayed=int(val["delayed"]),
+                )
+                for key, val in stats["by_transport"].items()
+            }
+
+            data_points.append(
+                HeatmapDataPoint(
+                    station_id=stop_id,
+                    station_name=station_name,
+                    latitude=lat,
+                    longitude=lon,
+                    total_departures=total,
+                    cancelled_count=cancelled,
+                    cancellation_rate=cancellation_rate,
+                    delayed_count=delayed,
+                    delay_rate=delay_rate,
+                    by_transport=by_transport,
+                )
+            )
+
+        summary = calculate_heatmap_summary(data_points)
+        interval_seconds = self._harvest_interval or 300
+        from_time = snapshot_timestamp - timedelta(seconds=interval_seconds)
+
+        snapshot = HeatmapResponse(
+            time_range=TimeRange.model_validate(
+                {"from": from_time, "to": snapshot_timestamp}
+            ),
+            data_points=data_points,
+            summary=summary,
+            last_updated_at=snapshot_timestamp,
+        )
+
+        settings = get_settings()
+        await self._cache.set_json(
+            heatmap_live_snapshot_cache_key(),
+            snapshot.model_dump(mode="json"),
+            ttl_seconds=settings.heatmap_live_cache_ttl_seconds,
+            stale_ttl_seconds=settings.heatmap_live_cache_stale_ttl_seconds,
+        )
 
     def _classify_status(self, delay: int, cancelled: bool) -> str:
         """Classify a trip status based on delay and cancellation."""

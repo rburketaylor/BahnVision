@@ -13,11 +13,14 @@ describe('HeatmapControls', () => {
     onTransportModesChange: vi.fn(),
     enabledMetrics: { cancellations: true, delays: true } as HeatmapEnabledMetrics,
     onEnabledMetricsChange: vi.fn(),
+    autoRefresh: true,
+    onAutoRefreshChange: vi.fn(),
   }
 
   it('renders time range buttons', () => {
     render(<HeatmapControls {...defaultProps} />)
 
+    expect(screen.getByText('Live')).toBeInTheDocument()
     expect(screen.getByText('Last hour')).toBeInTheDocument()
     expect(screen.getByText('Last 6 hours')).toBeInTheDocument()
     expect(screen.getByText('Last 24 hours')).toBeInTheDocument()
@@ -152,5 +155,102 @@ describe('HeatmapControls', () => {
     fireEvent.click(screen.getByText('Cancellations'))
     // Should not be called because it would disable both
     expect(onEnabledMetricsChange).not.toHaveBeenCalled()
+  })
+
+  describe('Live Mode', () => {
+    it('renders auto-refresh toggle showing "Auto-refresh" when enabled', () => {
+      render(<HeatmapControls {...defaultProps} autoRefresh={true} />)
+
+      expect(screen.getByText('Auto-refresh')).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: /auto-refresh/i, pressed: true })
+      ).toBeInTheDocument()
+    })
+
+    it('renders auto-refresh toggle showing "Paused" when disabled', () => {
+      render(<HeatmapControls {...defaultProps} autoRefresh={false} />)
+
+      expect(screen.getByText('Paused')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /paused/i, pressed: false })).toBeInTheDocument()
+    })
+
+    it('calls onAutoRefreshChange when toggle is clicked', () => {
+      const onAutoRefreshChange = vi.fn()
+      render(
+        <HeatmapControls
+          {...defaultProps}
+          autoRefresh={true}
+          onAutoRefreshChange={onAutoRefreshChange}
+        />
+      )
+
+      fireEvent.click(screen.getByText('Auto-refresh'))
+      expect(onAutoRefreshChange).toHaveBeenCalledWith(false)
+    })
+
+    it('toggles from paused to auto-refresh when clicked', () => {
+      const onAutoRefreshChange = vi.fn()
+      render(
+        <HeatmapControls
+          {...defaultProps}
+          autoRefresh={false}
+          onAutoRefreshChange={onAutoRefreshChange}
+        />
+      )
+
+      fireEvent.click(screen.getByText('Paused'))
+      expect(onAutoRefreshChange).toHaveBeenCalledWith(true)
+    })
+
+    it('displays last updated time when provided', () => {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+      render(
+        <HeatmapControls {...defaultProps} timeRange="live" snapshotUpdatedAt={fiveMinutesAgo} />
+      )
+
+      expect(screen.getByText(/Snapshot updated/)).toBeInTheDocument()
+      expect(screen.getByText(/5m ago/)).toBeInTheDocument()
+    })
+
+    it('displays "just now" for recent updates', () => {
+      const justNow = new Date(Date.now() - 30 * 1000).toISOString()
+      render(<HeatmapControls {...defaultProps} timeRange="live" snapshotUpdatedAt={justNow} />)
+
+      expect(screen.getByText(/just now/)).toBeInTheDocument()
+    })
+
+    it('shows auto-refresh message when auto-refresh is enabled', () => {
+      const recentTime = new Date(Date.now() - 60 * 1000).toISOString()
+      render(
+        <HeatmapControls
+          {...defaultProps}
+          timeRange="live"
+          autoRefresh={true}
+          snapshotUpdatedAt={recentTime}
+        />
+      )
+
+      expect(screen.getByText(/Auto-refresh on/)).toBeInTheDocument()
+    })
+
+    it('does not show auto-refresh message when paused', () => {
+      const recentTime = new Date(Date.now() - 60 * 1000).toISOString()
+      render(
+        <HeatmapControls
+          {...defaultProps}
+          timeRange="live"
+          autoRefresh={false}
+          snapshotUpdatedAt={recentTime}
+        />
+      )
+
+      expect(screen.queryByText(/Auto-refresh on/)).not.toBeInTheDocument()
+    })
+
+    it('disables auto-refresh toggle when loading', () => {
+      render(<HeatmapControls {...defaultProps} isLoading={true} />)
+
+      expect(screen.getByText('Auto-refresh')).toBeDisabled()
+    })
   })
 })

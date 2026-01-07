@@ -103,6 +103,18 @@ class Settings(BaseSettings):
         ge=0,
         description="How long to retain a stale heatmap cache entry for fast fallbacks.",
     )
+    heatmap_live_cache_ttl_seconds: int = Field(
+        default=600,
+        alias="HEATMAP_LIVE_CACHE_TTL_SECONDS",
+        ge=0,
+        description="TTL for live heatmap snapshot cache entries.",
+    )
+    heatmap_live_cache_stale_ttl_seconds: int = Field(
+        default=1800,
+        alias="HEATMAP_LIVE_CACHE_STALE_TTL_SECONDS",
+        ge=0,
+        description="How long to retain a stale live heatmap snapshot.",
+    )
 
     # ==========================================================================
     # Cache Behavior

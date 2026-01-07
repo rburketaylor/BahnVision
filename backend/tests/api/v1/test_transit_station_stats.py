@@ -109,9 +109,8 @@ class TestStationStatsEndpoint:
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
             lambda: fake_service
         )
-        client = _client_for(test_app)
-
-        resp = client.get("/api/v1/transit/stops/s1/stats?time_range=24h")
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/s1/stats?time_range=24h")
         assert resp.status_code == 200
         assert resp.headers["Cache-Control"] == "public, max-age=300"
         assert resp.json()["station_id"] == "s1"
@@ -121,9 +120,8 @@ class TestStationStatsEndpoint:
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
             lambda: fake_service
         )
-        client = _client_for(test_app)
-
-        resp = client.get("/api/v1/transit/stops/missing/stats")
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/missing/stats")
         assert resp.status_code == 404
 
 
@@ -158,11 +156,10 @@ class TestStationTrendsEndpoint:
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
             lambda: fake_service
         )
-        client = _client_for(test_app)
-
-        resp = client.get(
-            "/api/v1/transit/stops/s1/trends?time_range=24h&granularity=daily"
-        )
+        with TestClient(test_app) as client:
+            resp = client.get(
+                "/api/v1/transit/stops/s1/trends?time_range=24h&granularity=daily"
+            )
         assert resp.status_code == 200
         assert resp.headers["Cache-Control"] == "public, max-age=300"
         assert resp.json()["data_points"][0]["total_departures"] == 10
@@ -172,9 +169,8 @@ class TestStationTrendsEndpoint:
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
             lambda: fake_service
         )
-        client = _client_for(test_app)
-
-        resp = client.get("/api/v1/transit/stops/missing/trends")
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/missing/trends")
         assert resp.status_code == 404
 
 
@@ -192,8 +188,8 @@ class TestNearbyStopsEndpoint:
             stops_module, "GTFSScheduleService", FakeGTFSScheduleService
         )
         monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
-        client = _client_for(test_app)
-        resp = client.get("/api/v1/transit/stops/nearby?latitude=1&longitude=2")
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/nearby?latitude=1&longitude=2")
 
         assert resp.status_code == 200
         assert resp.headers["Cache-Control"] == "public, max-age=123"
@@ -201,6 +197,62 @@ class TestNearbyStopsEndpoint:
         assert data[0]["id"] == "s1"
         assert data[0]["latitude"] == 1.0
         assert data[1]["latitude"] == 0.0
+
+    def test_nearby_stops_serves_stale_cache(
+        self, test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+    ):
+        class FakeSettings:
+            gtfs_stop_cache_ttl_seconds = 123
+
+        class FakeCache:
+            async def get_json(self, _key: str):
+                return None
+
+            async def get_stale_json(self, _key: str):
+                return [
+                    {
+                        "id": "cached",
+                        "name": "Cached Stop",
+                        "latitude": 1.23,
+                        "longitude": 4.56,
+                        "zone_id": None,
+                        "wheelchair_boarding": 0,
+                    }
+                ]
+
+            async def set_json(self, *_args, **_kwargs):
+                raise AssertionError("Should not write cache when serving stale value")
+
+        class ShouldNotBeCalledScheduleService:
+            def __init__(self, _db):
+                raise AssertionError("Should not query DB when serving stale cache")
+
+        test_app.dependency_overrides[stops_module.get_session] = lambda: object()
+        test_app.dependency_overrides[stops_module.get_cache_service] = (
+            lambda: FakeCache()
+        )
+
+        monkeypatch.setattr(
+            stops_module, "GTFSScheduleService", ShouldNotBeCalledScheduleService
+        )
+        monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
+
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/nearby?latitude=1&longitude=2")
+
+        assert resp.status_code == 200
+        assert resp.headers["Cache-Control"] == "public, max-age=123"
+        data = resp.json()
+        assert data == [
+            {
+                "id": "cached",
+                "name": "Cached Stop",
+                "latitude": 1.23,
+                "longitude": 4.56,
+                "zone_id": None,
+                "wheelchair_boarding": 0,
+            }
+        ]
 
 
 class TestStopsDependencyFactories:
@@ -238,6 +290,7 @@ class TestStopsDependencyFactories:
         self, monkeypatch: pytest.MonkeyPatch
     ):
         fake_db = object()
+        fake_cache = object()
         schedule_instance = object()
         service_instance = object()
 
@@ -247,8 +300,12 @@ class TestStopsDependencyFactories:
         monkeypatch.setattr(stops_module, "GTFSScheduleService", schedule_cls)
         monkeypatch.setattr(stops_module, "StationStatsService", stats_service_cls)
 
-        result = await stops_module.get_station_stats_service(db=fake_db)
+        result = await stops_module.get_station_stats_service(
+            db=fake_db, cache=fake_cache
+        )
 
         assert result is service_instance
         schedule_cls.assert_called_once_with(fake_db)
-        stats_service_cls.assert_called_once_with(fake_db, schedule_instance)
+        stats_service_cls.assert_called_once_with(
+            fake_db, schedule_instance, fake_cache
+        )

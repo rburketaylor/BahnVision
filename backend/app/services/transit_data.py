@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 from enum import Enum
+from types import SimpleNamespace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -259,17 +260,22 @@ class TransitDataService:
         while keeping real-time data reasonably fresh.
         """
         try:
-            # Generate cache key based on inputs and current time (bucketed to 15 seconds)
-            # We use 15-second buckets matching our TTL for consistent cache behavior
-            now = datetime.now(timezone.utc)
-            bucket = int(now.timestamp()) // 15  # 15-second buckets
-            cache_key = f"departures:{stop_id}:{limit}:{offset_minutes}:{include_real_time}:{bucket}"
+            # Cache key without time bucket - use stale-while-revalidate instead
+            cache_key = (
+                f"departures:{stop_id}:{limit}:{offset_minutes}:{include_real_time}"
+            )
 
-            # Try to get from cache
+            # Try to get from cache (fresh or stale)
             try:
                 cached_data = await self.cache.get_json(cache_key)
                 if cached_data:
-                    return [DepartureInfo.from_dict(d) for d in cached_data]  # type: ignore[arg-type]
+                    return [DepartureInfo.from_dict(d) for d in cached_data]
+
+                # Try stale fallback if fresh cache miss
+                stale_data = await self.cache.get_stale_json(cache_key)
+                if stale_data:
+                    logger.info(f"Serving stale departures for {stop_id}")
+                    return [DepartureInfo.from_dict(d) for d in stale_data]
             except Exception as cache_error:
                 logger.warning(
                     f"Failed to read from cache for {stop_id}: {cache_error}"
@@ -286,15 +292,15 @@ class TransitDataService:
             if not scheduled_departures:
                 return []
 
-            # Get stop information
-            stop_info = await self._get_stop_info(stop_id)
-            if not stop_info:
+            # Get stop information (uses cached get_stop_info)
+            stop_info_obj = await self.get_stop_info(stop_id, include_departures=False)
+            if not stop_info_obj:
                 logger.warning(f"Stop {stop_id} not found")
                 return []
 
-            # Get route information
+            # Get route information (batch, but check cache first)
             route_ids = {dep.route_id for dep in scheduled_departures}
-            route_info = await self._get_route_info_batch(route_ids)
+            route_info = await self._get_route_info_batch_cached(route_ids)
 
             # Convert to departure info
             departures = []
@@ -310,7 +316,7 @@ class TransitDataService:
                     route_long_name=str(route.route_long_name or ""),
                     trip_headsign=str(dep.trip_headsign or ""),
                     stop_id=str(stop_id),
-                    stop_name=str(stop_info.stop_name),
+                    stop_name=str(stop_info_obj.stop_name),
                     scheduled_departure=dep.departure_time,
                     scheduled_arrival=dep.arrival_time,
                     schedule_relationship=ScheduleRelationship.SCHEDULED,
@@ -328,7 +334,10 @@ class TransitDataService:
             try:
                 serialized_departures = [d.to_dict() for d in departures]
                 await self.cache.set_json(
-                    cache_key, serialized_departures, ttl_seconds=15
+                    cache_key,
+                    serialized_departures,
+                    ttl_seconds=self.settings.transit_departures_cache_ttl_seconds,
+                    stale_ttl_seconds=self.settings.transit_departures_cache_stale_ttl_seconds,
                 )
             except Exception as cache_error:
                 logger.warning(
@@ -438,8 +447,21 @@ class TransitDataService:
             return None
 
     async def search_stops(self, query: str, limit: int = 10) -> List[StopInfo]:
-        """Search for stops by name"""
+        """Search for stops by name with caching."""
         try:
+            # Normalize query for consistent cache keys
+            normalized_query = query.strip().lower()
+            cache_key = f"stop_search:{normalized_query}:{limit}"
+
+            # Try cache first
+            try:
+                cached_data = await self.cache.get_json(cache_key)
+                if cached_data:
+                    return [StopInfo(**s) for s in cached_data]
+            except Exception as cache_error:
+                logger.warning(f"Failed to read stop search from cache: {cache_error}")
+
+            # Cache miss - query database
             stops = await self.gtfs_schedule.search_stops(query, limit)
 
             stop_infos = []
@@ -449,10 +471,22 @@ class TransitDataService:
                     stop_name=str(stop.stop_name),
                     stop_lat=float(stop.stop_lat) if stop.stop_lat else 0.0,
                     stop_lon=float(stop.stop_lon) if stop.stop_lon else 0.0,
-                    zone_id=None,  # Not in GTFS model
-                    wheelchair_boarding=0,  # Not in GTFS model
+                    zone_id=None,
+                    wheelchair_boarding=0,
                 )
                 stop_infos.append(stop_info)
+
+            # Cache the result
+            try:
+                serialized = [asdict(s) for s in stop_infos]
+                await self.cache.set_json(
+                    cache_key,
+                    serialized,
+                    ttl_seconds=self.settings.transit_station_search_cache_ttl_seconds,
+                    stale_ttl_seconds=self.settings.transit_station_search_cache_stale_ttl_seconds,
+                )
+            except Exception as cache_error:
+                logger.warning(f"Failed to cache stop search: {cache_error}")
 
             return stop_infos
 
@@ -544,6 +578,61 @@ class TransitDataService:
         except Exception as e:
             logger.error(f"Failed to get route info batch: {e}")
             return {}
+
+    async def _get_route_info_batch_cached(
+        self, route_ids: Set[str]
+    ) -> Dict[str, GTFSRoute]:
+        """Get route information for multiple routes, using cache where available."""
+        if not route_ids:
+            return {}
+
+        result: Dict[str, GTFSRoute] = {}
+        uncached_ids: Set[str] = set()
+
+        # Try cache first for each route
+        # Use the same format as get_route_info/get_stop_info
+        # route:{route_id}:{include_real_time}
+        route_id_list = list(route_ids)
+        cache_keys = [f"route:{rid}:False" for rid in route_id_list]
+        try:
+            # We need to handle mget_json result mapping back to route_ids
+            cached_data = await self.cache.mget_json(cache_keys)
+            for route_id, key in zip(route_id_list, cache_keys):
+                data = cached_data.get(key)
+                if data:
+                    result[route_id] = SimpleNamespace(**data)  # type: ignore[assignment]
+                else:
+                    uncached_ids.add(route_id)
+        except Exception:
+            uncached_ids = set(route_ids)
+
+        # Fetch uncached from DB
+        if uncached_ids:
+            db_routes = await self._get_route_info_batch(uncached_ids)
+            result.update(db_routes)
+
+            # Optimistically cache these for next time if not already cached
+            # (get_route_info normally handles this, but here we did a batch fetch)
+            for rid, route in db_routes.items():
+                try:
+                    # Match RouteInfo-like structure for cache
+                    route_info_dict = {
+                        "route_id": str(route.route_id),
+                        "route_short_name": str(route.route_short_name or ""),
+                        "route_long_name": str(route.route_long_name or ""),
+                        "route_type": int(route.route_type),
+                        "route_color": str(route.route_color or ""),
+                        "route_text_color": "",
+                    }
+                    await self.cache.set_json(
+                        f"route:{rid}:False",
+                        route_info_dict,
+                        ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds,
+                    )
+                except Exception:
+                    pass
+
+        return result
 
     async def _apply_real_time_updates(
         self, departures: List[DepartureInfo], stop_id: str

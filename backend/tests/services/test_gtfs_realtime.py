@@ -22,6 +22,7 @@ def mock_cache_service():
     cache_service.set_json = AsyncMock()
     cache_service.get_json = AsyncMock()
     cache_service.mget_json = AsyncMock()
+    cache_service.mset_json = AsyncMock()
     return cache_service
 
 
@@ -76,15 +77,23 @@ class TestTripUpdates:
 
         await gtfs_service._store_trip_updates(trip_updates)
 
-        # Verify individual trip updates are stored
-        assert (
-            mock_cache_service.set_json.call_count == 5
-        )  # 3 trip updates + 2 stop indexes
+        # Verify batch writes are used (Issue 6: GTFS-RT Batch Writes)
+        # Should call mset_json twice: once for trip updates, once for stop indexes
+        assert mock_cache_service.mset_json.call_count == 2
 
-        # Check that stop indexes are created
-        calls = mock_cache_service.set_json.call_args_list
-        stop_index_calls = [call for call in calls if "trip_updates:stop:" in str(call)]
-        assert len(stop_index_calls) == 2  # stop1 and stop2
+        # Check that individual set_json is NOT called (batch writes replace individual calls)
+        assert mock_cache_service.set_json.call_count == 0
+
+        # Verify the first batch call contains the trip updates
+        first_call_items = mock_cache_service.mset_json.call_args_list[0][0][0]
+        assert "trip_update:trip1:stop1" in first_call_items
+        assert "trip_update:trip2:stop1" in first_call_items
+        assert "trip_update:trip1:stop2" in first_call_items
+
+        # Verify the second batch call contains the stop indexes
+        second_call_items = mock_cache_service.mset_json.call_args_list[1][0][0]
+        assert "trip_updates:stop:stop1" in second_call_items
+        assert "trip_updates:stop:stop2" in second_call_items
 
     @pytest.mark.asyncio
     async def test_get_trip_updates_for_stop(self, gtfs_service, mock_cache_service):
@@ -168,10 +177,21 @@ class TestVehiclePositions:
 
         await gtfs_service._store_vehicle_positions(vehicle_positions)
 
-        # Verify storage calls
-        assert (
-            mock_cache_service.set_json.call_count == 5
-        )  # 3 vehicle positions + 2 trip indexes
+        # Verify batch writes are used (Issue 6: GTFS-RT Batch Writes)
+        # Should call mset_json once with all vehicle positions and trip indexes
+        assert mock_cache_service.mset_json.call_count == 1
+
+        # Check that individual set_json is NOT called
+        assert mock_cache_service.set_json.call_count == 0
+
+        # Verify the batch call contains vehicle positions and trip indexes
+        batch_items = mock_cache_service.mset_json.call_args[0][0]
+        assert "vehicle_position:vehicle1" in batch_items
+        assert "vehicle_position:vehicle2" in batch_items
+        assert "vehicle_position:vehicle3" in batch_items
+        # trip indexes for non-empty trip_id vehicles
+        assert "vehicle_position:trip:trip1" in batch_items
+        assert "vehicle_position:trip:trip2" in batch_items
 
     @pytest.mark.asyncio
     async def test_get_vehicle_position_by_trip(self, gtfs_service, mock_cache_service):
@@ -288,10 +308,23 @@ class TestServiceAlerts:
 
         await gtfs_service._store_alerts(alerts)
 
-        # Verify storage calls
-        assert (
-            mock_cache_service.set_json.call_count == 5
-        )  # 2 alerts + 3 route indexes (route1, route2, route3)
+        # Verify batch writes are used (Issue 6: GTFS-RT Batch Writes)
+        # Should call mset_json twice: once for alerts, once for route indexes
+        assert mock_cache_service.mset_json.call_count == 2
+
+        # Check that individual set_json is NOT called
+        assert mock_cache_service.set_json.call_count == 0
+
+        # Verify the first batch call contains the alerts
+        first_call_items = mock_cache_service.mset_json.call_args_list[0][0][0]
+        assert "service_alert:alert1" in first_call_items
+        assert "service_alert:alert2" in first_call_items
+
+        # Verify the second batch call contains the route indexes
+        second_call_items = mock_cache_service.mset_json.call_args_list[1][0][0]
+        assert "service_alerts:route:route1" in second_call_items
+        assert "service_alerts:route:route2" in second_call_items
+        assert "service_alerts:route:route3" in second_call_items
 
     @pytest.mark.asyncio
     async def test_get_alerts_for_route(self, gtfs_service, mock_cache_service):

@@ -27,15 +27,15 @@ from app.services.transit_data import TransitDataService
 router = APIRouter()
 
 # Cache names for metrics
-_CACHE_STOP_SEARCH = "transit_stop_search"
 
 
 async def get_station_stats_service(
     db: AsyncSession = Depends(get_session),
+    cache: CacheService = Depends(get_cache_service),
 ) -> StationStatsService:
     """Create StationStatsService with dependencies."""
     gtfs_schedule = GTFSScheduleService(db)
-    return StationStatsService(db, gtfs_schedule)
+    return StationStatsService(db, gtfs_schedule, cache)
 
 
 @router.get(
@@ -82,10 +82,10 @@ async def search_stops(
         for stop in stop_infos
     ]
 
-    # Set cache headers
+    # Set cache headers using the correct search TTL
     settings = get_settings()
     response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
+        f"public, max-age={settings.transit_station_search_cache_ttl_seconds}"
     )
 
     return TransitStopSearchResponse(
@@ -141,10 +141,35 @@ async def get_nearby_stops(
 ) -> list[TransitStop]:
     """Find transit stops near a location."""
     settings = get_settings()
+    response.headers["Cache-Control"] = (
+        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
+    )
+
+    # Bucket coordinates to reduce cache key cardinality
+    # Using ~100m precision (0.001 degrees ≈ 111m at equator)
+    lat_bucket = round(latitude, 3)
+    lon_bucket = round(longitude, 3)
+    cache_key = f"nearby_stops:{lat_bucket}:{lon_bucket}:{radius_meters}:{limit}"
+
+    # Try cache first
+    try:
+        cached_data = await cache.get_json(cache_key)
+        if cached_data:
+            return [TransitStop(**s) for s in cached_data]
+
+        stale_data = await cache.get_stale_json(cache_key)
+        if stale_data:
+            return [TransitStop(**s) for s in stale_data]
+    except Exception as cache_error:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            f"Nearby stops cache read failed: {cache_error}"
+        )
+
+    # Cache miss - query database
     gtfs_schedule = GTFSScheduleService(db)
-
     radius_km = radius_meters / 1000.0
-
     stops = await gtfs_schedule.get_nearby_stops(latitude, longitude, radius_km, limit)
 
     # Convert to response models
@@ -160,10 +185,21 @@ async def get_nearby_stops(
         for stop in stops
     ]
 
-    # Set cache headers
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
-    )
+    # Cache the result (stops rarely change)
+    try:
+        serialized = [r.model_dump() for r in results]
+        await cache.set_json(
+            cache_key,
+            serialized,
+            ttl_seconds=settings.gtfs_stop_cache_ttl_seconds,
+            stale_ttl_seconds=settings.gtfs_stop_cache_ttl_seconds * 2,
+        )
+    except Exception as cache_error:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            f"Nearby stops cache write failed: {cache_error}"
+        )
 
     return results
 

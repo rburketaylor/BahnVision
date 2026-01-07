@@ -43,3 +43,8 @@ def heatmap_cancellations_cache_key(
     time_range_part = time_range or "24h"
     transport_part = _normalize_transport_modes_part(transport_modes)
     return f"heatmap:cancellations:{time_range_part}:{transport_part}:{bucket_width_minutes}:{max_points}"
+
+
+def heatmap_live_snapshot_cache_key() -> str:
+    """Return the cache key for the live heatmap snapshot."""
+    return "heatmap:live:snapshot:v1"

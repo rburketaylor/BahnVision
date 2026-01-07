@@ -96,7 +96,11 @@ class HeatmapResponse(BaseModel):
         default_factory=list, description="List of station data points."
     )
     summary: HeatmapSummary = Field(..., description="Summary statistics.")
+    last_updated_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when the snapshot was generated (live only).",
+    )
 
 
 # Query parameter types
-TimeRangePreset = Literal["1h", "6h", "24h", "7d", "30d"]
+TimeRangePreset = Literal["live", "1h", "6h", "24h", "7d", "30d"]
