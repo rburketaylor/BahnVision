@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { ThemeProvider } from '../../../contexts/ThemeContext'
 import HeatmapPage from '../../../pages/HeatmapPage'
 import { useHeatmap } from '../../../hooks/useHeatmap'
+import { ApiError } from '../../../services/api'
 
 vi.mock('../../../hooks/useHeatmap', () => ({
   useHeatmap: vi.fn(),
@@ -83,6 +84,14 @@ describe('HeatmapPage', () => {
     expect(screen.queryByLabelText('Heatmap controls')).not.toBeInTheDocument()
   })
 
+  it('defaults to live time range', async () => {
+    renderPage()
+    await screen.findByTestId('mock-heatmap')
+
+    const params = mockUseHeatmap.mock.calls[0]?.[0]
+    expect(params?.time_range).toBe('live')
+  })
+
   it('toggles controls with keyboard shortcuts', async () => {
     renderPage()
     await screen.findByTestId('mock-heatmap')
@@ -127,5 +136,23 @@ describe('HeatmapPage', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /refresh heatmap data/i }))
     expect(refetch).toHaveBeenCalled()
+  })
+
+  it('shows live unavailable message for 503 responses', async () => {
+    mockUseHeatmap.mockReturnValue({
+      data: {
+        time_range: { from: '2025-01-01T00:00:00Z', to: '2025-01-02T00:00:00Z' },
+        data_points: [],
+        summary: null,
+      },
+      isLoading: false,
+      error: new ApiError('Service unavailable', 503, 'Live data not ready'),
+      refetch: vi.fn(),
+    } as ReturnType<typeof useHeatmap>)
+
+    renderPage()
+    await screen.findByTestId('mock-heatmap')
+
+    expect(screen.getByText('Live data not ready')).toBeInTheDocument()
   })
 })

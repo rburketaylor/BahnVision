@@ -14,6 +14,7 @@ from app.services.gtfs_realtime_harvester import (
     GTFSRTDataHarvester,
     ON_TIME_THRESHOLD_SECONDS,
 )
+from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
 
 
 class FakeCache:
@@ -35,6 +36,31 @@ class FakeCache:
     async def mset(self, items: dict[str, str], ttl_seconds: int | None = None):
         """Batch set multiple key-value pairs."""
         self._store.update(items)
+
+    async def set_json(
+        self,
+        key: str,
+        value,
+        ttl_seconds: int | None = None,
+        stale_ttl_seconds: int | None = None,
+    ):
+        self._store[key] = value
+
+
+class FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class FakeRow:
+    def __init__(self, stop_id, stop_name, stop_lat, stop_lon):
+        self.stop_id = stop_id
+        self.stop_name = stop_name
+        self.stop_lat = stop_lat
+        self.stop_lon = stop_lon
 
 
 class TestGTFSRTDataHarvester:
@@ -229,6 +255,54 @@ class TestGTFSRTDataHarvester:
         assert hash1 == hash2  # Consistent
         assert len(hash1) == 12  # 12 chars
         assert hash1 != hash3  # Different trips have different hashes
+
+    @pytest.mark.asyncio
+    async def test_cache_live_snapshot_writes_impacted_only(self):
+        """Test that live snapshot caches impacted stations only."""
+        cache = AsyncMock()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        trip_updates = [
+            {
+                "trip_id": "trip_1",
+                "stop_id": "stop_A",
+                "route_id": "route_1",
+                "departure_delay_seconds": 400,
+                "schedule_relationship": ScheduleRelationship.SCHEDULED,
+            },
+            {
+                "trip_id": "trip_2",
+                "stop_id": "stop_B",
+                "route_id": "route_1",
+                "departure_delay_seconds": 0,
+                "schedule_relationship": ScheduleRelationship.SCHEDULED,
+            },
+        ]
+        route_type_map = {"route_1": 1}
+        snapshot_stats = harvester._aggregate_snapshot_by_stop_and_route(
+            trip_updates, route_type_map
+        )
+        snapshot_timestamp = datetime.now(timezone.utc)
+
+        session = AsyncMock()
+        session.execute.return_value = FakeResult(
+            [
+                FakeRow("stop_A", "Stop A", 48.1, 11.5),
+                FakeRow("stop_B", "Stop B", 48.2, 11.6),
+            ]
+        )
+
+        await harvester._cache_live_snapshot(
+            session, snapshot_stats, snapshot_timestamp
+        )
+
+        cache.set_json.assert_called_once()
+        called_key = cache.set_json.call_args[0][0]
+        called_payload = cache.set_json.call_args[0][1]
+        assert called_key == heatmap_live_snapshot_cache_key()
+        assert len(called_payload["data_points"]) == 1
 
 
 class TestScheduleRelationshipMapping:
