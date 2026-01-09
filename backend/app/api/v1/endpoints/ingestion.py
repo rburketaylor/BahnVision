@@ -8,7 +8,7 @@ GTFS-RT realtime harvester.
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
@@ -21,6 +21,54 @@ from app.models.ingestion import (
 from app.persistence.models import RealtimeStationStats
 
 router = APIRouter()
+
+_REALTIME_STATS_TABLE_NAME = "realtime_station_stats"
+
+
+async def _get_realtime_stats_row_count_estimate(session: AsyncSession) -> int:
+    """
+    Return a fast, approximate row count for realtime station stats.
+
+    Exact `COUNT(*)` on a large table can be slow and can time out the frontend
+    monitoring view. For monitoring, an estimate is sufficient.
+    """
+    try:
+        # Prefer live tuple estimate (updated by autovacuum/analyze).
+        stmt = text(
+            """
+            select n_live_tup::bigint
+            from pg_stat_all_tables
+            where schemaname = current_schema()
+              and relname = :table_name
+            """
+        )
+        result = await session.execute(stmt, {"table_name": _REALTIME_STATS_TABLE_NAME})
+        estimate = result.scalar_one_or_none()
+        if estimate is not None:
+            return int(estimate)
+    except Exception:
+        # Fall back to reltuples.
+        pass
+
+    try:
+        stmt = text(
+            """
+            select reltuples::bigint
+            from pg_class
+            where relname = :table_name
+            """
+        )
+        result = await session.execute(stmt, {"table_name": _REALTIME_STATS_TABLE_NAME})
+        estimate = result.scalar_one_or_none()
+        if estimate is not None:
+            return int(estimate)
+    except Exception:
+        pass
+
+    # Final fallback: exact count (may be slow on large tables).
+    count_stmt = select(func.count(RealtimeStationStats.id))
+    count_result = await session.execute(count_stmt)
+    return int(count_result.scalar() or 0)
 
 
 @router.get("/ingestion-status", response_model=IngestionStatus)
@@ -74,10 +122,9 @@ async def get_ingestion_status(
         )
 
     # Get total stats record count
-    count_stmt = select(func.count(RealtimeStationStats.id))
-    count_result = await session.execute(count_stmt)
-    total_stats = count_result.scalar() or 0
-    harvester_status.total_stats_records = total_stats
+    harvester_status.total_stats_records = await _get_realtime_stats_row_count_estimate(
+        session
+    )
 
     return IngestionStatus(
         gtfs_feed=gtfs_feed_status,

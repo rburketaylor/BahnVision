@@ -25,12 +25,13 @@ from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
 from app.models.heatmap import (
     HeatmapDataPoint,
     HeatmapResponse,
+    HeatmapSummary,
     TimeRange,
     TransportStats,
 )
 from app.persistence.models import RealtimeStationStats, ScheduleRelationship
 from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
-from app.services.heatmap_service import GTFS_ROUTE_TYPES, calculate_heatmap_summary
+from app.services.heatmap_service import GTFS_ROUTE_TYPES, TRANSPORT_TYPE_NAMES
 
 if TYPE_CHECKING:
     from app.services.cache import CacheService
@@ -616,6 +617,8 @@ class GTFSRTDataHarvester:
             delayed = int(stats["delayed"])
             if total <= 0:
                 continue
+
+            # Station-level rates for popup display.
             cancellation_rate = min(cancelled / total, 1.0) if total > 0 else 0.0
             delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
 
@@ -643,7 +646,67 @@ class GTFSRTDataHarvester:
                 )
             )
 
-        summary = calculate_heatmap_summary(data_points)
+        network_total_departures = sum(
+            int(stats["total"]) for stats in by_stop.values()
+        )
+        network_total_cancellations = sum(
+            int(stats["cancelled"]) for stats in by_stop.values()
+        )
+        network_total_delays = sum(int(stats["delayed"]) for stats in by_stop.values())
+        network_total_stations = sum(
+            1 for stats in by_stop.values() if int(stats["total"]) > 0
+        )
+
+        overall_cancellation_rate = (
+            min(network_total_cancellations / network_total_departures, 1.0)
+            if network_total_departures > 0
+            else 0.0
+        )
+        overall_delay_rate = (
+            min(network_total_delays / network_total_departures, 1.0)
+            if network_total_departures > 0
+            else 0.0
+        )
+
+        most_affected_station = None
+        affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
+        if affected_stations:
+            most_affected_station = max(
+                affected_stations,
+                key=lambda x: x.delay_rate + x.cancellation_rate,
+            ).station_name
+
+        line_stats: dict[str, dict[str, int]] = {}
+        for stats in by_stop.values():
+            for transport, transport_stats in stats["by_transport"].items():
+                entry = line_stats.setdefault(
+                    transport, {"total": 0, "cancelled": 0, "delayed": 0}
+                )
+                entry["total"] += int(transport_stats["total"])
+                entry["cancelled"] += int(transport_stats["cancelled"])
+                entry["delayed"] += int(transport_stats["delayed"])
+
+        most_affected_line = None
+        highest_line_rate = 0.0
+        for line, line_stat in line_stats.items():
+            total = line_stat["total"]
+            if total < 100:
+                continue
+            combined_rate = (line_stat["cancelled"] + line_stat["delayed"]) / total
+            if combined_rate > highest_line_rate:
+                highest_line_rate = combined_rate
+                most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)
+
+        summary = HeatmapSummary(
+            total_stations=network_total_stations,
+            total_departures=network_total_departures,
+            total_cancellations=network_total_cancellations,
+            overall_cancellation_rate=overall_cancellation_rate,
+            total_delays=network_total_delays,
+            overall_delay_rate=overall_delay_rate,
+            most_affected_station=most_affected_station,
+            most_affected_line=most_affected_line,
+        )
         interval_seconds = self._harvest_interval or 300
         from_time = snapshot_timestamp - timedelta(seconds=interval_seconds)
 

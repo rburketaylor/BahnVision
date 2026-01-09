@@ -343,6 +343,20 @@ class TestHeatmapService:
             cancelled_count: int
             delayed_count: int
 
+        @dataclass
+        class TotalsRow:
+            total_stations: int
+            total_departures: int
+            total_cancellations: int
+            total_delays: int
+
+        @dataclass
+        class LineRow:
+            route_type: int
+            total_departures: int
+            cancelled_count: int
+            delayed_count: int
+
         station_rows = [
             StationAggRow(
                 stop_id="de:09162:6",
@@ -365,14 +379,33 @@ class TestHeatmapService:
             )
         ]
 
-        session = FakeAsyncSession(row_sets=[station_rows, breakdown_rows])
+        totals_rows = [
+            TotalsRow(
+                total_stations=1,
+                total_departures=100,
+                total_cancellations=5,
+                total_delays=10,
+            )
+        ]
+        line_rows = [
+            LineRow(
+                route_type=2,
+                total_departures=100,
+                cancelled_count=5,
+                delayed_count=10,
+            )
+        ]
+
+        session = FakeAsyncSession(
+            row_sets=[station_rows, breakdown_rows, totals_rows, line_rows]
+        )
         gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache, session=session)
 
         result = await service.get_cancellation_heatmap(max_points=1)
 
-        assert len(session.executed_statements) == 2
+        assert len(session.executed_statements) == 4
         assert len(result.data_points) == 1
         assert result.data_points[0].station_id == "de:09162:6"
         assert result.data_points[0].by_transport["BAHN"].total == 100

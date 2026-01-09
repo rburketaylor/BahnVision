@@ -46,6 +46,7 @@ def _filter_live_snapshot(
     data_points: list[HeatmapDataPoint] = []
 
     if transport_types:
+        # Build filtered data points with station-level rates.
         for point in snapshot.data_points:
             filtered_by_transport = {
                 key: value
@@ -84,7 +85,9 @@ def _filter_live_snapshot(
     )
     data_points = data_points[:max_points]
 
-    summary = calculate_heatmap_summary(data_points)
+    summary = (
+        calculate_heatmap_summary(data_points) if transport_types else snapshot.summary
+    )
     return HeatmapResponse(
         time_range=snapshot.time_range,
         data_points=data_points,

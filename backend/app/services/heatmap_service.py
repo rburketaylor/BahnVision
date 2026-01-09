@@ -290,9 +290,11 @@ class HeatmapService:
 
         max_points_effective = resolve_max_points(zoom_level, max_points)
 
+        route_type_filter = self._resolve_route_type_filter(transport_types)
+
         # Get real aggregation data from database (joins with gtfs_stops internally)
         data_points = await self._aggregate_station_data_from_db(
-            transport_types,
+            route_type_filter,
             from_time,
             to_time,
             bucket_width_minutes=bucket_width_minutes,
@@ -321,22 +323,13 @@ class HeatmapService:
             f"Returning {len(data_points)} data points after filtering and limiting"
         )
 
-        # Calculate summary
-        try:
-            summary = self._calculate_summary(data_points)
-        except Exception as e:
-            logger.error(f"Failed to calculate summary: {str(e)}")
-            # Provide a safe default summary
-            summary = HeatmapSummary(
-                total_stations=len(data_points),
-                total_departures=sum(dp.total_departures for dp in data_points),
-                total_cancellations=sum(dp.cancelled_count for dp in data_points),
-                overall_cancellation_rate=0.0,
-                total_delays=sum(dp.delayed_count for dp in data_points),
-                overall_delay_rate=0.0,
-                most_affected_station=None,
-                most_affected_line=None,
-            )
+        summary = await self._calculate_network_summary_from_db(
+            from_time=from_time,
+            to_time=to_time,
+            bucket_width_minutes=bucket_width_minutes,
+            route_type_filter=route_type_filter,
+            most_affected_station=_pick_most_affected_station(data_points),
+        )
 
         return HeatmapResponse(
             time_range=TimeRange.model_validate({"from": from_time, "to": to_time}),
@@ -346,7 +339,7 @@ class HeatmapService:
 
     async def _aggregate_station_data_from_db(
         self,
-        transport_types: list[str] | None,
+        route_type_filter: list[int] | None,
         from_time: datetime,
         to_time: datetime,
         *,
@@ -369,15 +362,6 @@ class HeatmapService:
             raise RuntimeError(
                 "Heatmap aggregation requires an active database session"
             )
-
-        # Build route_type filter if transport_types specified
-        route_type_filter = None
-        if transport_types:
-            route_types_to_include = []
-            for tt in transport_types:
-                route_types_to_include.extend(TRANSPORT_TO_ROUTE_TYPES.get(tt, []))
-            if route_types_to_include:
-                route_type_filter = route_types_to_include
 
         try:
             from app.models.gtfs import GTFSStop
@@ -527,8 +511,8 @@ class HeatmapService:
                 total = int(row.total_departures or 0)
                 cancelled = int(row.cancelled_count or 0)
                 delayed = int(row.delayed_count or 0)
-                # Clamp rates to [0, 1] to handle data quality issues
-                # where delayed_count or cancelled_count may exceed trip_count
+
+                # Station-level rates for popup display.
                 cancellation_rate = min(cancelled / total, 1.0) if total > 0 else 0.0
                 delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
 
@@ -558,6 +542,168 @@ class HeatmapService:
             logger.error("Failed to query aggregation data: %s", exc)
             raise
 
+    def _resolve_route_type_filter(
+        self, transport_types: list[str] | None
+    ) -> list[int] | None:
+        if not transport_types:
+            return None
+
+        route_types_to_include: list[int] = []
+        for transport_type in transport_types:
+            route_types_to_include.extend(
+                TRANSPORT_TO_ROUTE_TYPES.get(transport_type, [])
+            )
+
+        return route_types_to_include or None
+
+    async def _calculate_network_summary_from_db(
+        self,
+        *,
+        from_time: datetime,
+        to_time: datetime,
+        bucket_width_minutes: int,
+        route_type_filter: list[int] | None,
+        most_affected_station: str | None,
+    ) -> HeatmapSummary:
+        if not self._session:
+            raise RuntimeError(
+                "Network summary calculation requires an active database session"
+            )
+
+        total_departures_expr = func.coalesce(
+            func.sum(RealtimeStationStats.trip_count), 0
+        )
+        total_cancellations_expr = func.coalesce(
+            func.sum(RealtimeStationStats.cancelled_count), 0
+        )
+        total_delays_expr = func.coalesce(
+            func.sum(RealtimeStationStats.delayed_count), 0
+        )
+        stations_expr = func.count(func.distinct(RealtimeStationStats.stop_id))
+
+        stmt = (
+            select(
+                stations_expr.label("total_stations"),
+                total_departures_expr.label("total_departures"),
+                total_cancellations_expr.label("total_cancellations"),
+                total_delays_expr.label("total_delays"),
+            )
+            .where(RealtimeStationStats.bucket_start >= from_time)
+            .where(RealtimeStationStats.bucket_start < to_time)
+            .where(RealtimeStationStats.bucket_width_minutes == bucket_width_minutes)
+        )
+        if route_type_filter:
+            stmt = stmt.where(RealtimeStationStats.route_type.in_(route_type_filter))
+
+        result = await self._session.execute(stmt)
+        rows = result.all()
+        row = rows[0] if rows else None
+        if not row:
+            return HeatmapSummary(
+                total_stations=0,
+                total_departures=0,
+                total_cancellations=0,
+                overall_cancellation_rate=0.0,
+                total_delays=0,
+                overall_delay_rate=0.0,
+                most_affected_station=None,
+                most_affected_line=None,
+            )
+
+        total_stations = int(row.total_stations or 0)
+        total_departures = int(row.total_departures or 0)
+        total_cancellations = int(row.total_cancellations or 0)
+        total_delays = int(row.total_delays or 0)
+        overall_cancellation_rate = (
+            min(total_cancellations / total_departures, 1.0)
+            if total_departures > 0
+            else 0.0
+        )
+        overall_delay_rate = (
+            min(total_delays / total_departures, 1.0) if total_departures > 0 else 0.0
+        )
+
+        most_affected_line = await self._get_most_affected_line_from_db(
+            from_time=from_time,
+            to_time=to_time,
+            bucket_width_minutes=bucket_width_minutes,
+            route_type_filter=route_type_filter,
+        )
+
+        return HeatmapSummary(
+            total_stations=total_stations,
+            total_departures=total_departures,
+            total_cancellations=total_cancellations,
+            overall_cancellation_rate=overall_cancellation_rate,
+            total_delays=total_delays,
+            overall_delay_rate=overall_delay_rate,
+            most_affected_station=most_affected_station,
+            most_affected_line=most_affected_line,
+        )
+
+    async def _get_most_affected_line_from_db(
+        self,
+        *,
+        from_time: datetime,
+        to_time: datetime,
+        bucket_width_minutes: int,
+        route_type_filter: list[int] | None,
+    ) -> str | None:
+        if not self._session:
+            raise RuntimeError(
+                "Most affected line calculation requires an active database session"
+            )
+
+        stmt = (
+            select(
+                RealtimeStationStats.route_type.label("route_type"),
+                func.coalesce(func.sum(RealtimeStationStats.trip_count), 0).label(
+                    "total_departures"
+                ),
+                func.coalesce(func.sum(RealtimeStationStats.cancelled_count), 0).label(
+                    "cancelled_count"
+                ),
+                func.coalesce(func.sum(RealtimeStationStats.delayed_count), 0).label(
+                    "delayed_count"
+                ),
+            )
+            .where(RealtimeStationStats.bucket_start >= from_time)
+            .where(RealtimeStationStats.bucket_start < to_time)
+            .where(RealtimeStationStats.bucket_width_minutes == bucket_width_minutes)
+            .group_by(RealtimeStationStats.route_type)
+        )
+        if route_type_filter:
+            stmt = stmt.where(RealtimeStationStats.route_type.in_(route_type_filter))
+
+        result = await self._session.execute(stmt)
+        rows = result.all()
+
+        line_stats: dict[str, dict[str, int]] = {}
+        for row in rows:
+            route_type = row.route_type
+            if route_type is None:
+                continue
+            transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
+            entry = line_stats.setdefault(
+                transport_type, {"total": 0, "cancelled": 0, "delayed": 0}
+            )
+            entry["total"] += int(row.total_departures or 0)
+            entry["cancelled"] += int(row.cancelled_count or 0)
+            entry["delayed"] += int(row.delayed_count or 0)
+
+        most_affected_line = None
+        highest_line_rate = 0.0
+        for line, line_stat in line_stats.items():
+            total = line_stat["total"]
+            if total < 100:
+                continue
+            combined_rate = (line_stat["cancelled"] + line_stat["delayed"]) / total
+            if combined_rate > highest_line_rate:
+                highest_line_rate = combined_rate
+                most_affected_line = TRANSPORT_TYPE_NAMES.get(line, line)
+
+        return most_affected_line
+
     def _calculate_summary(
         self,
         data_points: list[HeatmapDataPoint],
@@ -582,3 +728,14 @@ def get_heatmap_service(
         Configured HeatmapService instance
     """
     return HeatmapService(gtfs_schedule, cache, session)
+
+
+def _pick_most_affected_station(data_points: list[HeatmapDataPoint]) -> str | None:
+    affected_stations = [dp for dp in data_points if dp.total_departures >= 50]
+    if not affected_stations:
+        return None
+    most_affected = max(
+        affected_stations,
+        key=lambda x: x.delay_rate + x.cancellation_rate,
+    )
+    return most_affected.station_name
