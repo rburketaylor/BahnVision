@@ -496,58 +496,23 @@ class TransitDataService:
     async def refresh_real_time_data(self) -> Dict[str, int]:
         """Refresh all real-time data and return counts"""
         try:
-            # Fetch all real-time data types
-            trip_updates_task = self.gtfs_realtime.fetch_trip_updates()
-            vehicle_positions_task = self.gtfs_realtime.fetch_vehicle_positions()
-            alerts_task = self.gtfs_realtime.fetch_alerts()
+            if not self.gtfs_realtime:
+                logger.warning("GTFS-RT service not available")
+                return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
 
-            results = await asyncio.gather(
-                trip_updates_task,
-                vehicle_positions_task,
-                alerts_task,
-                return_exceptions=True,
-            )
-            trip_updates_result = results[0]
-            vehicle_positions_result = results[1]
-            alerts_result = results[2]
+            # Fetch all real-time data types in a single request
+            result = await self.gtfs_realtime.fetch_and_process_feed()
 
-            # Handle exceptions
-            trip_updates_count = (
-                len(trip_updates_result)
-                if not isinstance(trip_updates_result, BaseException)
-                else 0
-            )
-            vehicle_positions_count = (
-                len(vehicle_positions_result)
-                if not isinstance(vehicle_positions_result, BaseException)
-                else 0
-            )
-            alerts_count = (
-                len(alerts_result)
-                if not isinstance(alerts_result, BaseException)
-                else 0
-            )
-
-            # Log any errors
-            if isinstance(trip_updates_result, BaseException):
-                logger.error(f"Failed to fetch trip updates: {trip_updates_result}")
-            if isinstance(vehicle_positions_result, BaseException):
-                logger.error(
-                    f"Failed to fetch vehicle positions: {vehicle_positions_result}"
-                )
-            if isinstance(alerts_result, BaseException):
-                logger.error(f"Failed to fetch alerts: {alerts_result}")
+            trip_updates_count = result.get("trip_updates", 0)
+            vehicle_positions_count = result.get("vehicle_positions", 0)
+            alerts_count = result.get("alerts", 0)
 
             logger.info(
                 f"Real-time data refresh: {trip_updates_count} trip updates, "
                 f"{vehicle_positions_count} vehicle positions, {alerts_count} alerts"
             )
 
-            return {
-                "trip_updates": trip_updates_count,
-                "vehicle_positions": vehicle_positions_count,
-                "alerts": alerts_count,
-            }
+            return result
 
         except Exception as e:
             logger.error(f"Failed to refresh real-time data: {e}")
