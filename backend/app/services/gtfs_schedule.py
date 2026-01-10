@@ -181,11 +181,19 @@ class GTFSScheduleService:
             )
 
             if departure_dt:
-                row_dict = dict(row._mapping)
-                row_dict["departure_time"] = departure_dt
-                row_dict["arrival_time"] = arrival_dt
                 departures.append(
-                    ScheduledDeparture.from_row(type("Row", (), row_dict))
+                    ScheduledDeparture(
+                        departure_time=departure_dt,
+                        trip_headsign=row.trip_headsign or "",
+                        route_short_name=row.route_short_name or "",
+                        route_long_name=row.route_long_name or "",
+                        route_type=row.route_type,
+                        route_color=row.route_color,
+                        stop_name=row.stop_name,
+                        trip_id=row.trip_id,
+                        route_id=row.route_id,
+                        arrival_time=arrival_dt,
+                    )
                 )
 
         return departures
