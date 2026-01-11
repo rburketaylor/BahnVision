@@ -634,8 +634,20 @@ class TransitDataService:
     ):
         """Apply real-time updates to scheduled departures"""
         try:
-            # Get trip updates for this stop
-            trip_updates = await self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
+            # Prepare tasks for concurrent execution
+            # 1. Get trip updates for this stop
+            trip_updates_task = self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
+
+            # 2. Get vehicle positions for active trips (batch fetch)
+            trip_ids = list({dep.trip_id for dep in departures})
+            vehicle_positions_task = self.gtfs_realtime.get_vehicle_positions_by_trips(
+                trip_ids
+            )
+
+            # Execute both requests in parallel to reduce latency
+            trip_updates, vehicle_positions = await asyncio.gather(
+                trip_updates_task, vehicle_positions_task
+            )
 
             # Create lookup map
             update_map = {}
@@ -645,6 +657,7 @@ class TransitDataService:
 
             # Apply updates to departures
             for departure in departures:
+                # Apply trip updates
                 key = (departure.trip_id, departure.stop_id)
                 if key in update_map:
                     tu = update_map[key]
@@ -669,16 +682,7 @@ class TransitDataService:
                         tu.schedule_relationship
                     )
 
-            # Get vehicle positions for active trips (batch fetch)
-            trip_ids = list({dep.trip_id for dep in departures})
-
-            # Batch fetch vehicle positions for all trips
-            vehicle_positions = await self.gtfs_realtime.get_vehicle_positions_by_trips(
-                trip_ids
-            )
-
-            # Update departures with vehicle info
-            for departure in departures:
+                # Apply vehicle positions
                 vehicle_pos = vehicle_positions.get(departure.trip_id)
                 if vehicle_pos:
                     departure.vehicle_id = vehicle_pos.vehicle_id
