@@ -143,14 +143,175 @@ class GtfsRealtimeService:
             state["state"] = "OPEN"
             logger.warning(f"Circuit breaker OPENED after {state['failures']} failures")
 
-    async def fetch_trip_updates(self) -> List[TripUpdate]:
-        """Fetch and process trip updates from GTFS-RT feed"""
+    async def fetch_and_process_feed(self) -> dict[str, int]:
+        """Fetch and process all GTFS-RT data from a single feed.
+
+        Optimized to download and parse the feed only once, reducing network
+        overhead and CPU usage significantly compared to fetching types individually.
+        """
         if not GTFS_RT_AVAILABLE:
-            logger.warning("GTFS-RT bindings not available, skipping trip updates")
-            return []
+            logger.warning("GTFS-RT bindings not available, skipping fetch")
+            return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
 
         if not self._check_circuit_breaker():
-            logger.warning("Circuit breaker OPEN, skipping trip updates fetch")
+            logger.warning("Circuit breaker OPEN, skipping fetch")
+            return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.settings.gtfs_rt_timeout_seconds,
+                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+            ) as client:
+                response = await client.get(self.settings.gtfs_rt_feed_url)
+            response.raise_for_status()
+
+            if not FeedMessage:
+                logger.warning("FeedMessage not available")
+                return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
+
+            feed = FeedMessage()
+            feed.ParseFromString(response.content)
+
+            trip_updates = []
+            vehicle_positions = []
+            alerts = []
+
+            for entity in feed.entity:
+                # Process TripUpdate
+                if entity.HasField("trip_update"):
+                    tu = entity.trip_update
+                    if tu.trip.trip_id:
+                        for stop_time_update in tu.stop_time_update:
+                            if stop_time_update.stop_id:
+                                trip_updates.append(
+                                    TripUpdate(
+                                        trip_id=tu.trip.trip_id,
+                                        route_id=tu.trip.route_id or "",
+                                        stop_id=stop_time_update.stop_id,
+                                        stop_sequence=stop_time_update.stop_sequence,
+                                        arrival_delay=(
+                                            stop_time_update.arrival.delay
+                                            if stop_time_update.HasField("arrival")
+                                            else None
+                                        ),
+                                        departure_delay=(
+                                            stop_time_update.departure.delay
+                                            if stop_time_update.HasField("departure")
+                                            else None
+                                        ),
+                                        schedule_relationship=self._map_schedule_relationship(
+                                            stop_time_update.schedule_relationship
+                                        ),
+                                    )
+                                )
+
+                # Process VehiclePosition
+                if entity.HasField("vehicle"):
+                    v = entity.vehicle
+                    if v.vehicle.id:
+                        vehicle_positions.append(
+                            VehiclePosition(
+                                trip_id=v.trip.trip_id if v.HasField("trip") else "",
+                                vehicle_id=v.vehicle.id,
+                                route_id=v.trip.route_id if v.HasField("trip") else "",
+                                latitude=(
+                                    v.position.latitude
+                                    if v.HasField("position")
+                                    else 0.0
+                                ),
+                                longitude=(
+                                    v.position.longitude
+                                    if v.HasField("position")
+                                    else 0.0
+                                ),
+                                bearing=(
+                                    v.position.bearing
+                                    if v.HasField("position")
+                                    else None
+                                ),
+                                speed=(
+                                    v.position.speed if v.HasField("position") else None
+                                ),
+                            )
+                        )
+
+                # Process Alert
+                if entity.HasField("alert"):
+                    alert = entity.alert
+                    alert_id = entity.id or f"alert_{len(alerts)}"
+
+                    affected_routes = set()
+                    affected_stops = set()
+
+                    for informed_entity in alert.informed_entity:
+                        if (
+                            informed_entity.HasField("route_id")
+                            and informed_entity.route_id
+                        ):
+                            affected_routes.add(informed_entity.route_id)
+                        if (
+                            informed_entity.HasField("stop_id")
+                            and informed_entity.stop_id
+                        ):
+                            affected_stops.add(informed_entity.stop_id)
+
+                    alerts.append(
+                        ServiceAlert(
+                            alert_id=alert_id,
+                            cause=self._map_cause(alert.cause),
+                            effect=self._map_effect(alert.effect),
+                            header_text=self._extract_text(alert.header_text),
+                            description_text=self._extract_text(alert.description_text),
+                            affected_routes=affected_routes,
+                            affected_stops=affected_stops,
+                            start_time=(
+                                datetime.fromtimestamp(
+                                    alert.active_period[0].start, timezone.utc
+                                )
+                                if alert.active_period
+                                else None
+                            ),
+                            end_time=(
+                                datetime.fromtimestamp(
+                                    alert.active_period[0].end, timezone.utc
+                                )
+                                if alert.active_period
+                                else None
+                            ),
+                        )
+                    )
+
+            # Store in cache
+            await self._store_trip_updates(trip_updates)
+            await self._store_vehicle_positions(vehicle_positions)
+            await self._store_alerts(alerts)
+
+            self._record_success()
+
+            logger.info(
+                f"Processed feed: {len(trip_updates)} trip updates, "
+                f"{len(vehicle_positions)} vehicle positions, "
+                f"{len(alerts)} alerts"
+            )
+
+            return {
+                "trip_updates": len(trip_updates),
+                "vehicle_positions": len(vehicle_positions),
+                "alerts": len(alerts),
+            }
+
+        except Exception as e:
+            self._record_failure()
+            logger.error(f"Failed to fetch and process GTFS-RT feed: {e}")
+            return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
+
+    async def fetch_trip_updates(self) -> List[TripUpdate]:
+        """Fetch and process trip updates from GTFS-RT feed (legacy method).
+
+        Consider using fetch_and_process_feed() instead to process all data types at once.
+        """
+        # Kept for compatibility, but internally inefficient if used alongside others
+        if not GTFS_RT_AVAILABLE or not self._check_circuit_breaker():
             return []
 
         try:
@@ -162,7 +323,6 @@ class GtfsRealtimeService:
             response.raise_for_status()
 
             if not FeedMessage:
-                logger.warning("FeedMessage not available, skipping trip updates")
                 return []
 
             feed = FeedMessage()
@@ -170,58 +330,31 @@ class GtfsRealtimeService:
 
             trip_updates = []
             for entity in feed.entity:
-                if not entity.HasField("trip_update"):
-                    continue
-
-                tu = entity.trip_update
-                if not tu.trip.trip_id:
-                    continue
-
-                for stop_time_update in tu.stop_time_update:
-                    if not stop_time_update.stop_id:
-                        continue
-
-                    trip_update = TripUpdate(
-                        trip_id=tu.trip.trip_id,
-                        route_id=tu.trip.route_id or "",
-                        stop_id=stop_time_update.stop_id,
-                        stop_sequence=stop_time_update.stop_sequence,
-                        arrival_delay=(
-                            stop_time_update.arrival.delay
-                            if stop_time_update.HasField("arrival")
-                            else None
-                        ),
-                        departure_delay=(
-                            stop_time_update.departure.delay
-                            if stop_time_update.HasField("departure")
-                            else None
-                        ),
-                        schedule_relationship=self._map_schedule_relationship(
-                            stop_time_update.schedule_relationship
-                        ),
-                    )
-                    trip_updates.append(trip_update)
-
-            # Store in cache
+                if entity.HasField("trip_update"):
+                    tu = entity.trip_update
+                    if tu.trip.trip_id:
+                        for stop_time_update in tu.stop_time_update:
+                            if stop_time_update.stop_id:
+                                trip_updates.append(TripUpdate(
+                                    trip_id=tu.trip.trip_id,
+                                    route_id=tu.trip.route_id or "",
+                                    stop_id=stop_time_update.stop_id,
+                                    stop_sequence=stop_time_update.stop_sequence,
+                                    arrival_delay=(stop_time_update.arrival.delay if stop_time_update.HasField("arrival") else None),
+                                    departure_delay=(stop_time_update.departure.delay if stop_time_update.HasField("departure") else None),
+                                    schedule_relationship=self._map_schedule_relationship(stop_time_update.schedule_relationship),
+                                ))
             await self._store_trip_updates(trip_updates)
             self._record_success()
-
-            logger.info(f"Processed {len(trip_updates)} trip updates")
             return trip_updates
-
         except Exception as e:
             self._record_failure()
             logger.error(f"Failed to fetch trip updates: {e}")
             return []
 
     async def fetch_vehicle_positions(self) -> List[VehiclePosition]:
-        """Fetch and process vehicle positions from GTFS-RT feed"""
-        if not GTFS_RT_AVAILABLE:
-            logger.warning("GTFS-RT bindings not available, skipping vehicle positions")
-            return []
-
-        if not self._check_circuit_breaker():
-            logger.warning("Circuit breaker OPEN, skipping vehicle positions fetch")
+        """Fetch and process vehicle positions from GTFS-RT feed (legacy method)."""
+        if not GTFS_RT_AVAILABLE or not self._check_circuit_breaker():
             return []
 
         try:
@@ -232,53 +365,35 @@ class GtfsRealtimeService:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            if not FeedMessage:
-                logger.warning("FeedMessage not available, skipping trip updates")
-                return []
-
+            if not FeedMessage: return []
             feed = FeedMessage()
             feed.ParseFromString(response.content)
 
             vehicle_positions = []
             for entity in feed.entity:
-                if not entity.HasField("vehicle"):
-                    continue
-
-                v = entity.vehicle
-                if not v.vehicle.id:
-                    continue
-
-                vehicle_position = VehiclePosition(
-                    trip_id=v.trip.trip_id if v.HasField("trip") else "",
-                    vehicle_id=v.vehicle.id,
-                    route_id=v.trip.route_id if v.HasField("trip") else "",
-                    latitude=v.position.latitude if v.HasField("position") else 0.0,
-                    longitude=v.position.longitude if v.HasField("position") else 0.0,
-                    bearing=v.position.bearing if v.HasField("position") else None,
-                    speed=v.position.speed if v.HasField("position") else None,
-                )
-                vehicle_positions.append(vehicle_position)
-
-            # Store in cache
+                if entity.HasField("vehicle"):
+                    v = entity.vehicle
+                    if v.vehicle.id:
+                        vehicle_positions.append(VehiclePosition(
+                            trip_id=v.trip.trip_id if v.HasField("trip") else "",
+                            vehicle_id=v.vehicle.id,
+                            route_id=v.trip.route_id if v.HasField("trip") else "",
+                            latitude=v.position.latitude if v.HasField("position") else 0.0,
+                            longitude=v.position.longitude if v.HasField("position") else 0.0,
+                            bearing=v.position.bearing if v.HasField("position") else None,
+                            speed=v.position.speed if v.HasField("position") else None,
+                        ))
             await self._store_vehicle_positions(vehicle_positions)
             self._record_success()
-
-            logger.info(f"Processed {len(vehicle_positions)} vehicle positions")
             return vehicle_positions
-
         except Exception as e:
             self._record_failure()
             logger.error(f"Failed to fetch vehicle positions: {e}")
             return []
 
     async def fetch_alerts(self) -> List[ServiceAlert]:
-        """Fetch and process service alerts from GTFS-RT feed"""
-        if not GTFS_RT_AVAILABLE:
-            logger.warning("GTFS-RT bindings not available, skipping alerts")
-            return []
-
-        if not self._check_circuit_breaker():
-            logger.warning("Circuit breaker OPEN, skipping alerts fetch")
+        """Fetch and process service alerts from GTFS-RT feed (legacy method)."""
+        if not GTFS_RT_AVAILABLE or not self._check_circuit_breaker():
             return []
 
         try:
@@ -289,64 +404,36 @@ class GtfsRealtimeService:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            if not FeedMessage:
-                logger.warning("FeedMessage not available, skipping trip updates")
-                return []
-
+            if not FeedMessage: return []
             feed = FeedMessage()
             feed.ParseFromString(response.content)
 
-            alerts: list[ServiceAlert] = []
+            alerts = []
             for entity in feed.entity:
-                if not entity.HasField("alert"):
-                    continue
-
-                alert = entity.alert
-                alert_id = entity.id or f"alert_{len(alerts)}"
-
-                # Extract affected routes and stops
-                affected_routes = set()
-                affected_stops = set()
-
-                for informed_entity in alert.informed_entity:
-                    if (
-                        informed_entity.HasField("route_id")
-                        and informed_entity.route_id
-                    ):
-                        affected_routes.add(informed_entity.route_id)
-                    if informed_entity.HasField("stop_id") and informed_entity.stop_id:
-                        affected_stops.add(informed_entity.stop_id)
-
-                service_alert = ServiceAlert(
-                    alert_id=alert_id,
-                    cause=self._map_cause(alert.cause),
-                    effect=self._map_effect(alert.effect),
-                    header_text=self._extract_text(alert.header_text),
-                    description_text=self._extract_text(alert.description_text),
-                    affected_routes=affected_routes,
-                    affected_stops=affected_stops,
-                    start_time=(
-                        datetime.fromtimestamp(
-                            alert.active_period[0].start, timezone.utc
-                        )
-                        if alert.active_period
-                        else None
-                    ),
-                    end_time=(
-                        datetime.fromtimestamp(alert.active_period[0].end, timezone.utc)
-                        if alert.active_period
-                        else None
-                    ),
-                )
-                alerts.append(service_alert)
-
-            # Store in cache
+                if entity.HasField("alert"):
+                    alert = entity.alert
+                    alert_id = entity.id or f"alert_{len(alerts)}"
+                    affected_routes = set()
+                    affected_stops = set()
+                    for informed_entity in alert.informed_entity:
+                        if informed_entity.HasField("route_id") and informed_entity.route_id:
+                            affected_routes.add(informed_entity.route_id)
+                        if informed_entity.HasField("stop_id") and informed_entity.stop_id:
+                            affected_stops.add(informed_entity.stop_id)
+                    alerts.append(ServiceAlert(
+                        alert_id=alert_id,
+                        cause=self._map_cause(alert.cause),
+                        effect=self._map_effect(alert.effect),
+                        header_text=self._extract_text(alert.header_text),
+                        description_text=self._extract_text(alert.description_text),
+                        affected_routes=affected_routes,
+                        affected_stops=affected_stops,
+                        start_time=(datetime.fromtimestamp(alert.active_period[0].start, timezone.utc) if alert.active_period else None),
+                        end_time=(datetime.fromtimestamp(alert.active_period[0].end, timezone.utc) if alert.active_period else None),
+                    ))
             await self._store_alerts(alerts)
             self._record_success()
-
-            logger.info(f"Processed {len(alerts)} service alerts")
             return alerts
-
         except Exception as e:
             self._record_failure()
             logger.error(f"Failed to fetch alerts: {e}")

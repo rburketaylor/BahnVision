@@ -715,6 +715,13 @@ class FakeGtfsRealtime:
     async def get_vehicle_positions_by_trips(self, trip_ids):
         return {}
 
+    async def fetch_and_process_feed(self):
+        return {
+            "trip_updates": len(self.trip_updates),
+            "vehicle_positions": len(self.vehicle_positions),
+            "alerts": len(self.alerts),
+        }
+
 
 class FakeCacheService:
     """Fake cache service for testing."""
@@ -930,18 +937,14 @@ class TestTransitDataServiceMethods:
     @pytest.mark.asyncio
     async def test_refresh_real_time_data_handles_exceptions(self, transit_service):
         """Test refresh_real_time_data handles fetch exceptions."""
-        transit_service.gtfs_realtime.fetch_trip_updates = AsyncMock(
+        transit_service.gtfs_realtime.fetch_and_process_feed = AsyncMock(
             side_effect=Exception("Network error")
         )
-        transit_service.gtfs_realtime.fetch_vehicle_positions = AsyncMock(
-            return_value=[MagicMock()]
-        )
-        transit_service.gtfs_realtime.fetch_alerts = AsyncMock(return_value=[])
 
         result = await transit_service.refresh_real_time_data()
 
         assert result["trip_updates"] == 0  # Exception case
-        assert result["vehicle_positions"] == 1
+        assert result["vehicle_positions"] == 0
         assert result["alerts"] == 0
 
     @pytest.mark.asyncio
