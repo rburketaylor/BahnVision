@@ -651,6 +651,7 @@ class MockScheduledDeparture:
     arrival_time: datetime = None
     route_short_name: str = "S1"
     route_long_name: str = "S-Bahn Line 1"
+    stop_name: str = "Marienplatz"
 
 
 class FakeGtfsSchedule:

@@ -292,18 +292,14 @@ class TransitDataService:
             if not scheduled_departures:
                 return []
 
-            # Get stop information (uses cached get_stop_info)
-            stop_info_obj = await self.get_stop_info(stop_id, include_departures=False)
-            if not stop_info_obj:
-                logger.warning(f"Stop {stop_id} not found")
-                return []
-
             # Convert to departure info
             departures = []
             for dep in scheduled_departures:
                 # We use route info directly from the scheduled departure which
                 # already joins with the route table. This avoids a redundant
                 # cache/DB lookup.
+                # Optimization: We use stop_name directly from the joined departure query
+                # instead of fetching stop info separately. This saves a cache/DB lookup.
                 departure_info = DepartureInfo(
                     trip_id=str(dep.trip_id),
                     route_id=str(dep.route_id),
@@ -311,7 +307,7 @@ class TransitDataService:
                     route_long_name=str(dep.route_long_name or ""),
                     trip_headsign=str(dep.trip_headsign or ""),
                     stop_id=str(stop_id),
-                    stop_name=str(stop_info_obj.stop_name),
+                    stop_name=str(dep.stop_name),
                     scheduled_departure=dep.departure_time,
                     scheduled_arrival=dep.arrival_time,
                     schedule_relationship=ScheduleRelationship.SCHEDULED,
