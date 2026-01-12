@@ -90,8 +90,13 @@ class GTFSFeedScheduler:
                     )
 
                     # Check if feed download is too old
+                    # Ensure downloaded_at is timezone-aware for comparison
+                    downloaded_at = latest_feed.downloaded_at
+                    if downloaded_at.tzinfo is None:
+                        downloaded_at = downloaded_at.replace(tzinfo=timezone.utc)
+
                     age_hours = (
-                        datetime.now(timezone.utc) - latest_feed.downloaded_at
+                        datetime.now(timezone.utc) - downloaded_at
                     ).total_seconds() / 3600
 
                     if feed_expired:
