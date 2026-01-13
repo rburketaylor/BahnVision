@@ -101,12 +101,12 @@ class GTFSScheduleService:
         from_time: datetime,
         limit: int = 20,
     ) -> List[ScheduledDeparture]:
-        """Get scheduled departures for a stop."""
-        # First verify stop exists
-        stop = await self.get_stop_by_id(stop_id)
-        if not stop:
-            raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
+        """Get scheduled departures for a stop.
 
+        Optimized to skip redundant stop existence checks. The API layer ensures
+        valid stop IDs, and the main query will naturally return empty results
+        for invalid stops.
+        """
         # Determine which service_ids are active today
         today = from_time.date()
         weekday = today.strftime("%A").lower()  # 'monday', 'tuesday', etc.
