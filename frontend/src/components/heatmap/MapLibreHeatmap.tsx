@@ -197,85 +197,114 @@ function validateHeatmapData(dataPoints: HeatmapDataPoint[]): HeatmapDataPoint[]
 }
 
 /**
- * Convert HeatmapDataPoint array to GeoJSON FeatureCollection
+ * Result of toGeoJSON - includes both active and coverage stations
+ */
+interface GeoJSONResult {
+  active: GeoJSON.FeatureCollection
+  coverage: GeoJSON.FeatureCollection
+}
+
+/**
+ * Convert HeatmapDataPoint array to GeoJSON FeatureCollections
+ * Separates "active" stations (with impact data) from "coverage" stations (healthy, 0 impact)
  * Note: GeoJSON uses [lng, lat] order, opposite of Leaflet's [lat, lng]
  */
 function toGeoJSON(
   dataPoints: HeatmapDataPoint[],
   enabledMetrics: HeatmapEnabledMetrics
-): GeoJSON.FeatureCollection {
+): GeoJSONResult {
   // Validate and filter data first
   const validPoints = validateHeatmapData(dataPoints)
 
   // Provide fallback for empty data
   if (validPoints.length === 0) {
-    console.info('No valid heatmap data - returning empty feature collection')
+    console.info('No valid heatmap data - returning empty feature collections')
     return {
-      type: 'FeatureCollection',
-      features: [],
+      active: { type: 'FeatureCollection', features: [] },
+      coverage: { type: 'FeatureCollection', features: [] },
     }
   }
 
-  // Filter out points with no relevant data based on enabled metrics
-  const filteredPoints = validPoints.filter(point => {
+  // Separate into active (with impact) and coverage (healthy/zero impact) stations
+  const activeFeatures: GeoJSON.Feature[] = []
+  const coverageFeatures: GeoJSON.Feature[] = []
+
+  for (const point of validPoints) {
     const cancellationRate = point.cancellation_rate ?? 0
     const delayRate = point.delay_rate ?? 0
+    const hasImpact = cancellationRate > 0 || delayRate > 0
 
+    // Filter logic: respect metric toggles
+    // Coverage stations (0 impact) are only included when BOTH metrics are enabled
+    // This ensures "Show only Delays" doesn't show stations with 0 delays
+    let includePoint = false
     if (enabledMetrics.cancellations && enabledMetrics.delays) {
-      // Both enabled: show if either has data
-      return cancellationRate > 0 || delayRate > 0
+      // Both enabled: show all stations (impact OR coverage)
+      includePoint = true
     } else if (enabledMetrics.delays) {
       // Delays only: show only if there are delays
-      return delayRate > 0
+      includePoint = delayRate > 0
     } else {
       // Cancellations only: show only if there are cancellations
-      return cancellationRate > 0
+      includePoint = cancellationRate > 0
     }
-  })
+
+    if (!includePoint) continue
+
+    // Calculate rate and intensity based on enabled metrics
+    let rate: number
+    let intensity: number
+
+    if (enabledMetrics.cancellations && enabledMetrics.delays) {
+      // Combined: sum of both rates, saturate at 25%
+      rate = cancellationRate + delayRate
+      intensity = Math.min(rate * 4, 1) // saturate at 25%
+    } else if (enabledMetrics.delays) {
+      // Delays only: saturate at 20%
+      rate = delayRate
+      intensity = Math.min(rate * 5, 1)
+    } else {
+      // Cancellations only (or fallback): saturate at 10%
+      rate = cancellationRate
+      intensity = Math.min(rate * 10, 1)
+    }
+
+    const feature: GeoJSON.Feature = {
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [point.longitude, point.latitude], // [lng, lat] for GeoJSON
+      },
+      properties: {
+        station_id: point.station_id ?? '',
+        station_name: point.station_name ?? 'Unknown',
+        cancellation_rate: cancellationRate,
+        delay_rate: delayRate,
+        rate: rate, // Active rate based on enabled metrics
+        total_departures: point.total_departures ?? 0,
+        cancelled_count: point.cancelled_count ?? 0,
+        delayed_count: point.delayed_count ?? 0,
+        intensity: intensity,
+        is_coverage: !hasImpact, // Flag for coverage stations
+      },
+    }
+
+    if (hasImpact) {
+      activeFeatures.push(feature)
+    } else {
+      coverageFeatures.push(feature)
+    }
+  }
 
   return {
-    type: 'FeatureCollection',
-    features: filteredPoints.map(point => {
-      const cancellationRate = point.cancellation_rate ?? 0
-      const delayRate = point.delay_rate ?? 0
-
-      // Calculate rate and intensity based on enabled metrics
-      let rate: number
-      let intensity: number
-
-      if (enabledMetrics.cancellations && enabledMetrics.delays) {
-        // Combined: sum of both rates, saturate at 25%
-        rate = cancellationRate + delayRate
-        intensity = Math.min(rate * 4, 1) // saturate at 25%
-      } else if (enabledMetrics.delays) {
-        // Delays only: saturate at 20%
-        rate = delayRate
-        intensity = Math.min(rate * 5, 1)
-      } else {
-        // Cancellations only (or fallback): saturate at 10%
-        rate = cancellationRate
-        intensity = Math.min(rate * 10, 1)
-      }
-
-      return {
-        type: 'Feature' as const,
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [point.longitude, point.latitude], // [lng, lat] for GeoJSON
-        },
-        properties: {
-          station_id: point.station_id ?? '',
-          station_name: point.station_name ?? 'Unknown',
-          cancellation_rate: cancellationRate,
-          delay_rate: delayRate,
-          rate: rate, // Active rate based on enabled metrics
-          total_departures: point.total_departures ?? 0,
-          cancelled_count: point.cancelled_count ?? 0,
-          delayed_count: point.delayed_count ?? 0,
-          intensity: intensity,
-        },
-      }
-    }),
+    active: {
+      type: 'FeatureCollection',
+      features: activeFeatures,
+    },
+    coverage: {
+      type: 'FeatureCollection',
+      features: coverageFeatures,
+    },
   }
 }
 
@@ -335,7 +364,7 @@ export function MapLibreHeatmap({
   const enabledMetricsRef = useRef(enabledMetrics)
   const resolvedThemeRef = useRef<HeatmapResolvedTheme>(resolvedTheme)
   const styleUrlRef = useRef<string | null>(null)
-  const geoJsonDataRef = useRef<GeoJSON.FeatureCollection | null>(null)
+  const geoJsonDataRef = useRef<GeoJSONResult | null>(null)
   const zoomDebounceTimerRef = useRef<number | null>(null)
   const saveViewTimerRef = useRef<number | null>(null)
 
@@ -369,9 +398,14 @@ export function MapLibreHeatmap({
     const map = mapRef.current
     if (!map || !map.isStyleLoaded()) return
 
-    const source = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined
-    if (source) {
-      source.setData(geoJsonData)
+    const activeSource = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined
+    if (activeSource) {
+      activeSource.setData(geoJsonData.active)
+    }
+
+    const coverageSource = map.getSource('coverage-data') as maplibregl.GeoJSONSource | undefined
+    if (coverageSource) {
+      coverageSource.setData(geoJsonData.coverage)
     }
   }, [geoJsonData])
 
@@ -452,10 +486,13 @@ export function MapLibreHeatmap({
       const config = getHeatmapConfigForTheme(theme)
       const isDark = theme === 'dark'
 
+      // Get the active data for the heatmap source
+      const activeData = geoJsonDataRef.current?.active ?? geoJsonData.active
+
       if (!map.getSource('heatmap-data')) {
         map.addSource('heatmap-data', {
           type: 'geojson',
-          data: geoJsonDataRef.current ?? geoJsonData,
+          data: activeData,
           generateId: true,
           cluster: true,
           clusterMaxZoom: 14,
@@ -467,9 +504,19 @@ export function MapLibreHeatmap({
         })
       }
 
+      // Add coverage source for healthy (zero-impact) stations
+      const coverageData = geoJsonDataRef.current?.coverage ?? geoJsonData.coverage
+      if (!map.getSource('coverage-data')) {
+        map.addSource('coverage-data', {
+          type: 'geojson',
+          data: coverageData,
+          generateId: true,
+        })
+      }
+
       const heatmapColor = gradientToHeatmapColorExpression(config.gradient)
 
-      // Heatmap layer
+      // Heatmap layer (only for active/impacted stations)
       if (!map.getLayer('heatmap-layer')) {
         map.addLayer({
           id: 'heatmap-layer',
@@ -492,6 +539,23 @@ export function MapLibreHeatmap({
               config.radius,
             ],
             'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.9, 15, 0],
+          },
+        })
+      }
+
+      // Coverage stations layer - subtle skeleton visualization
+      // Uses a neutral gray/blue color to show network coverage without implying issues
+      if (!map.getLayer('coverage-skeleton-layer')) {
+        map.addLayer({
+          id: 'coverage-skeleton-layer',
+          type: 'circle',
+          source: 'coverage-data',
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 8, 3, 12, 4],
+            'circle-color': isDark ? 'rgba(148, 163, 184, 0.4)' : 'rgba(100, 116, 139, 0.35)',
+            'circle-stroke-width': 1,
+            'circle-stroke-color': isDark ? 'rgba(203, 213, 225, 0.5)' : 'rgba(71, 85, 105, 0.4)',
+            'circle-opacity': 0.6,
           },
         })
       }
@@ -635,10 +699,14 @@ export function MapLibreHeatmap({
         })
       }
 
-      // Keep source in sync in case style was reloaded.
+      // Keep sources in sync in case style was reloaded.
       const src = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined
+      const covSrc = map.getSource('coverage-data') as maplibregl.GeoJSONSource | undefined
       if (src && geoJsonDataRef.current) {
-        src.setData(geoJsonDataRef.current)
+        src.setData(geoJsonDataRef.current.active)
+      }
+      if (covSrc && geoJsonDataRef.current) {
+        covSrc.setData(geoJsonDataRef.current.coverage)
       }
     }
 
@@ -804,6 +872,65 @@ export function MapLibreHeatmap({
       onStationSelectRef.current?.(props.station_id as string)
     })
 
+    // Click on coverage station (healthy, zero-impact)
+    map.on('click', 'coverage-skeleton-layer', (e: maplibregl.MapMouseEvent) => {
+      const features = map.queryRenderedFeatures(e.point, { layers: ['coverage-skeleton-layer'] })
+      if (!features.length) return
+
+      const props = features[0].properties
+      if (!props) return
+
+      const geometry = features[0].geometry
+      if (geometry.type !== 'Point') return
+
+      const coordinates = geometry.coordinates.slice() as [number, number]
+      const cancellationRate = (props.cancellation_rate as number) ?? 0
+      const delayRate = (props.delay_rate as number) ?? 0
+      const stationName = sanitize(String(props.station_name ?? 'Unknown'))
+
+      // Coverage stations use neutral styling in popup
+      const neutralColor = '#64748b' // slate-500
+
+      const stationId = sanitize(String(props.station_id ?? ''))
+      const popupContent = `
+        <div class="bv-map-popup">
+          <h4 class="bv-map-popup__title">${stationName}</h4>
+          <div class="bv-map-popup__rows">
+            <div class="bv-map-popup__row">
+              <span class="bv-map-popup__label">Status:</span>
+              <span class="bv-map-popup__value" style="color: ${neutralColor}">
+                Healthy (no issues)
+              </span>
+            </div>
+            <div class="bv-map-popup__row">
+              <span class="bv-map-popup__label">Cancel Rate:</span>
+              <span class="bv-map-popup__value">
+                ${(cancellationRate * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div class="bv-map-popup__row">
+              <span class="bv-map-popup__label">Delay Rate:</span>
+              <span class="bv-map-popup__value">
+                ${(delayRate * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div class="bv-map-popup__row">
+              <span class="bv-map-popup__label">Departures:</span>
+              <span class="bv-map-popup__value">${((props.total_departures as number) ?? 0).toLocaleString()}</span>
+            </div>
+          </div>
+          <a href="/station/${stationId}" class="bv-map-popup__link">
+            Details →
+          </a>
+        </div>
+      `
+
+      popupRef.current?.setLngLat(coordinates).setHTML(popupContent).addTo(map)
+
+      // Notify parent of selection
+      onStationSelectRef.current?.(props.station_id as string)
+    })
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       popupRef.current?.remove()
@@ -822,6 +949,13 @@ export function MapLibreHeatmap({
       map.getCanvas().style.cursor = 'pointer'
     })
     map.on('mouseleave', 'unclustered-point', () => {
+      map.getCanvas().style.cursor = ''
+    })
+    // Hover on coverage stations
+    map.on('mouseenter', 'coverage-skeleton-layer', () => {
+      map.getCanvas().style.cursor = 'pointer'
+    })
+    map.on('mouseleave', 'coverage-skeleton-layer', () => {
       map.getCanvas().style.cursor = ''
     })
 
