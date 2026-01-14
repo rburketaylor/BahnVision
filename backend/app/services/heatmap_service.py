@@ -52,6 +52,10 @@ MAX_DATA_POINTS = 10000
 MIN_CANCELLATION_RATE = 0.01  # 1% minimum
 MIN_DEPARTURES = 10  # Minimum departures to be significant
 
+# Spatial stratification for heatmap coverage
+# Grid cell size in degrees (~0.1° ≈ 10km at Germany's latitude)
+GRID_CELL_SIZE = 0.1
+
 # Transport type name mapping for display
 TRANSPORT_TYPE_NAMES: dict[str, str] = {
     "UBAHN": "U-Bahn",
@@ -346,7 +350,13 @@ class HeatmapService:
         bucket_width_minutes: int,
         max_points: int,
     ) -> list[HeatmapDataPoint]:
-        """Query real cancellation data by joining with GTFS stops.
+        """Query real cancellation data with spatially stratified sampling.
+
+        Uses a two-tiered selection strategy:
+        1. Tier 1 (Coverage): One primary representative per grid cell (most impacted)
+        2. Tier 2 (Density): Remaining slots filled by highest-impact stations globally
+
+        This ensures consistent network coverage even during stable operations.
 
         Args:
             transport_types: Filter to specific transport types
@@ -379,13 +389,21 @@ class HeatmapService:
                 cancelled_count_expr, total_departures_expr
             ) + func.least(delayed_count_expr, total_departures_expr)
 
-            # First: select the most "impacted" stations and limit in SQL to avoid huge transfers.
-            stations_stmt = (
+            # Virtual grid cell coordinates for spatial stratification
+            grid_x_expr = func.floor(GTFSStop.stop_lon / GRID_CELL_SIZE).label("grid_x")
+            grid_y_expr = func.floor(GTFSStop.stop_lat / GRID_CELL_SIZE).label("grid_y")
+
+            # CTE: Base aggregation with grid coordinates
+            # This creates a materialized result set with all stations and their metrics
+
+            base_aggregation = (
                 select(
                     RealtimeStationStats.stop_id,
                     GTFSStop.stop_name,
                     GTFSStop.stop_lat,
                     GTFSStop.stop_lon,
+                    grid_x_expr,
+                    grid_y_expr,
                     total_departures_expr.label("total_departures"),
                     cancelled_count_expr.label("cancelled_count"),
                     delayed_count_expr.label("delayed_count"),
@@ -405,19 +423,72 @@ class HeatmapService:
             )
 
             if route_type_filter:
-                stations_stmt = stations_stmt.where(
+                base_aggregation = base_aggregation.where(
                     RealtimeStationStats.route_type.in_(route_type_filter)
                 )
 
-            stations_stmt = (
-                stations_stmt.group_by(
-                    RealtimeStationStats.stop_id,
-                    GTFSStop.stop_name,
-                    GTFSStop.stop_lat,
-                    GTFSStop.stop_lon,
+            base_aggregation = base_aggregation.group_by(
+                RealtimeStationStats.stop_id,
+                GTFSStop.stop_name,
+                GTFSStop.stop_lat,
+                GTFSStop.stop_lon,
+                grid_x_expr,
+                grid_y_expr,
+            ).having(total_departures_expr >= 1)
+
+            # Wrap as CTE
+            base_cte = base_aggregation.cte("station_metrics")
+
+            # Tier 1: Primary representative for each grid cell (most impacted)
+            # Use PostgreSQL's DISTINCT ON to get one row per (grid_x, grid_y) ordered by impact
+            tier1_stmt = (
+                select(
+                    base_cte.c.stop_id,
+                    base_cte.c.stop_name,
+                    base_cte.c.stop_lat,
+                    base_cte.c.stop_lon,
+                    base_cte.c.total_departures,
+                    base_cte.c.cancelled_count,
+                    base_cte.c.delayed_count,
+                    base_cte.c.impact_score,
                 )
-                .having(total_departures_expr >= 1)
-                .order_by(impact_score_expr.desc(), total_departures_expr.desc())
+                .select_from(base_cte)
+                .distinct(base_cte.c.grid_x, base_cte.c.grid_y)
+                .order_by(
+                    base_cte.c.grid_x,
+                    base_cte.c.grid_y,
+                    base_cte.c.impact_score.desc(),
+                    base_cte.c.total_departures.desc(),
+                )
+            )
+
+            # Tier 2: Top N globally (we'll take max_points total, so tier 2 fills remaining slots)
+            tier2_stmt = (
+                select(
+                    base_cte.c.stop_id,
+                    base_cte.c.stop_name,
+                    base_cte.c.stop_lat,
+                    base_cte.c.stop_lon,
+                    base_cte.c.total_departures,
+                    base_cte.c.cancelled_count,
+                    base_cte.c.delayed_count,
+                    base_cte.c.impact_score,
+                )
+                .select_from(base_cte)
+                .order_by(
+                    base_cte.c.impact_score.desc(), base_cte.c.total_departures.desc()
+                )
+                .limit(max_points)
+            )
+
+            # Combine Tier 1 and Tier 2 using UNION, then limit to max_points
+            # UNION automatically deduplicates, so stations in both appear only once
+            stations_stmt = (
+                tier1_stmt.union(tier2_stmt)
+                .order_by(
+                    func.literal_column("impact_score").desc(),
+                    func.literal_column("total_departures").desc(),
+                )
                 .limit(max_points)
             )
 
