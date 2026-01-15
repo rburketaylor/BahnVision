@@ -4,7 +4,12 @@
  */
 
 import type { HealthResponse } from '../../types/api'
-import type { HeatmapParams, HeatmapResponse } from '../../types/heatmap'
+import type {
+  HeatmapOverviewParams,
+  HeatmapOverviewResponse,
+  HeatmapParams,
+  HeatmapResponse,
+} from '../../types/heatmap'
 import type {
   TransitDeparturesParams,
   TransitDeparturesResponse,
@@ -148,6 +153,27 @@ class TransitApiClient {
     const queryString = buildQueryString(apiParams)
     return httpClient.request<HeatmapResponse>(`/api/v1/heatmap/cancellations${queryString}`, {
       timeout: 15000,
+    })
+  }
+
+  /**
+   * Get lightweight heatmap overview (all impacted stations)
+   */
+  async getHeatmapOverview(
+    params: HeatmapOverviewParams = {}
+  ): Promise<ApiResponse<HeatmapOverviewResponse>> {
+    const apiParams: Record<string, unknown> = {
+      time_range: params.time_range,
+      bucket_width: params.bucket_width,
+    }
+
+    if (params.transport_modes && params.transport_modes.length > 0) {
+      apiParams.transport_modes = params.transport_modes.join(',')
+    }
+
+    const queryString = buildQueryString(apiParams)
+    return httpClient.request<HeatmapOverviewResponse>(`/api/v1/heatmap/overview${queryString}`, {
+      timeout: 20000, // Slightly longer timeout for larger payload
     })
   }
 

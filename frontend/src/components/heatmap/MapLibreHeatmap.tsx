@@ -11,11 +11,18 @@
  */
 
 import { useEffect, useRef, useCallback, useMemo, useState, type ReactNode } from 'react'
+import { StationPopup } from './StationPopup'
 import DOMPurify from 'dompurify'
 import maplibregl from 'maplibre-gl'
 import React from 'react'
+import { createRoot } from 'react-dom/client'
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec'
-import type { HeatmapDataPoint, HeatmapEnabledMetrics } from '../../types/heatmap'
+import type {
+  HeatmapDataPoint,
+  HeatmapEnabledMetrics,
+  HeatmapPointLight,
+} from '../../types/heatmap'
+import type { StationStats } from '../../types/gtfs'
 import {
   DEFAULT_ZOOM,
   GERMANY_CENTER,
@@ -158,12 +165,25 @@ function saveView(center: maplibregl.LngLat, zoom: number) {
 }
 
 interface MapLibreHeatmapProps {
-  dataPoints: HeatmapDataPoint[]
+  // Existing props (keep for backwards compatibility during migration)
+  dataPoints?: HeatmapDataPoint[]
+
+  // NEW: Lightweight points for overview mode
+  overviewPoints?: HeatmapPointLight[]
+
   enabledMetrics: HeatmapEnabledMetrics
   isLoading?: boolean
   onStationSelect?: (stationId: string | null) => void
   onZoomChange?: (zoom: number) => void
   overlay?: ReactNode
+
+  // NEW: Callback when station detail is needed
+  onStationDetailRequested?: (stationId: string) => void
+
+  // NEW: Station details props
+  selectedStationId?: string | null
+  stationStats?: StationStats | null
+  isStationStatsLoading?: boolean
 }
 
 /**
@@ -309,6 +329,52 @@ function toGeoJSON(
 }
 
 /**
+ * Convert lightweight HeatmapPointLight array to GeoJSON
+ */
+function overviewToGeoJSON(points: HeatmapPointLight[]): GeoJSONResult {
+  // In overview mode, all points are shown - filtering by metric happens at API level
+  if (!points || points.length === 0) {
+    return {
+      active: { type: 'FeatureCollection', features: [] },
+      coverage: { type: 'FeatureCollection', features: [] },
+    }
+  }
+
+  const features: GeoJSON.Feature[] = points
+    .filter(
+      point =>
+        typeof point.lat === 'number' &&
+        typeof point.lon === 'number' &&
+        !isNaN(point.lat) &&
+        !isNaN(point.lon)
+    )
+    .map(point => ({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [point.lon, point.lat],
+      },
+      properties: {
+        station_id: point.id,
+        station_name: point.n,
+        intensity: point.i,
+        // These are approximations for backwards compat with existing styling
+        rate: point.i * 0.25, // Intensity is 4x rate, so reverse
+        is_coverage: point.i === 0,
+      },
+    }))
+
+  // Separate into active vs coverage based on intensity
+  const activeFeatures = features.filter(f => (f.properties?.intensity || 0) > 0)
+  const coverageFeatures = features.filter(f => (f.properties?.intensity || 0) === 0)
+
+  return {
+    active: { type: 'FeatureCollection', features: activeFeatures },
+    coverage: { type: 'FeatureCollection', features: coverageFeatures },
+  }
+}
+
+/**
  * Get marker color based on normalized intensity (0..1).
  * Uses orange-to-red gradient matching the Show Metrics toggles.
  */
@@ -345,11 +411,16 @@ function setupWebGLWarningSuppression() {
 
 export function MapLibreHeatmap({
   dataPoints,
+  overviewPoints,
   enabledMetrics,
   isLoading = false,
   onStationSelect,
   onZoomChange,
   overlay,
+  onStationDetailRequested,
+  selectedStationId,
+  stationStats,
+  isStationStatsLoading,
 }: MapLibreHeatmapProps) {
   // Setup WebGL warning suppression
   useEffect(() => {
@@ -360,6 +431,8 @@ export function MapLibreHeatmap({
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
+  const popupContainerRef = useRef<HTMLDivElement | null>(null)
+  const popupRootRef = useRef<ReturnType<typeof createRoot> | null>(null)
   const onStationSelectRef = useRef(onStationSelect)
   const enabledMetricsRef = useRef(enabledMetrics)
   const resolvedThemeRef = useRef<HeatmapResolvedTheme>(resolvedTheme)
@@ -384,10 +457,20 @@ export function MapLibreHeatmap({
   }, [resolvedTheme])
 
   // Memoize GeoJSON conversion to avoid recalculating on every render
-  const geoJsonData = useMemo(
-    () => toGeoJSON(dataPoints, enabledMetrics),
-    [dataPoints, enabledMetrics]
-  )
+  const geoJsonData = useMemo((): GeoJSONResult => {
+    // Prefer overview points if provided (lightweight mode)
+    if (overviewPoints && overviewPoints.length > 0) {
+      return overviewToGeoJSON(overviewPoints)
+    }
+    // Fall back to full dataPoints (backwards compat)
+    if (dataPoints && dataPoints.length > 0) {
+      return toGeoJSON(dataPoints, enabledMetrics)
+    }
+    return {
+      active: { type: 'FeatureCollection' as const, features: [] },
+      coverage: { type: 'FeatureCollection' as const, features: [] },
+    }
+  }, [overviewPoints, dataPoints, enabledMetrics])
 
   useEffect(() => {
     geoJsonDataRef.current = geoJsonData
@@ -462,6 +545,7 @@ export function MapLibreHeatmap({
       zoom: initialZoom,
     })
 
+    mapRef.current = map
     styleUrlRef.current = getBasemapStyleForTheme(currentTheme)
 
     // Add navigation controls
@@ -802,74 +886,99 @@ export function MapLibreHeatmap({
       if (geometry.type !== 'Point') return
 
       const coordinates = geometry.coordinates.slice() as [number, number]
-      const cancellationRate = props.cancellation_rate as number
-      const delayRate = props.delay_rate as number
-      const intensity = (props.intensity as number) ?? 0
-      const color = getMarkerColor(intensity)
+      const stationId = sanitize(String(props.station_id ?? ''))
       const stationName = sanitize(String(props.station_name ?? 'Unknown'))
 
-      // Show popup with both metrics - highlight based on what's enabled
-      const em = enabledMetricsRef.current
-      const bothEnabled = em.cancellations && em.delays
-      const onlyDelays = !em.cancellations && em.delays
-      const onlyCancellations = em.cancellations && !em.delays
+      // Check if this is an overview point (minimal data) or full data point
+      const isOverviewPoint =
+        !props.cancellation_rate && !props.delay_rate && props.intensity !== undefined
 
-      const stationId = sanitize(String(props.station_id ?? ''))
-      const popupContent = `
-        <div class="bv-map-popup">
-          <h4 class="bv-map-popup__title">${stationName}</h4>
-          <div class="bv-map-popup__rows">
-            <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label ${bothEnabled || onlyCancellations ? 'bv-map-popup__label--active' : ''}">Cancel Rate:</span>
-              <span class="bv-map-popup__value" style="color: ${bothEnabled || onlyCancellations ? color : 'currentColor'}">
-                ${(cancellationRate * 100).toFixed(1)}%
-              </span>
-            </div>
-            <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label ${bothEnabled || onlyDelays ? 'bv-map-popup__label--active' : ''}">Delay Rate:</span>
-              <span class="bv-map-popup__value" style="color: ${bothEnabled || onlyDelays ? color : 'currentColor'}">
-                ${(delayRate * 100).toFixed(1)}%
-              </span>
-            </div>
-            ${
-              bothEnabled
-                ? `
-            <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label bv-map-popup__label--active">Combined:</span>
-              <span class="bv-map-popup__value" style="color: ${color}">
-                ${((cancellationRate + delayRate) * 100).toFixed(1)}%
-              </span>
-            </div>
-            `
-                : ''
-            }
-            <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label">Departures:</span>
-              <span class="bv-map-popup__value">${(props.total_departures as number).toLocaleString()}</span>
-            </div>
-            <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label">Cancelled:</span>
-              <span class="bv-map-popup__value text-red-600">
-                ${(props.cancelled_count as number).toLocaleString()}
-              </span>
-            </div>
-            <div class="bv-map-popup__row">
-              <span class="bv-map-popup__label">Delayed:</span>
-              <span class="bv-map-popup__value text-orange-600">
-                ${(props.delayed_count as number).toLocaleString()}
-              </span>
+      if (isOverviewPoint && onStationDetailRequested) {
+        // Trigger on-demand detail fetch for overview points
+        onStationDetailRequested(stationId)
+
+        // Show loading popup while details load
+        const loadingHtml = `
+          <div class="bv-map-popup">
+            <h4 class="bv-map-popup__title">${stationName}</h4>
+            <div class="bv-map-popup__rows">
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__value">Loading details...</span>
+              </div>
             </div>
           </div>
-          <a href="/station/${stationId}" class="bv-map-popup__link">
-            Details →
-          </a>
-        </div>
-      `
+        `
 
-      popupRef.current?.setLngLat(coordinates).setHTML(popupContent).addTo(map)
+        popupRef.current?.setLngLat(coordinates).setHTML(loadingHtml).addTo(map)
+      } else {
+        // Show full popup for regular data points
+        const cancellationRate = props.cancellation_rate as number
+        const delayRate = props.delay_rate as number
+        const intensity = (props.intensity as number) ?? 0
+        const color = getMarkerColor(intensity)
+
+        // Show popup with both metrics - highlight based on what's enabled
+        const em = enabledMetricsRef.current
+        const bothEnabled = em.cancellations && em.delays
+        const onlyDelays = !em.cancellations && em.delays
+        const onlyCancellations = em.cancellations && !em.delays
+
+        const popupContent = `
+          <div class="bv-map-popup">
+            <h4 class="bv-map-popup__title">${stationName}</h4>
+            <div class="bv-map-popup__rows">
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__label ${bothEnabled || onlyCancellations ? 'bv-map-popup__label--active' : ''}">Cancel Rate:</span>
+                <span class="bv-map-popup__value" style="color: ${bothEnabled || onlyCancellations ? color : 'currentColor'}">
+                  ${(cancellationRate * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__label ${bothEnabled || onlyDelays ? 'bv-map-popup__label--active' : ''}">Delay Rate:</span>
+                <span class="bv-map-popup__value" style="color: ${bothEnabled || onlyDelays ? color : 'currentColor'}">
+                  ${(delayRate * 100).toFixed(1)}%
+                </span>
+              </div>
+              ${
+                bothEnabled
+                  ? `
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__label bv-map-popup__label--active">Combined:</span>
+                <span class="bv-map-popup__value" style="color: ${color}">
+                  ${((cancellationRate + delayRate) * 100).toFixed(1)}%
+                </span>
+              </div>
+              `
+                  : ''
+              }
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__label">Departures:</span>
+                <span class="bv-map-popup__value">${(props.total_departures as number).toLocaleString()}</span>
+              </div>
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__label">Cancelled:</span>
+                <span class="bv-map-popup__value text-red-600">
+                  ${(props.cancelled_count as number).toLocaleString()}
+                </span>
+              </div>
+              <div class="bv-map-popup__row">
+                <span class="bv-map-popup__label">Delayed:</span>
+                <span class="bv-map-popup__value text-orange-600">
+                  ${(props.delayed_count as number).toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <a href="/station/${stationId}" class="bv-map-popup__link">
+              Details →
+            </a>
+          </div>
+        `
+
+        popupRef.current?.setLngLat(coordinates).setHTML(popupContent).addTo(map)
+      }
 
       // Notify parent of selection
-      onStationSelectRef.current?.(props.station_id as string)
+      onStationSelectRef.current?.(stationId)
     })
 
     // Click on coverage station (healthy, zero-impact)
@@ -996,6 +1105,61 @@ export function MapLibreHeatmap({
   useEffect(() => {
     updateMapData()
   }, [updateMapData])
+
+  // Update popup when station stats data changes
+  useEffect(() => {
+    if (!selectedStationId || !popupRef.current || !mapRef.current) return
+
+    const popup = popupRef.current
+
+    // Find the station from overviewPoints to get basic info
+    const station = overviewPoints?.find(p => p.id === selectedStationId)
+    if (!station) return
+
+    // Clean up previous React root
+    if (popupRootRef.current) {
+      popupRootRef.current.unmount()
+      popupRootRef.current = null
+    }
+
+    // Create or reuse container
+    if (!popupContainerRef.current) {
+      popupContainerRef.current = document.createElement('div')
+      popupContainerRef.current.className = 'bv-station-popup'
+    }
+
+    // Render StationPopup component into the container
+    const root = createRoot(popupContainerRef.current)
+    popupRootRef.current = root
+
+    root.render(
+      <StationPopup
+        station={station}
+        details={stationStats ?? undefined}
+        isLoading={isStationStatsLoading ?? false}
+      />
+    )
+
+    // Update popup with React-rendered content
+    popup.setDOMContent(popupContainerRef.current).addTo(mapRef.current)
+
+    return () => {
+      // Cleanup on unmount or station change
+      if (popupRootRef.current) {
+        popupRootRef.current.unmount()
+        popupRootRef.current = null
+      }
+    }
+  }, [selectedStationId, stationStats, isStationStatsLoading, overviewPoints])
+
+  // Cleanup React root when component unmounts
+  useEffect(() => {
+    return () => {
+      if (popupRootRef.current) {
+        popupRootRef.current.unmount()
+      }
+    }
+  }, [])
 
   return (
     <HeatmapErrorBoundary
