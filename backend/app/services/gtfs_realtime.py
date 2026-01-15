@@ -174,7 +174,7 @@ class GtfsRealtimeService:
 
             trip_updates = []
             vehicle_positions = []
-            alerts = []
+            alerts: List[ServiceAlert] = []
 
             for entity in feed.entity:
                 # Process TripUpdate
@@ -335,15 +335,27 @@ class GtfsRealtimeService:
                     if tu.trip.trip_id:
                         for stop_time_update in tu.stop_time_update:
                             if stop_time_update.stop_id:
-                                trip_updates.append(TripUpdate(
-                                    trip_id=tu.trip.trip_id,
-                                    route_id=tu.trip.route_id or "",
-                                    stop_id=stop_time_update.stop_id,
-                                    stop_sequence=stop_time_update.stop_sequence,
-                                    arrival_delay=(stop_time_update.arrival.delay if stop_time_update.HasField("arrival") else None),
-                                    departure_delay=(stop_time_update.departure.delay if stop_time_update.HasField("departure") else None),
-                                    schedule_relationship=self._map_schedule_relationship(stop_time_update.schedule_relationship),
-                                ))
+                                trip_updates.append(
+                                    TripUpdate(
+                                        trip_id=tu.trip.trip_id,
+                                        route_id=tu.trip.route_id or "",
+                                        stop_id=stop_time_update.stop_id,
+                                        stop_sequence=stop_time_update.stop_sequence,
+                                        arrival_delay=(
+                                            stop_time_update.arrival.delay
+                                            if stop_time_update.HasField("arrival")
+                                            else None
+                                        ),
+                                        departure_delay=(
+                                            stop_time_update.departure.delay
+                                            if stop_time_update.HasField("departure")
+                                            else None
+                                        ),
+                                        schedule_relationship=self._map_schedule_relationship(
+                                            stop_time_update.schedule_relationship
+                                        ),
+                                    )
+                                )
             await self._store_trip_updates(trip_updates)
             self._record_success()
             return trip_updates
@@ -365,7 +377,8 @@ class GtfsRealtimeService:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            if not FeedMessage: return []
+            if not FeedMessage:
+                return []
             feed = FeedMessage()
             feed.ParseFromString(response.content)
 
@@ -374,15 +387,25 @@ class GtfsRealtimeService:
                 if entity.HasField("vehicle"):
                     v = entity.vehicle
                     if v.vehicle.id:
-                        vehicle_positions.append(VehiclePosition(
-                            trip_id=v.trip.trip_id if v.HasField("trip") else "",
-                            vehicle_id=v.vehicle.id,
-                            route_id=v.trip.route_id if v.HasField("trip") else "",
-                            latitude=v.position.latitude if v.HasField("position") else 0.0,
-                            longitude=v.position.longitude if v.HasField("position") else 0.0,
-                            bearing=v.position.bearing if v.HasField("position") else None,
-                            speed=v.position.speed if v.HasField("position") else None,
-                        ))
+                        vehicle_positions.append(
+                            VehiclePosition(
+                                trip_id=v.trip.trip_id if v.HasField("trip") else "",
+                                vehicle_id=v.vehicle.id,
+                                route_id=v.trip.route_id if v.HasField("trip") else "",
+                                latitude=v.position.latitude
+                                if v.HasField("position")
+                                else 0.0,
+                                longitude=v.position.longitude
+                                if v.HasField("position")
+                                else 0.0,
+                                bearing=v.position.bearing
+                                if v.HasField("position")
+                                else None,
+                                speed=v.position.speed
+                                if v.HasField("position")
+                                else None,
+                            )
+                        )
             await self._store_vehicle_positions(vehicle_positions)
             self._record_success()
             return vehicle_positions
@@ -404,11 +427,12 @@ class GtfsRealtimeService:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
 
-            if not FeedMessage: return []
+            if not FeedMessage:
+                return []
             feed = FeedMessage()
             feed.ParseFromString(response.content)
 
-            alerts = []
+            alerts: List[ServiceAlert] = []
             for entity in feed.entity:
                 if entity.HasField("alert"):
                     alert = entity.alert
@@ -416,21 +440,41 @@ class GtfsRealtimeService:
                     affected_routes = set()
                     affected_stops = set()
                     for informed_entity in alert.informed_entity:
-                        if informed_entity.HasField("route_id") and informed_entity.route_id:
+                        if (
+                            informed_entity.HasField("route_id")
+                            and informed_entity.route_id
+                        ):
                             affected_routes.add(informed_entity.route_id)
-                        if informed_entity.HasField("stop_id") and informed_entity.stop_id:
+                        if (
+                            informed_entity.HasField("stop_id")
+                            and informed_entity.stop_id
+                        ):
                             affected_stops.add(informed_entity.stop_id)
-                    alerts.append(ServiceAlert(
-                        alert_id=alert_id,
-                        cause=self._map_cause(alert.cause),
-                        effect=self._map_effect(alert.effect),
-                        header_text=self._extract_text(alert.header_text),
-                        description_text=self._extract_text(alert.description_text),
-                        affected_routes=affected_routes,
-                        affected_stops=affected_stops,
-                        start_time=(datetime.fromtimestamp(alert.active_period[0].start, timezone.utc) if alert.active_period else None),
-                        end_time=(datetime.fromtimestamp(alert.active_period[0].end, timezone.utc) if alert.active_period else None),
-                    ))
+                    alerts.append(
+                        ServiceAlert(
+                            alert_id=alert_id,
+                            cause=self._map_cause(alert.cause),
+                            effect=self._map_effect(alert.effect),
+                            header_text=self._extract_text(alert.header_text),
+                            description_text=self._extract_text(alert.description_text),
+                            affected_routes=affected_routes,
+                            affected_stops=affected_stops,
+                            start_time=(
+                                datetime.fromtimestamp(
+                                    alert.active_period[0].start, timezone.utc
+                                )
+                                if alert.active_period
+                                else None
+                            ),
+                            end_time=(
+                                datetime.fromtimestamp(
+                                    alert.active_period[0].end, timezone.utc
+                                )
+                                if alert.active_period
+                                else None
+                            ),
+                        )
+                    )
             await self._store_alerts(alerts)
             self._record_success()
             return alerts

@@ -30,6 +30,7 @@ from app.models.heatmap import (
     TransportStats,
 )
 from app.persistence.models import RealtimeStationStats, ScheduleRelationship
+from app.services.gtfs_import_lock import get_import_lock
 from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
 from app.services.heatmap_service import GTFS_ROUTE_TYPES, TRANSPORT_TYPE_NAMES
 
@@ -175,6 +176,12 @@ class GTFSRTDataHarvester:
             logger.warning("GTFS-RT bindings not available, skipping harvest")
             return 0
 
+        # Skip harvest if GTFS feed import is in progress to avoid deadlocks
+        import_lock = get_import_lock()
+        if await import_lock.is_import_in_progress():
+            logger.info("Skipping GTFS-RT harvest: GTFS feed import is in progress")
+            return 0
+
         try:
             logger.info("Starting GTFS-RT harvest cycle")
 
@@ -266,11 +273,11 @@ class GTFSRTDataHarvester:
             return []
 
         try:
-            logger.debug(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
-            # Use explicit timeout for large feed download (~27MB)
+            logger.info(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
+            # Use explicit timeout for large feed download
             timeout = httpx.Timeout(
                 connect=30.0,
-                read=180.0,  # 3 minutes for large feed
+                read=300.0,  # 5 minutes for large feed (can take 2-4 min)
                 write=30.0,
                 pool=30.0,
             )
@@ -279,6 +286,9 @@ class GTFSRTDataHarvester:
                 headers={"User-Agent": "BahnVision-GTFS-RT-Harvester/1.0"},
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
+                logger.info(
+                    f"GTFS-RT feed download complete: status={response.status_code}, size={len(response.content):,} bytes"
+                )
 
             logger.debug(f"Received response with status {response.status_code}")
             response.raise_for_status()
@@ -586,24 +596,29 @@ class GTFSRTDataHarvester:
         if impacted_stop_ids:
             from app.models.gtfs import GTFSStop
 
-            stmt = (
-                select(
-                    GTFSStop.stop_id,
-                    GTFSStop.stop_name,
-                    GTFSStop.stop_lat,
-                    GTFSStop.stop_lon,
+            # Batch queries to avoid PostgreSQL's 32,767 parameter limit.
+            # With 42,000+ impacted stops, we need to chunk the IN clause.
+            BATCH_SIZE = 30000
+            for batch_start in range(0, len(impacted_stop_ids), BATCH_SIZE):
+                batch_ids = impacted_stop_ids[batch_start : batch_start + BATCH_SIZE]
+                stmt = (
+                    select(
+                        GTFSStop.stop_id,
+                        GTFSStop.stop_name,
+                        GTFSStop.stop_lat,
+                        GTFSStop.stop_lon,
+                    )
+                    .where(GTFSStop.stop_id.in_(batch_ids))
+                    .where(GTFSStop.stop_lat.isnot(None))
+                    .where(GTFSStop.stop_lon.isnot(None))
                 )
-                .where(GTFSStop.stop_id.in_(impacted_stop_ids))
-                .where(GTFSStop.stop_lat.isnot(None))
-                .where(GTFSStop.stop_lon.isnot(None))
-            )
-            result = await session.execute(stmt)
-            for row in result.all():
-                stop_metadata[row.stop_id] = (
-                    row.stop_name or row.stop_id,
-                    float(row.stop_lat),
-                    float(row.stop_lon),
-                )
+                result = await session.execute(stmt)
+                for row in result.all():
+                    stop_metadata[row.stop_id] = (
+                        row.stop_name or row.stop_id,
+                        float(row.stop_lat),
+                        float(row.stop_lon),
+                    )
 
         data_points: list[HeatmapDataPoint] = []
         for stop_id in impacted_stop_ids:
