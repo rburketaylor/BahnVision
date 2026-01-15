@@ -62,6 +62,35 @@ class StationStatsService:
         self._gtfs_schedule = gtfs_schedule
         self._cache = cache
 
+    async def _get_station_name(self, stop_id: str) -> str | None:
+        """Get station name with caching.
+
+        Station names are static and can be cached for long durations.
+        """
+        cache_key = f"station_name:{stop_id}"
+
+        if self._cache:
+            try:
+                name = await self._cache.get(cache_key)
+                if name:
+                    return name
+            except Exception as e:
+                logger.warning(f"Station name cache read failed: {e}")
+
+        stop_info = await self._gtfs_schedule.get_stop_by_id(stop_id)
+        if not stop_info:
+            return None
+
+        name = str(stop_info.stop_name or stop_id)
+
+        if self._cache:
+            try:
+                await self._cache.set(cache_key, name, ttl_seconds=86400)  # 24 hours
+            except Exception as e:
+                logger.warning(f"Station name cache write failed: {e}")
+
+        return name
+
     async def get_station_stats(
         self,
         stop_id: str,
@@ -89,12 +118,10 @@ class StationStatsService:
 
         from_time, to_time = parse_time_range(time_range)
 
-        # Get station name from GTFS
-        stop_info = await self._gtfs_schedule.get_stop_by_id(stop_id)
-        if not stop_info:
+        # Get station name (cached)
+        station_name = await self._get_station_name(stop_id)
+        if not station_name:
             return None
-
-        station_name = str(stop_info.stop_name or stop_id)
 
         # Query aggregated stats for this station
         stmt = (
@@ -249,12 +276,10 @@ class StationStatsService:
 
         from_time, to_time = parse_time_range(time_range)
 
-        # Get station name from GTFS
-        stop_info = await self._gtfs_schedule.get_stop_by_id(stop_id)
-        if not stop_info:
+        # Get station name (cached)
+        station_name = await self._get_station_name(stop_id)
+        if not station_name:
             return None
-
-        station_name = str(stop_info.stop_name or stop_id)
 
         # Determine bucket grouping based on granularity
         if granularity == "hourly":
