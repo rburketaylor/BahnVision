@@ -7,13 +7,27 @@ Provides an endpoint to retrieve cancellation heatmap data for map visualization
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_session
-from app.models.heatmap import HeatmapDataPoint, HeatmapResponse, TimeRangePreset
+from app.models.heatmap import (
+    HeatmapDataPoint,
+    HeatmapOverviewResponse,  # NEW
+    HeatmapResponse,
+    TimeRangePreset,
+)
 from app.services.cache import CacheService, get_cache_service
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
@@ -364,6 +378,120 @@ async def get_cancellation_heatmap(
     except Exception as e:
         logger.error(f"Heatmap generation failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate heatmap data")
+
+
+@router.get(
+    "/overview",
+    response_model=HeatmapOverviewResponse,
+    summary="Get lightweight heatmap overview",
+    description="""
+    Get a lightweight heatmap overview showing ALL impacted stations.
+
+    This endpoint is optimized for initial page load:
+    - Returns only minimal data (id, coordinates, intensity, name)
+    - No limit on number of stations (shows entire network)
+    - Payload is ~10x smaller than /cancellations endpoint
+
+    Use /api/v1/transit/stops/{stop_id}/stats to fetch full details
+    when a user clicks on a station.
+    """,
+    responses={
+        200: {
+            "description": "Lightweight heatmap overview data",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "time_range": {
+                            "from": "2024-01-14T00:00:00Z",
+                            "to": "2024-01-14T23:59:59Z",
+                        },
+                        "points": [
+                            {
+                                "id": "de:11000:900100001",
+                                "lat": 52.5219,
+                                "lon": 13.4115,
+                                "i": 0.15,
+                                "n": "Berlin Hbf",
+                            }
+                        ],
+                        "summary": {"total_stations": 15000, "...": "..."},
+                        "total_impacted_stations": 15000,
+                    }
+                }
+            },
+        }
+    },
+)
+@limiter.limit("30/minute")
+async def get_heatmap_overview(
+    request: Request,
+    response: Response,
+    time_range: Annotated[
+        TimeRangePreset | None,
+        Query(
+            description="Time range preset. Use 'live' for real-time data.",
+        ),
+    ] = None,
+    transport_modes: Annotated[
+        str | None,
+        Query(
+            description="Comma-separated transport types to include (e.g., 'UBAHN,SBAHN').",
+        ),
+    ] = None,
+    bucket_width: Annotated[
+        int,
+        Query(
+            ge=15,
+            le=1440,
+            description="Bucket width in minutes for time aggregation (default: 60).",
+        ),
+    ] = 60,
+    db: AsyncSession = Depends(get_session),
+    gtfs_schedule: GTFSScheduleService = Depends(get_gtfs_schedule),
+    cache: CacheService = Depends(get_cache_service),
+) -> HeatmapOverviewResponse:
+    """Get lightweight heatmap overview showing all impacted stations."""
+
+    # Build cache key
+    cache_key = f"heatmap:overview:{time_range or 'default'}:{transport_modes or 'all'}:{bucket_width}"
+
+    # Check cache first
+    try:
+        cached = await cache.get_json(cache_key)
+        if cached:
+            response.headers["X-Cache-Status"] = "hit"
+            return HeatmapOverviewResponse.model_validate(cached)
+
+        stale = await cache.get_stale_json(cache_key)
+        if stale:
+            response.headers["X-Cache-Status"] = "stale"
+            return HeatmapOverviewResponse.model_validate(stale)
+    except Exception as e:
+        logger.warning("Cache read failed for heatmap overview: %s", e)
+
+    response.headers["X-Cache-Status"] = "miss"
+
+    # Generate fresh data
+    service = HeatmapService(gtfs_schedule, cache, session=db)
+    result = await service.get_heatmap_overview(
+        time_range=time_range,
+        transport_modes=transport_modes,
+        bucket_width_minutes=bucket_width,
+    )
+
+    # Cache the result
+    settings = get_settings()
+    try:
+        await cache.set_json(
+            cache_key,
+            result.model_dump(mode="json"),
+            ttl_seconds=settings.heatmap_cache_ttl_seconds,
+            stale_ttl_seconds=settings.heatmap_cache_stale_ttl_seconds,
+        )
+    except Exception as e:
+        logger.warning("Cache write failed for heatmap overview: %s", e)
+
+    return result
 
 
 @router.get("/health")

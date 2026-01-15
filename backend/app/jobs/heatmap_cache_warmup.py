@@ -29,9 +29,12 @@ class HeatmapWarmupTarget:
     transport_modes: str | None
     bucket_width_minutes: int
     max_points: int
+    is_overview: bool = False
 
     @property
     def cache_key(self) -> str:
+        if self.is_overview:
+            return f"heatmap:overview:{self.time_range or 'default'}:{self.transport_modes or 'all'}:{self.bucket_width_minutes}"
         return heatmap_cancellations_cache_key(
             time_range=self.time_range,
             transport_modes=self.transport_modes,
@@ -59,6 +62,8 @@ class HeatmapCacheWarmer:
 
     def _build_targets(self) -> list[HeatmapWarmupTarget]:
         targets: list[HeatmapWarmupTarget] = []
+
+        # Original targets (existing logic)
         for time_range in self._settings.heatmap_cache_warmup_time_ranges:
             max_points_variants = {
                 resolve_max_points(zoom, None)
@@ -73,6 +78,19 @@ class HeatmapCacheWarmer:
                         max_points=max_points,
                     )
                 )
+
+        # NEW: Add overview targets
+        for time_range in self._settings.heatmap_cache_warmup_time_ranges:
+            targets.append(
+                HeatmapWarmupTarget(
+                    time_range=cast(TimeRangePreset, time_range),
+                    transport_modes=None,
+                    bucket_width_minutes=self._settings.heatmap_cache_warmup_bucket_width_minutes,
+                    max_points=0,  # 0 = overview mode
+                    is_overview=True,  # New flag
+                )
+            )
+
         return targets
 
     async def _warmup(self, *, reason: str) -> None:
@@ -103,18 +121,33 @@ class HeatmapCacheWarmer:
                     warmed = 0
                     for target in targets:
                         try:
-                            result = await service.get_cancellation_heatmap(
-                                time_range=target.time_range,
-                                transport_modes=target.transport_modes,
-                                bucket_width_minutes=target.bucket_width_minutes,
-                                max_points=target.max_points,
-                            )
-                            await self._cache.set_json(
-                                target.cache_key,
-                                result.model_dump(mode="json"),
-                                ttl_seconds=ttl_seconds,
-                                stale_ttl_seconds=stale_ttl_seconds,
-                            )
+                            if target.is_overview:
+                                # Use overview method for overview targets
+                                overview_result = await service.get_heatmap_overview(
+                                    time_range=target.time_range,
+                                    transport_modes=target.transport_modes,
+                                    bucket_width_minutes=target.bucket_width_minutes,
+                                )
+                                await self._cache.set_json(
+                                    target.cache_key,
+                                    overview_result.model_dump(mode="json"),
+                                    ttl_seconds=ttl_seconds,
+                                    stale_ttl_seconds=stale_ttl_seconds,
+                                )
+                            else:
+                                # Use regular method for regular targets
+                                heatmap_result = await service.get_cancellation_heatmap(
+                                    time_range=target.time_range,
+                                    transport_modes=target.transport_modes,
+                                    bucket_width_minutes=target.bucket_width_minutes,
+                                    max_points=target.max_points,
+                                )
+                                await self._cache.set_json(
+                                    target.cache_key,
+                                    heatmap_result.model_dump(mode="json"),
+                                    ttl_seconds=ttl_seconds,
+                                    stale_ttl_seconds=stale_ttl_seconds,
+                                )
                             warmed += 1
                         except Exception:
                             logger.exception(

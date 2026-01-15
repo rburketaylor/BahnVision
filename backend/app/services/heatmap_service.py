@@ -13,11 +13,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, Numeric
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.heatmap import (
     HeatmapDataPoint,
+    HeatmapOverviewResponse,  # NEW
+    HeatmapPointLight,  # NEW
     HeatmapResponse,
     HeatmapSummary,
     TimeRange,
@@ -341,6 +343,60 @@ class HeatmapService:
             summary=summary,
         )
 
+    async def get_heatmap_overview(
+        self,
+        time_range: TimeRangePreset | None = None,
+        transport_modes: str | None = None,
+        bucket_width_minutes: int = DEFAULT_BUCKET_WIDTH_MINUTES,
+    ) -> HeatmapOverviewResponse:
+        """Generate lightweight heatmap overview showing ALL impacted stations.
+
+        Unlike get_cancellation_heatmap(), this method:
+        - Returns ALL stations with non-zero impact (no max_points limit)
+        - Uses minimal fields (id, lat, lon, intensity, name)
+        - Skips the by_transport breakdown (fetched on-demand via /stats endpoint)
+
+        Args:
+            time_range: Time range preset (live, 1h, 6h, 24h, 7d, 30d)
+            transport_modes: Comma-separated transport types to include
+            bucket_width_minutes: Time bucket width for aggregation
+
+        Returns:
+            HeatmapOverviewResponse with lightweight points for all impacted stations
+        """
+        from_time, to_time = parse_time_range(time_range)
+        transport_types = parse_transport_modes(transport_modes)
+        route_type_filter = self._resolve_route_type_filter(transport_types)
+
+        logger.info(
+            "Generating heatmap overview for time range %s to %s, transport modes: %s",
+            from_time.isoformat(),
+            to_time.isoformat(),
+            transport_modes or "all",
+        )
+
+        points = await self._get_all_impacted_stations_light(
+            route_type_filter=route_type_filter,
+            from_time=from_time,
+            to_time=to_time,
+            bucket_width_minutes=bucket_width_minutes,
+        )
+
+        summary = await self._calculate_network_summary_from_db(
+            from_time=from_time,
+            to_time=to_time,
+            bucket_width_minutes=bucket_width_minutes,
+            route_type_filter=route_type_filter,
+            most_affected_station=_pick_most_affected_station_light(points),
+        )
+
+        return HeatmapOverviewResponse(
+            time_range=TimeRange.model_validate({"from": from_time, "to": to_time}),
+            points=points,
+            summary=summary,
+            total_impacted_stations=len(points),
+        )
+
     async def _aggregate_station_data_from_db(
         self,
         route_type_filter: list[int] | None,
@@ -613,6 +669,95 @@ class HeatmapService:
             logger.error("Failed to query aggregation data: %s", exc)
             raise
 
+    async def _get_all_impacted_stations_light(
+        self,
+        route_type_filter: list[int] | None,
+        from_time: datetime,
+        to_time: datetime,
+        *,
+        bucket_width_minutes: int,
+    ) -> list[HeatmapPointLight]:
+        """Query ALL impacted stations with minimal fields.
+
+        Returns only stations where:
+        - cancelled_count > 0 OR delayed_count > 0
+        - Has valid coordinates
+
+        No limit on number of stations returned.
+        """
+        if not self._session:
+            raise RuntimeError("Heatmap overview requires an active database session")
+
+        from app.models.gtfs import GTFSStop
+        from app.models.heatmap import HeatmapPointLight
+
+        total_departures_expr = func.coalesce(
+            func.sum(RealtimeStationStats.trip_count), 0
+        )
+        cancelled_count_expr = func.coalesce(
+            func.sum(RealtimeStationStats.cancelled_count), 0
+        )
+        delayed_count_expr = func.coalesce(
+            func.sum(RealtimeStationStats.delayed_count), 0
+        )
+
+        # Intensity = (cancelled + delayed) / total, saturated at 25%
+        # This gives a 0-1 value for heatmap weight
+        intensity_expr = func.least(
+            (cancelled_count_expr + delayed_count_expr)
+            / func.nullif(total_departures_expr, 0)
+            * 4.0,
+            1.0,
+        ).label("intensity")
+
+        stmt = (
+            select(
+                RealtimeStationStats.stop_id,
+                GTFSStop.stop_name,
+                func.round(GTFSStop.stop_lat.cast(Numeric), 4).label("lat"),
+                func.round(GTFSStop.stop_lon.cast(Numeric), 4).label("lon"),
+                intensity_expr,
+                cancelled_count_expr.label("cancelled"),
+                delayed_count_expr.label("delayed"),
+            )
+            .join(GTFSStop, RealtimeStationStats.stop_id == GTFSStop.stop_id)
+            .where(RealtimeStationStats.bucket_start >= from_time)
+            .where(RealtimeStationStats.bucket_start < to_time)
+            .where(RealtimeStationStats.bucket_width_minutes == bucket_width_minutes)
+            .where(GTFSStop.stop_lat.isnot(None))
+            .where(GTFSStop.stop_lon.isnot(None))
+        )
+
+        if route_type_filter:
+            stmt = stmt.where(RealtimeStationStats.route_type.in_(route_type_filter))
+
+        stmt = stmt.group_by(
+            RealtimeStationStats.stop_id,
+            GTFSStop.stop_name,
+            GTFSStop.stop_lat,
+            GTFSStop.stop_lon,
+        ).having(
+            # Only include stations with at least 1 cancellation OR delay
+            (cancelled_count_expr > 0) | (delayed_count_expr > 0)
+        )
+
+        result = await self._session.execute(stmt)
+        rows = result.all()
+
+        points = [
+            HeatmapPointLight(
+                id=row.stop_id,
+                n=row.stop_name or row.stop_id,
+                lat=float(row.lat),
+                lon=float(row.lon),
+                i=float(row.intensity) if row.intensity else 0.0,
+            )
+            for row in rows
+        ]
+
+        logger.info("Retrieved %d impacted stations for heatmap overview", len(points))
+        return points
+
     def _resolve_route_type_filter(
         self, transport_types: list[str] | None
     ) -> list[int] | None:
@@ -810,3 +955,11 @@ def _pick_most_affected_station(data_points: list[HeatmapDataPoint]) -> str | No
         key=lambda x: x.delay_rate + x.cancellation_rate,
     )
     return most_affected.station_name
+
+
+def _pick_most_affected_station_light(points: list[HeatmapPointLight]) -> str | None:
+    """Pick the most affected station from lightweight points."""
+    if not points:
+        return None
+    most_affected = max(points, key=lambda p: p.i)
+    return most_affected.n
