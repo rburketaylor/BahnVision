@@ -286,7 +286,7 @@ class TransitDataService:
                 minutes=offset_minutes
             )
             scheduled_departures = await self.gtfs_schedule.get_departures_for_stop(
-                stop_id, scheduled_time, limit
+                stop_id, scheduled_time, limit, validate_existence=False
             )
 
             if not scheduled_departures:
