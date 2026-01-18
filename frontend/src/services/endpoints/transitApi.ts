@@ -151,8 +151,10 @@ class TransitApiClient {
     }
 
     const queryString = buildQueryString(apiParams)
+    // Use longer timeout for large time ranges (7d, 30d)
+    const timeout = params.time_range === '7d' || params.time_range === '30d' ? 30000 : 15000
     return httpClient.request<HeatmapResponse>(`/api/v1/heatmap/cancellations${queryString}`, {
-      timeout: 15000,
+      timeout,
     })
   }
 
@@ -172,8 +174,10 @@ class TransitApiClient {
     }
 
     const queryString = buildQueryString(apiParams)
+    // Use longer timeout for large time ranges (7d, 30d) that query daily summaries
+    const timeout = params.time_range === '7d' || params.time_range === '30d' ? 30000 : 20000
     return httpClient.request<HeatmapOverviewResponse>(`/api/v1/heatmap/overview${queryString}`, {
-      timeout: 20000, // Slightly longer timeout for larger payload
+      timeout,
     })
   }
 
