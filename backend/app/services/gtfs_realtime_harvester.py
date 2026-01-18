@@ -69,6 +69,8 @@ STATUS_RANK = {
     STATUS_CANCELLED: 3,
 }
 
+UNKNOWN_ROUTE_TYPE = -1
+
 
 def _escape_tsv(val) -> str:
     """Escape value for TSV format. Returns \\N for NULL."""
@@ -423,7 +425,7 @@ class GTFSRTDataHarvester:
         trip_updates: list[dict],
         bucket_start: datetime,
         route_type_map: dict[str, int],
-    ) -> dict[tuple[str, int | None], dict]:
+    ) -> dict[tuple[str, int], dict]:
         """Aggregate trip updates by (stop_id, route_type) with deduplication.
 
         Counts delays/cancellations per UNIQUE TRIP, not per stop_time_update.
@@ -434,13 +436,18 @@ class GTFSRTDataHarvester:
         """
         # First pass: determine the status of each unique trip at each stop
         # Key: (stop_id, route_type, trip_id) -> {"delay": max_delay, "cancelled": bool}
-        trip_status_by_stop: dict[tuple[str, int | None, str], dict] = {}
+        trip_status_by_stop: dict[tuple[str, int, str], dict] = {}
 
         for update in trip_updates:
             stop_id = update["stop_id"]
             trip_id = update["trip_id"]
             route_id = update.get("route_id")
-            route_type = route_type_map.get(route_id) if route_id else None
+            if route_id and route_id in route_type_map:
+                route_type = route_type_map[route_id]
+            else:
+                if route_id:
+                    logger.debug("Route ID not found in route_type_map: %s", route_id)
+                route_type = UNKNOWN_ROUTE_TYPE
 
             key = (stop_id, route_type, trip_id)
 
@@ -460,7 +467,7 @@ class GTFSRTDataHarvester:
                 existing["cancelled"] = existing["cancelled"] or is_cancelled
 
         # Second pass: aggregate by (stop_id, route_type)
-        stats_by_key: dict[tuple[str, int | None], dict] = defaultdict(
+        stats_by_key: dict[tuple[str, int], dict] = defaultdict(
             lambda: {"trip_statuses": {}}
         )
 
@@ -471,7 +478,7 @@ class GTFSRTDataHarvester:
                 "status": self._classify_status(status["delay"], status["cancelled"]),
             }
 
-        final_stats: dict[tuple[str, int | None], dict] = {}
+        final_stats: dict[tuple[str, int], dict] = {}
         for agg_key, stats in stats_by_key.items():
             stop_id_val, route_type_val = agg_key
             deltas = await self._apply_trip_statuses(
@@ -485,18 +492,23 @@ class GTFSRTDataHarvester:
         self,
         trip_updates: list[dict],
         route_type_map: dict[str, int],
-    ) -> dict[tuple[str, int | None], dict]:
+    ) -> dict[tuple[str, int], dict]:
         """Aggregate trip updates into a point-in-time snapshot.
 
         Counts delays/cancellations per unique trip in the current feed.
         """
-        trip_status_by_stop: dict[tuple[str, int | None, str], dict] = {}
+        trip_status_by_stop: dict[tuple[str, int, str], dict] = {}
 
         for update in trip_updates:
             stop_id = update["stop_id"]
             trip_id = update["trip_id"]
             route_id = update.get("route_id")
-            route_type = route_type_map.get(route_id) if route_id else None
+            if route_id and route_id in route_type_map:
+                route_type = route_type_map[route_id]
+            else:
+                if route_id:
+                    logger.debug("Route ID not found in route_type_map: %s", route_id)
+                route_type = UNKNOWN_ROUTE_TYPE
 
             key = (stop_id, route_type, trip_id)
 
@@ -515,7 +527,7 @@ class GTFSRTDataHarvester:
                 existing["delay"] = max(existing["delay"], delay)
                 existing["cancelled"] = existing["cancelled"] or is_cancelled
 
-        snapshot_stats: dict[tuple[str, int | None], dict] = defaultdict(
+        snapshot_stats: dict[tuple[str, int], dict] = defaultdict(
             lambda: {
                 "trip_count": 0,
                 "total_delay_seconds": 0,
@@ -553,7 +565,7 @@ class GTFSRTDataHarvester:
     async def _cache_live_snapshot(
         self,
         session: AsyncSession,
-        snapshot_stats: dict[tuple[str, int | None], dict],
+        snapshot_stats: dict[tuple[str, int], dict],
         snapshot_timestamp: datetime,
     ) -> None:
         """Build and cache the live heatmap snapshot."""
@@ -576,7 +588,7 @@ class GTFSRTDataHarvester:
             entry["cancelled"] += cancelled
             entry["delayed"] += delayed
 
-            if route_type is None:
+            if route_type == UNKNOWN_ROUTE_TYPE:
                 continue
             transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
             transport_entry = entry["by_transport"].setdefault(
@@ -885,7 +897,7 @@ class GTFSRTDataHarvester:
         self,
         session: AsyncSession,
         bucket_start: datetime,
-        stop_stats: dict[tuple[str, int | None], dict],
+        stop_stats: dict[tuple[str, int], dict],
     ) -> None:
         """Upsert aggregated stats using COPY to temp table + single INSERT.
 

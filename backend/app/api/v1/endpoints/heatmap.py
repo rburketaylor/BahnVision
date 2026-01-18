@@ -5,6 +5,7 @@ Provides an endpoint to retrieve cancellation heatmap data for map visualization
 """
 
 import time
+from datetime import date, timedelta
 from typing import Annotated
 
 from fastapi import (
@@ -24,11 +25,13 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_session
 from app.models.heatmap import (
     HeatmapDataPoint,
-    HeatmapOverviewResponse,  # NEW
+    HeatmapOverviewResponse,
+    HeatmapPointLight,
     HeatmapResponse,
     TimeRangePreset,
 )
 from app.services.cache import CacheService, get_cache_service
+from app.services.daily_aggregation_service import DailyAggregationService
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
     heatmap_live_snapshot_cache_key,
@@ -452,6 +455,56 @@ async def get_heatmap_overview(
 ) -> HeatmapOverviewResponse:
     """Get lightweight heatmap overview showing all impacted stations."""
 
+    # Handle live mode - use the live snapshot cache
+    if time_range == "live":
+        live_cache_key = heatmap_live_snapshot_cache_key()
+        cached_data = await cache.get_json(live_cache_key)
+        if cached_data:
+            response.headers["X-Cache-Status"] = "hit"
+            snapshot = HeatmapResponse.model_validate(cached_data)
+            # Convert to overview format (lightweight points)
+            points = [
+                HeatmapPointLight(
+                    id=p.station_id,
+                    n=p.station_name,
+                    lat=p.latitude,
+                    lon=p.longitude,
+                    # Match DB query intensity scaling: * 4.0 multiplier ensures 25% impact = full heat (1.0)
+                    # See heatmap_service.py:706-710 for reference
+                    i=min((p.cancellation_rate + p.delay_rate) * 4.0, 1.0),
+                )
+                for p in snapshot.data_points
+            ]
+            return HeatmapOverviewResponse(
+                time_range=snapshot.time_range,
+                points=points,
+                summary=snapshot.summary,
+                total_impacted_stations=len(points),
+            )
+
+        stale_data = await cache.get_stale_json(live_cache_key)
+        if stale_data:
+            response.headers["X-Cache-Status"] = "stale"
+            snapshot = HeatmapResponse.model_validate(stale_data)
+            points = [
+                HeatmapPointLight(
+                    id=p.station_id,
+                    n=p.station_name,
+                    lat=p.latitude,
+                    lon=p.longitude,
+                    i=min((p.cancellation_rate + p.delay_rate) * 4.0, 1.0),
+                )
+                for p in snapshot.data_points
+            ]
+            return HeatmapOverviewResponse(
+                time_range=snapshot.time_range,
+                points=points,
+                summary=snapshot.summary,
+                total_impacted_stations=len(points),
+            )
+
+        # Fall through to normal handling if no live snapshot available
+
     # Build cache key
     cache_key = f"heatmap:overview:{time_range or 'default'}:{transport_modes or 'all'}:{bucket_width}"
 
@@ -513,6 +566,56 @@ async def heatmap_health_check():
     except Exception as e:
         logger.error(f"Heatmap health check failed: {str(e)}")
         return {"status": "unhealthy", "database": "disconnected"}
+
+
+async def _daily_aggregation_task() -> None:
+    """Background task to aggregate yesterday's hourly stats into daily summaries.
+
+    This function should be called on a schedule (e.g., daily cron job or via
+    the GTFS-RT harvest completion hook) to ensure daily summaries are available
+    for heatmap queries.
+    """
+    yesterday = date.today() - timedelta(days=1)
+
+    logger.info("Starting daily aggregation for %s", yesterday)
+
+    try:
+        async with AsyncSessionFactory() as session:
+            service = DailyAggregationService(session=session)
+            stations_count = await service.aggregate_day(yesterday)
+
+        logger.info(
+            "Daily aggregation complete for %s: %d stations aggregated",
+            yesterday,
+            stations_count,
+        )
+    except Exception as e:
+        logger.error("Daily aggregation failed for %s: %s", yesterday, e, exc_info=True)
+
+
+@router.post("/aggregate-daily")
+async def trigger_daily_aggregation(
+    response: Response,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
+    """Manually trigger daily aggregation for yesterday's data.
+
+    This is useful for:
+    - Testing the daily aggregation service
+    - Backfilling after a data gap
+    - Manual catch-up after service interruptions
+
+    The aggregation runs in the background, so this endpoint returns immediately.
+    """
+    background_tasks.add_task(_daily_aggregation_task)
+
+    response.headers["X-Background-Task"] = "queued"
+    logger.info("Daily aggregation task queued via API trigger")
+
+    return {
+        "status": "queued",
+        "message": "Daily aggregation task has been queued to run in the background",
+    }
 
 
 # Test the health endpoint directly

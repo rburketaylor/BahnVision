@@ -581,3 +581,36 @@ class TestSpatialStratification:
 
         # Respects MAX_DATA_POINTS cap
         assert resolve_max_points(15, 20000) == 10000
+
+
+class TestShouldUseDailySummary:
+    """Tests for should_use_daily_summary helper function."""
+
+    def test_should_use_daily_summary_threshold(self):
+        """Test the threshold for using daily summaries."""
+        from datetime import datetime, timezone
+        from app.services.daily_aggregation_service import should_use_daily_summary
+
+        # Less than 3 days - use hourly
+        assert not should_use_daily_summary(
+            datetime(2025, 1, 15, 0, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 17, 23, 59, tzinfo=timezone.utc),  # 2 days 23:59
+        )
+
+        # Exactly 3 days - use daily
+        assert should_use_daily_summary(
+            datetime(2025, 1, 15, 0, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 18, 0, 0, tzinfo=timezone.utc),  # 3 days exactly
+        )
+
+        # 7 days - use daily
+        assert should_use_daily_summary(
+            datetime(2025, 1, 15, 0, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 22, 0, 0, tzinfo=timezone.utc),
+        )
+
+        # 30 days - use daily
+        assert should_use_daily_summary(
+            datetime(2025, 1, 15, 0, 0, tzinfo=timezone.utc),
+            datetime(2025, 2, 14, 0, 0, tzinfo=timezone.utc),
+        )
