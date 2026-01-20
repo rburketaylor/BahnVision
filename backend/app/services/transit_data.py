@@ -91,50 +91,76 @@ class DepartureInfo:
             self.alerts = []
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary with JSON-serializable values"""
-        data = asdict(self)
+        """Convert to dictionary with JSON-serializable values.
 
-        # Convert enums to string
-        if isinstance(self.schedule_relationship, ScheduleRelationship):
-            data["schedule_relationship"] = self.schedule_relationship.value
-
-        # Convert datetimes to ISO format strings
-        for field in [
-            "scheduled_departure",
-            "scheduled_arrival",
-            "real_time_departure",
-            "real_time_arrival",
-        ]:
-            if data.get(field):
-                data[field] = data[field].isoformat()
-
-        # Handle alerts list - serialize ServiceAlert objects
+        Optimized to avoid asdict() overhead for better performance.
+        """
+        # Serialize alerts if present
+        alerts_data = []
         if self.alerts:
-            serialized_alerts = []
             for alert in self.alerts:
-                # If alert is a dataclass (ServiceAlert), use asdict
-                # We need to handle set types in ServiceAlert manually
-                alert_dict = asdict(alert)
+                # Handle both dict (from legacy) and ServiceAlert objects
+                if isinstance(alert, dict):
+                    # Already a dict, use as is but ensure serializable
+                    alerts_data.append(alert)
+                    continue
 
-                # Convert sets to lists for JSON serialization
-                if "affected_routes" in alert_dict and isinstance(
-                    alert_dict["affected_routes"], set
-                ):
-                    alert_dict["affected_routes"] = list(alert_dict["affected_routes"])
-                if "affected_stops" in alert_dict and isinstance(
-                    alert_dict["affected_stops"], set
-                ):
-                    alert_dict["affected_stops"] = list(alert_dict["affected_stops"])
+                # Manual serialization of ServiceAlert for performance
+                alerts_data.append(
+                    {
+                        "alert_id": alert.alert_id,
+                        "cause": alert.cause,
+                        "effect": alert.effect,
+                        "header_text": alert.header_text,
+                        "description_text": alert.description_text,
+                        "affected_routes": list(alert.affected_routes)
+                        if isinstance(alert.affected_routes, set)
+                        else alert.affected_routes,
+                        "affected_stops": list(alert.affected_stops)
+                        if isinstance(alert.affected_stops, set)
+                        else alert.affected_stops,
+                        "start_time": alert.start_time.isoformat()
+                        if alert.start_time
+                        else None,
+                        "end_time": alert.end_time.isoformat()
+                        if alert.end_time
+                        else None,
+                        "timestamp": alert.timestamp.isoformat()
+                        if alert.timestamp
+                        else None,
+                    }
+                )
 
-                # Convert datetimes in alerts
-                for alert_field in ["start_time", "end_time", "timestamp"]:
-                    if alert_dict.get(alert_field):
-                        alert_dict[alert_field] = alert_dict[alert_field].isoformat()
-
-                serialized_alerts.append(alert_dict)
-            data["alerts"] = serialized_alerts
-
-        return data
+        # Manually construct dictionary to avoid asdict() overhead
+        return {
+            "trip_id": self.trip_id,
+            "route_id": self.route_id,
+            "route_short_name": self.route_short_name,
+            "route_long_name": self.route_long_name,
+            "trip_headsign": self.trip_headsign,
+            "stop_id": self.stop_id,
+            "stop_name": self.stop_name,
+            "scheduled_departure": self.scheduled_departure.isoformat()
+            if self.scheduled_departure
+            else None,
+            "scheduled_arrival": self.scheduled_arrival.isoformat()
+            if self.scheduled_arrival
+            else None,
+            "real_time_departure": self.real_time_departure.isoformat()
+            if self.real_time_departure
+            else None,
+            "real_time_arrival": self.real_time_arrival.isoformat()
+            if self.real_time_arrival
+            else None,
+            "departure_delay_seconds": self.departure_delay_seconds,
+            "arrival_delay_seconds": self.arrival_delay_seconds,
+            "schedule_relationship": self.schedule_relationship.value
+            if isinstance(self.schedule_relationship, ScheduleRelationship)
+            else self.schedule_relationship,
+            "vehicle_id": self.vehicle_id,
+            "vehicle_position": self.vehicle_position,
+            "alerts": alerts_data,
+        }
 
     @staticmethod
     def from_dict(data: Dict) -> "DepartureInfo":
