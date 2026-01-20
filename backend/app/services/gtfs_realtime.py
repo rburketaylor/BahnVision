@@ -500,35 +500,23 @@ class GtfsRealtimeService:
         if not trip_updates:
             return
 
-        # Track trip IDs by stop for the secondary index
-        stop_to_trips: dict[str, set[str]] = {}
-
-        # Build batch of items to store
-        items_to_store: dict[str, Any] = {}
+        # Group updates by stop_id
+        updates_by_stop: dict[str, List[dict[str, Any]]] = {}
 
         for tu in trip_updates:
-            key = f"trip_update:{tu.trip_id}:{tu.stop_id}"
-            items_to_store[key] = self._serialize_dataclass(tu)
+            if tu.stop_id not in updates_by_stop:
+                updates_by_stop[tu.stop_id] = []
+            updates_by_stop[tu.stop_id].append(self._serialize_dataclass(tu))
 
-            # Build stop-to-trips index
-            if tu.stop_id not in stop_to_trips:
-                stop_to_trips[tu.stop_id] = set()
-            stop_to_trips[tu.stop_id].add(tu.trip_id)
+        # Build batch of items to store
+        # Key: trip_updates:stop:{stop_id} -> Value: List[TripUpdate]
+        items_to_store: dict[str, Any] = {}
+        for stop_id, updates in updates_by_stop.items():
+            index_key = f"trip_updates:stop:{stop_id}"
+            items_to_store[index_key] = updates
 
-        # Batch write all trip updates
         await self.cache.mset_json(
             items_to_store,
-            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-        )
-
-        # Batch write all stop-based indexes
-        index_items: dict[str, Any] = {}
-        for stop_id, trip_ids in stop_to_trips.items():
-            index_key = f"trip_updates:stop:{stop_id}"
-            index_items[index_key] = list(trip_ids)
-
-        await self.cache.mset_json(
-            index_items,
             ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
         )
 
@@ -649,25 +637,14 @@ class GtfsRealtimeService:
     async def get_trip_updates_for_stop(self, stop_id: str) -> List[TripUpdate]:
         """Get cached trip updates for a specific stop using the stop-based index"""
         try:
-            # Get the list of trip IDs for this stop
-            index_key = f"trip_updates:stop:{stop_id}"
-            trip_ids = await self.cache.get_json(index_key)
+            # Get the list of trip updates directly
+            key = f"trip_updates:stop:{stop_id}"
+            data = await self.cache.get_json(key)
 
-            if not trip_ids:
+            if not data:
                 return []
 
-            # Batch fetch all trip updates for these trips
-            trip_update_keys = [
-                f"trip_update:{trip_id}:{stop_id}" for trip_id in trip_ids
-            ]
-            trip_updates_data = await self.cache.mget_json(trip_update_keys)
-
-            trip_updates = []
-            for data in trip_updates_data.values():
-                if data:
-                    trip_updates.append(TripUpdate(**data))
-
-            return trip_updates
+            return [TripUpdate(**item) for item in data]
 
         except Exception as e:
             logger.error(f"Failed to get trip updates for stop {stop_id}: {e}")

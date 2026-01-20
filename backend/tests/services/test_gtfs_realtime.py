@@ -77,33 +77,30 @@ class TestTripUpdates:
 
         await gtfs_service._store_trip_updates(trip_updates)
 
-        # Verify batch writes are used (Issue 6: GTFS-RT Batch Writes)
-        # Should call mset_json twice: once for trip updates, once for stop indexes
-        assert mock_cache_service.mset_json.call_count == 2
+        # Should call mset_json once for all stop keys
+        assert mock_cache_service.mset_json.call_count == 1
 
         # Check that individual set_json is NOT called (batch writes replace individual calls)
         assert mock_cache_service.set_json.call_count == 0
 
-        # Verify the first batch call contains the trip updates
-        first_call_items = mock_cache_service.mset_json.call_args_list[0][0][0]
-        assert "trip_update:trip1:stop1" in first_call_items
-        assert "trip_update:trip2:stop1" in first_call_items
-        assert "trip_update:trip1:stop2" in first_call_items
+        # Verify the batch call contains the trip updates grouped by stop
+        call_items = mock_cache_service.mset_json.call_args[0][0]
+        assert "trip_updates:stop:stop1" in call_items
+        assert "trip_updates:stop:stop2" in call_items
 
-        # Verify the second batch call contains the stop indexes
-        second_call_items = mock_cache_service.mset_json.call_args_list[1][0][0]
-        assert "trip_updates:stop:stop1" in second_call_items
-        assert "trip_updates:stop:stop2" in second_call_items
+        # Verify content
+        stop1_updates = call_items["trip_updates:stop:stop1"]
+        assert len(stop1_updates) == 2
+        stop1_trip_ids = {u["trip_id"] for u in stop1_updates}
+        assert "trip1" in stop1_trip_ids
+        assert "trip2" in stop1_trip_ids
 
     @pytest.mark.asyncio
     async def test_get_trip_updates_for_stop(self, gtfs_service, mock_cache_service):
         """Test retrieving trip updates for a specific stop."""
-        # Mock the index response (first call gets the stop index)
-        mock_cache_service.get_json.return_value = ["trip1", "trip2"]
-
-        # Mock the mget_json response for batch fetch
-        mock_cache_service.mget_json.return_value = {
-            "trip_update:trip1:stop1": {
+        # Mock the get_json response
+        mock_cache_service.get_json.return_value = [
+            {
                 "trip_id": "trip1",
                 "route_id": "route1",
                 "stop_id": "stop1",
@@ -112,7 +109,7 @@ class TestTripUpdates:
                 "departure_delay": 60,
                 "schedule_relationship": "SCHEDULED",
             },
-            "trip_update:trip2:stop1": {
+            {
                 "trip_id": "trip2",
                 "route_id": "route1",
                 "stop_id": "stop1",
@@ -121,7 +118,7 @@ class TestTripUpdates:
                 "departure_delay": 120,
                 "schedule_relationship": "SCHEDULED",
             },
-        }
+        ]
 
         result = await gtfs_service.get_trip_updates_for_stop("stop1")
 
@@ -130,6 +127,9 @@ class TestTripUpdates:
         trip_ids = {tu.trip_id for tu in result}
         assert trip_ids == {"trip1", "trip2"}
         assert all(tu.stop_id == "stop1" for tu in result)
+
+        # Verify mget_json is NOT called
+        assert mock_cache_service.mget_json.call_count == 0
 
     @pytest.mark.asyncio
     async def test_get_trip_updates_for_empty_stop(
