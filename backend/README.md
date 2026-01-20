@@ -45,7 +45,7 @@ Valkey‑backed cache with cache‑aside reads, single‑flight stampede protect
 
 ## Database
 
-Async SQLAlchemy engine and repositories live under `backend/app/persistence/`. Configure via `DATABASE_URL`. Alembic migrations are planned to evolve schemas alongside features.
+Async SQLAlchemy engine and persistence logic reside in `backend/app/persistence/repositories.py` and `backend/app/persistence/models.py`. Configure via `DATABASE_URL`. Alembic migrations are planned to evolve schemas alongside features.
 
 ## Development
 

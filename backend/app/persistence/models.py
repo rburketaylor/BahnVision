@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Date,
     DateTime,
     Enum as SqlEnum,
     Float,
@@ -548,5 +549,101 @@ class RealtimeStationStats(Base):
             "bucket_width_minutes",
             "route_type",
             name="uq_realtime_stats_unique",
+        ),
+    )
+
+
+class RealtimeStationStatsDaily(Base):
+    """Daily pre-aggregated station statistics for large time range queries.
+
+    Summarizes hourly data from realtime_station_stats into daily buckets.
+    Provides ~6-24x performance improvement for 7-30 day heatmap queries.
+    """
+
+    __tablename__ = "realtime_station_stats_daily"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    stop_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Date bucket (truncated calendar day in UTC)
+    date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        doc="Calendar date (UTC) of the aggregated data.",
+    )
+
+    # Pre-aggregated daily totals across all route_types
+    trip_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Total trips observed for this station on this date.",
+    )
+    delayed_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Total departures delayed > 5 minutes.",
+    )
+    cancelled_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Total cancelled departures.",
+    )
+    on_time_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Total departures with delay < 1 minute.",
+    )
+    total_delay_seconds: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Cumulative delay for average calculation.",
+    )
+    observation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Number of hourly buckets that contributed to this daily summary.",
+    )
+
+    # Per-route-type breakdowns stored as JSONB for efficient filtering
+    # Structure: {"UBAHN": {"trips": 100, "cancelled": 5, "delayed": 10, "on_time": 85}, ...}
+    by_route_type: Mapped[dict[str, dict[str, int]]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default="{}",
+        doc="Breakdown by GTFS route_type (transport mode).",
+    )
+
+    # Timestamps
+    first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_daily_stats_stop_date", "stop_id", "date"),
+        Index("ix_daily_stats_date", "date"),
+        UniqueConstraint(
+            "stop_id",
+            "date",
+            name="uq_daily_stats_stop_date_unique",
         ),
     )

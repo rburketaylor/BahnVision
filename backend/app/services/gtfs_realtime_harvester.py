@@ -30,6 +30,7 @@ from app.models.heatmap import (
     TransportStats,
 )
 from app.persistence.models import RealtimeStationStats, ScheduleRelationship
+from app.services.gtfs_import_lock import get_import_lock
 from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
 from app.services.heatmap_service import GTFS_ROUTE_TYPES, TRANSPORT_TYPE_NAMES
 
@@ -67,6 +68,43 @@ STATUS_RANK = {
     STATUS_DELAYED: 2,
     STATUS_CANCELLED: 3,
 }
+
+UNKNOWN_ROUTE_TYPE = -1
+
+_MAX_UPSERT_RETRIES = 3
+_UPSERT_RETRY_DELAY_SECONDS = 1.0
+
+
+async def _with_deadlock_retry(coro, max_retries: int = _MAX_UPSERT_RETRIES):
+    """Retry a coroutine on deadlock errors with exponential backoff.
+
+    Args:
+        coro: The coroutine to execute
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        Result of the coroutine
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro
+        except Exception as e:
+            error_str = str(e).lower()
+            is_deadlock = (
+                "deadlock" in error_str or "current transaction is aborted" in error_str
+            )
+            if is_deadlock and attempt < max_retries:
+                delay = _UPSERT_RETRY_DELAY_SECONDS * (2**attempt)
+                logger.warning(
+                    "Deadlock detected in DB operation, retrying in %.1fs (attempt %d/%d): %s",
+                    delay,
+                    attempt + 1,
+                    max_retries + 1,
+                    e,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
 
 
 def _escape_tsv(val) -> str:
@@ -155,6 +193,16 @@ class GTFSRTDataHarvester:
             "stations_updated_last_harvest": self._last_stations_updated,
         }
 
+    async def _check_import_lock(self) -> bool:
+        """Check if GTFS feed import is in progress.
+
+        Returns:
+            True if import is in progress (caller should skip DB operations),
+            False if no import is running (caller can proceed).
+        """
+        import_lock = get_import_lock()
+        return await import_lock.is_import_in_progress()
+
     async def _run_polling_loop(self) -> None:
         """Main polling loop that runs until stopped."""
         while self._running:
@@ -173,6 +221,10 @@ class GTFSRTDataHarvester:
         """
         if not GTFS_RT_AVAILABLE:
             logger.warning("GTFS-RT bindings not available, skipping harvest")
+            return 0
+
+        if await self._check_import_lock():
+            logger.info("Skipping GTFS-RT harvest: GTFS feed import is in progress")
             return 0
 
         try:
@@ -200,16 +252,17 @@ class GTFSRTDataHarvester:
 
             updated_count = 0
             async with AsyncSessionFactory() as session:
-                # 2. Fetch route_id -> route_type mapping for transport mode grouping
+                if await self._check_import_lock():
+                    logger.info("Skipping route type lookup: import in progress")
+                    return 0
+
                 route_type_map = await self._get_route_type_map(session)
 
-                # 3. Calculate current time bucket (hourly)
                 bucket_start = now.replace(minute=0, second=0, microsecond=0)
                 logger.debug(
                     f"Processing data for bucket starting at {bucket_start.isoformat()}"
                 )
 
-                # 4. Group updates by stop_id and route_type and aggregate
                 stop_stats = await self._aggregate_by_stop_and_route(
                     trip_updates, bucket_start, route_type_map
                 )
@@ -219,9 +272,10 @@ class GTFSRTDataHarvester:
                 )
                 snapshot_timestamp = self._resolve_snapshot_timestamp(trip_updates)
 
-                # Always cache the live snapshot, even if no stop_stats for DB upsert.
-                # This ensures the API can serve a 200 response when the harvester
-                # is running but there are no impacted stations.
+                if await self._check_import_lock():
+                    logger.info("Skipping live snapshot caching: import in progress")
+                    return 0
+
                 await self._cache_live_snapshot(
                     session, snapshot_stats, snapshot_timestamp
                 )
@@ -232,7 +286,10 @@ class GTFSRTDataHarvester:
                     self._last_stations_updated = 0
                     return 0
 
-                # 5. Upsert aggregations to database
+                if await self._check_import_lock():
+                    logger.info("Skipping stats upsert: import in progress")
+                    return 0
+
                 await self._upsert_stats(session, bucket_start, stop_stats)
                 await session.commit()
                 updated_count = len(stop_stats)
@@ -266,11 +323,11 @@ class GTFSRTDataHarvester:
             return []
 
         try:
-            logger.debug(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
-            # Use explicit timeout for large feed download (~27MB)
+            logger.info(f"Fetching GTFS-RT data from {self.settings.gtfs_rt_feed_url}")
+            # Use explicit timeout for large feed download
             timeout = httpx.Timeout(
                 connect=30.0,
-                read=180.0,  # 3 minutes for large feed
+                read=300.0,  # 5 minutes for large feed (can take 2-4 min)
                 write=30.0,
                 pool=30.0,
             )
@@ -279,6 +336,9 @@ class GTFSRTDataHarvester:
                 headers={"User-Agent": "BahnVision-GTFS-RT-Harvester/1.0"},
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
+                logger.info(
+                    f"GTFS-RT feed download complete: status={response.status_code}, size={len(response.content):,} bytes"
+                )
 
             logger.debug(f"Received response with status {response.status_code}")
             response.raise_for_status()
@@ -413,7 +473,7 @@ class GTFSRTDataHarvester:
         trip_updates: list[dict],
         bucket_start: datetime,
         route_type_map: dict[str, int],
-    ) -> dict[tuple[str, int | None], dict]:
+    ) -> dict[tuple[str, int], dict]:
         """Aggregate trip updates by (stop_id, route_type) with deduplication.
 
         Counts delays/cancellations per UNIQUE TRIP, not per stop_time_update.
@@ -424,13 +484,18 @@ class GTFSRTDataHarvester:
         """
         # First pass: determine the status of each unique trip at each stop
         # Key: (stop_id, route_type, trip_id) -> {"delay": max_delay, "cancelled": bool}
-        trip_status_by_stop: dict[tuple[str, int | None, str], dict] = {}
+        trip_status_by_stop: dict[tuple[str, int, str], dict] = {}
 
         for update in trip_updates:
             stop_id = update["stop_id"]
             trip_id = update["trip_id"]
             route_id = update.get("route_id")
-            route_type = route_type_map.get(route_id) if route_id else None
+            if route_id and route_id in route_type_map:
+                route_type = route_type_map[route_id]
+            else:
+                if route_id:
+                    logger.debug("Route ID not found in route_type_map: %s", route_id)
+                route_type = UNKNOWN_ROUTE_TYPE
 
             key = (stop_id, route_type, trip_id)
 
@@ -450,7 +515,7 @@ class GTFSRTDataHarvester:
                 existing["cancelled"] = existing["cancelled"] or is_cancelled
 
         # Second pass: aggregate by (stop_id, route_type)
-        stats_by_key: dict[tuple[str, int | None], dict] = defaultdict(
+        stats_by_key: dict[tuple[str, int], dict] = defaultdict(
             lambda: {"trip_statuses": {}}
         )
 
@@ -461,7 +526,7 @@ class GTFSRTDataHarvester:
                 "status": self._classify_status(status["delay"], status["cancelled"]),
             }
 
-        final_stats: dict[tuple[str, int | None], dict] = {}
+        final_stats: dict[tuple[str, int], dict] = {}
         for agg_key, stats in stats_by_key.items():
             stop_id_val, route_type_val = agg_key
             deltas = await self._apply_trip_statuses(
@@ -475,18 +540,23 @@ class GTFSRTDataHarvester:
         self,
         trip_updates: list[dict],
         route_type_map: dict[str, int],
-    ) -> dict[tuple[str, int | None], dict]:
+    ) -> dict[tuple[str, int], dict]:
         """Aggregate trip updates into a point-in-time snapshot.
 
         Counts delays/cancellations per unique trip in the current feed.
         """
-        trip_status_by_stop: dict[tuple[str, int | None, str], dict] = {}
+        trip_status_by_stop: dict[tuple[str, int, str], dict] = {}
 
         for update in trip_updates:
             stop_id = update["stop_id"]
             trip_id = update["trip_id"]
             route_id = update.get("route_id")
-            route_type = route_type_map.get(route_id) if route_id else None
+            if route_id and route_id in route_type_map:
+                route_type = route_type_map[route_id]
+            else:
+                if route_id:
+                    logger.debug("Route ID not found in route_type_map: %s", route_id)
+                route_type = UNKNOWN_ROUTE_TYPE
 
             key = (stop_id, route_type, trip_id)
 
@@ -505,7 +575,7 @@ class GTFSRTDataHarvester:
                 existing["delay"] = max(existing["delay"], delay)
                 existing["cancelled"] = existing["cancelled"] or is_cancelled
 
-        snapshot_stats: dict[tuple[str, int | None], dict] = defaultdict(
+        snapshot_stats: dict[tuple[str, int], dict] = defaultdict(
             lambda: {
                 "trip_count": 0,
                 "total_delay_seconds": 0,
@@ -543,7 +613,7 @@ class GTFSRTDataHarvester:
     async def _cache_live_snapshot(
         self,
         session: AsyncSession,
-        snapshot_stats: dict[tuple[str, int | None], dict],
+        snapshot_stats: dict[tuple[str, int], dict],
         snapshot_timestamp: datetime,
     ) -> None:
         """Build and cache the live heatmap snapshot."""
@@ -566,7 +636,7 @@ class GTFSRTDataHarvester:
             entry["cancelled"] += cancelled
             entry["delayed"] += delayed
 
-            if route_type is None:
+            if route_type == UNKNOWN_ROUTE_TYPE:
                 continue
             transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
             transport_entry = entry["by_transport"].setdefault(
@@ -586,24 +656,29 @@ class GTFSRTDataHarvester:
         if impacted_stop_ids:
             from app.models.gtfs import GTFSStop
 
-            stmt = (
-                select(
-                    GTFSStop.stop_id,
-                    GTFSStop.stop_name,
-                    GTFSStop.stop_lat,
-                    GTFSStop.stop_lon,
+            # Batch queries to avoid PostgreSQL's 32,767 parameter limit.
+            # With 42,000+ impacted stops, we need to chunk the IN clause.
+            BATCH_SIZE = 30000
+            for batch_start in range(0, len(impacted_stop_ids), BATCH_SIZE):
+                batch_ids = impacted_stop_ids[batch_start : batch_start + BATCH_SIZE]
+                stmt = (
+                    select(
+                        GTFSStop.stop_id,
+                        GTFSStop.stop_name,
+                        GTFSStop.stop_lat,
+                        GTFSStop.stop_lon,
+                    )
+                    .where(GTFSStop.stop_id.in_(batch_ids))
+                    .where(GTFSStop.stop_lat.isnot(None))
+                    .where(GTFSStop.stop_lon.isnot(None))
                 )
-                .where(GTFSStop.stop_id.in_(impacted_stop_ids))
-                .where(GTFSStop.stop_lat.isnot(None))
-                .where(GTFSStop.stop_lon.isnot(None))
-            )
-            result = await session.execute(stmt)
-            for row in result.all():
-                stop_metadata[row.stop_id] = (
-                    row.stop_name or row.stop_id,
-                    float(row.stop_lat),
-                    float(row.stop_lon),
-                )
+                result = await session.execute(stmt)
+                for row in result.all():
+                    stop_metadata[row.stop_id] = (
+                        row.stop_name or row.stop_id,
+                        float(row.stop_lat),
+                        float(row.stop_lon),
+                    )
 
         data_points: list[HeatmapDataPoint] = []
         for stop_id in impacted_stop_ids:
@@ -870,7 +945,7 @@ class GTFSRTDataHarvester:
         self,
         session: AsyncSession,
         bucket_start: datetime,
-        stop_stats: dict[tuple[str, int | None], dict],
+        stop_stats: dict[tuple[str, int], dict],
     ) -> None:
         """Upsert aggregated stats using COPY to temp table + single INSERT.
 
@@ -887,97 +962,96 @@ class GTFSRTDataHarvester:
         if not stop_stats:
             return
 
-        # 1. Create temp table (ON COMMIT DROP for automatic cleanup)
-        await session.execute(
-            text(
-                """
-                CREATE TEMP TABLE IF NOT EXISTS temp_rt_stats (
-                    stop_id VARCHAR(64) NOT NULL,
-                    bucket_start TIMESTAMP WITH TIME ZONE NOT NULL,
-                    bucket_width_minutes INTEGER NOT NULL,
-                    observation_count INTEGER NOT NULL,
-                    trip_count INTEGER NOT NULL,
-                    total_delay_seconds BIGINT NOT NULL,
-                    delayed_count INTEGER NOT NULL,
-                    on_time_count INTEGER NOT NULL,
-                    cancelled_count INTEGER NOT NULL,
-                    route_type INTEGER
-                ) ON COMMIT DROP
-                """
-            )
-        )
-
-        # 2. Build TSV data for COPY
-        bucket_str = bucket_start.isoformat()
-        lines = []
-        for key, stats in stop_stats.items():
-            stop_id, route_type = key
-            line = "\t".join(
-                [
-                    _escape_tsv(stop_id),
-                    _escape_tsv(bucket_str),
-                    _escape_tsv(60),  # bucket_width_minutes
-                    _escape_tsv(1),  # observation_count
-                    _escape_tsv(stats["trip_count"]),
-                    _escape_tsv(stats["total_delay_seconds"]),
-                    _escape_tsv(stats["delayed"]),
-                    _escape_tsv(stats["on_time"]),
-                    _escape_tsv(stats["cancelled"]),
-                    _escape_tsv(route_type),
-                ]
-            )
-            lines.append(line)
-
-        tsv_data = "\n".join(lines)
-
-        # 3. COPY data into temp table (binary protocol, super fast)
-        asyncpg_conn = await self._get_asyncpg_conn(session)
-        await asyncpg_conn.copy_to_table(
-            "temp_rt_stats",
-            source=io.BytesIO(tsv_data.encode("utf-8")),
-            columns=[
-                "stop_id",
-                "bucket_start",
-                "bucket_width_minutes",
-                "observation_count",
-                "trip_count",
-                "total_delay_seconds",
-                "delayed_count",
-                "on_time_count",
-                "cancelled_count",
-                "route_type",
-            ],
-            format="text",
-        )
-
-        # 4. Single INSERT...ON CONFLICT from temp to main table
-        await session.execute(
-            text(
-                """
-                INSERT INTO realtime_station_stats (
-                    stop_id, bucket_start, bucket_width_minutes,
-                    observation_count, trip_count, total_delay_seconds,
-                    delayed_count, on_time_count, cancelled_count, route_type
+        async def _do_upsert():
+            await session.execute(
+                text(
+                    """
+                    CREATE TEMP TABLE IF NOT EXISTS temp_rt_stats (
+                        stop_id VARCHAR(64) NOT NULL,
+                        bucket_start TIMESTAMP WITH TIME ZONE NOT NULL,
+                        bucket_width_minutes INTEGER NOT NULL,
+                        observation_count INTEGER NOT NULL,
+                        trip_count INTEGER NOT NULL,
+                        total_delay_seconds BIGINT NOT NULL,
+                        delayed_count INTEGER NOT NULL,
+                        on_time_count INTEGER NOT NULL,
+                        cancelled_count INTEGER NOT NULL,
+                        route_type INTEGER
+                    ) ON COMMIT DROP
+                    """
                 )
-                SELECT
-                    stop_id, bucket_start, bucket_width_minutes,
-                    observation_count, trip_count, total_delay_seconds,
-                    delayed_count, on_time_count, cancelled_count, route_type
-                FROM temp_rt_stats
-                ON CONFLICT ON CONSTRAINT uq_realtime_stats_unique
-                DO UPDATE SET
-                    observation_count = realtime_station_stats.observation_count + 1,
-                    trip_count = realtime_station_stats.trip_count + EXCLUDED.trip_count,
-                    total_delay_seconds = realtime_station_stats.total_delay_seconds + EXCLUDED.total_delay_seconds,
-                    delayed_count = realtime_station_stats.delayed_count + EXCLUDED.delayed_count,
-                    on_time_count = realtime_station_stats.on_time_count + EXCLUDED.on_time_count,
-                    cancelled_count = realtime_station_stats.cancelled_count + EXCLUDED.cancelled_count,
-                    last_updated_at = NOW()
-                """
             )
-        )
 
-        logger.debug("Upserted %d station stats via COPY", len(stop_stats))
+            bucket_str = bucket_start.isoformat()
+            lines = []
+            for key, stats in stop_stats.items():
+                stop_id, route_type = key
+                line = "\t".join(
+                    [
+                        _escape_tsv(stop_id),
+                        _escape_tsv(bucket_str),
+                        _escape_tsv(60),
+                        _escape_tsv(1),
+                        _escape_tsv(stats["trip_count"]),
+                        _escape_tsv(stats["total_delay_seconds"]),
+                        _escape_tsv(stats["delayed"]),
+                        _escape_tsv(stats["on_time"]),
+                        _escape_tsv(stats["cancelled"]),
+                        _escape_tsv(route_type),
+                    ]
+                )
+                lines.append(line)
+
+            tsv_data = "\n".join(lines)
+
+            asyncpg_conn = await self._get_asyncpg_conn(session)
+            await asyncpg_conn.copy_to_table(
+                "temp_rt_stats",
+                source=io.BytesIO(tsv_data.encode("utf-8")),
+                columns=[
+                    "stop_id",
+                    "bucket_start",
+                    "bucket_width_minutes",
+                    "observation_count",
+                    "trip_count",
+                    "total_delay_seconds",
+                    "delayed_count",
+                    "on_time_count",
+                    "cancelled_count",
+                    "route_type",
+                ],
+                format="text",
+            )
+
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO realtime_station_stats (
+                        stop_id, bucket_start, bucket_width_minutes,
+                        observation_count, trip_count, total_delay_seconds,
+                        delayed_count, on_time_count, cancelled_count, route_type
+                    )
+                    SELECT
+                        stop_id, bucket_start, bucket_width_minutes,
+                        observation_count, trip_count, total_delay_seconds,
+                        delayed_count, on_time_count, cancelled_count, route_type
+                    FROM temp_rt_stats
+                    ON CONFLICT ON CONSTRAINT uq_realtime_stats_unique
+                    DO UPDATE SET
+                        observation_count = realtime_station_stats.observation_count + 1,
+                        trip_count = realtime_station_stats.trip_count + EXCLUDED.trip_count,
+                        total_delay_seconds = realtime_station_stats.total_delay_seconds + EXCLUDED.total_delay_seconds,
+                        delayed_count = realtime_station_stats.delayed_count + EXCLUDED.delayed_count,
+                        on_time_count = realtime_station_stats.on_time_count + EXCLUDED.on_time_count,
+                        cancelled_count = realtime_station_stats.cancelled_count + EXCLUDED.cancelled_count,
+                        last_updated_at = NOW()
+                    """
+                )
+            )
+
+            logger.debug("Upserted %d station stats via COPY", len(stop_stats))
+
+        await _with_deadlock_retry(_do_upsert)
 
     async def cleanup_old_stats(
         self,

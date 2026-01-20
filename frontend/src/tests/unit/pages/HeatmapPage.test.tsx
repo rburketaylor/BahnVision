@@ -1,15 +1,21 @@
+/// <reference types="@testing-library/jest-dom/vitest" />
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { ThemeProvider } from '../../../contexts/ThemeContext'
 import HeatmapPage from '../../../pages/HeatmapPage'
-import { useHeatmap } from '../../../hooks/useHeatmap'
-import { ApiError } from '../../../services/api'
+import { useHeatmapOverview } from '../../../hooks/useHeatmapOverview'
+import { useStationStats } from '../../../hooks/useStationStats'
 
-vi.mock('../../../hooks/useHeatmap', () => ({
-  useHeatmap: vi.fn(),
+vi.mock('../../../hooks/useHeatmapOverview', () => ({
+  useHeatmapOverview: vi.fn(),
+}))
+
+vi.mock('../../../hooks/useStationStats', () => ({
+  useStationStats: vi.fn(),
 }))
 
 vi.mock('../../../components/heatmap/MapLibreHeatmap', () => ({
@@ -25,18 +31,27 @@ vi.mock('../../../components/heatmap', async () => {
   return {
     ...actual,
     HeatmapSearchOverlay: () => <div data-testid="heatmap-search" />,
+    HeatmapControls: () => <div data-testid="heatmap-controls" />,
+    HeatmapLegend: () => <div data-testid="heatmap-legend" />,
+    HeatmapStats: () => <div data-testid="heatmap-stats" />,
   }
 })
 
-const mockUseHeatmap = vi.mocked(useHeatmap)
+const mockUseHeatmapOverview = vi.mocked(useHeatmapOverview)
+const mockUseStationStats = vi.mocked(useStationStats)
 
 function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
-    <ThemeProvider>
-      <MemoryRouter>
-        <HeatmapPage />
-      </MemoryRouter>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <MemoryRouter>
+          <HeatmapPage />
+        </MemoryRouter>
+      </ThemeProvider>
+    </QueryClientProvider>
   )
 }
 
@@ -56,16 +71,31 @@ describe('HeatmapPage', () => {
     }))
 
     localStorage.clear()
-    mockUseHeatmap.mockReturnValue({
+    mockUseHeatmapOverview.mockReturnValue({
       data: {
         time_range: { from: '2025-01-01T00:00:00Z', to: '2025-01-02T00:00:00Z' },
-        data_points: [],
-        summary: null,
+        points: [],
+        summary: {
+          total_stations: 0,
+          total_departures: 0,
+          total_cancellations: 0,
+          overall_cancellation_rate: 0,
+          most_affected_station: null,
+          most_affected_line: null,
+        },
+        total_impacted_stations: 0,
+        last_updated_at: '2025-01-01T00:00:00Z',
       },
       isLoading: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof useHeatmap>)
+    } as unknown as ReturnType<typeof useHeatmapOverview>)
+
+    mockUseStationStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useStationStats>)
   })
 
   afterAll(() => {
@@ -88,7 +118,7 @@ describe('HeatmapPage', () => {
     renderPage()
     await screen.findByTestId('mock-heatmap')
 
-    const params = mockUseHeatmap.mock.calls[0]?.[0]
+    const params = mockUseHeatmapOverview.mock.calls[0]?.[0]
     expect(params?.time_range).toBe('live')
   })
 
@@ -116,16 +146,25 @@ describe('HeatmapPage', () => {
 
   it('shows error state and allows refresh', async () => {
     const refetch = vi.fn()
-    mockUseHeatmap.mockReturnValue({
+    mockUseHeatmapOverview.mockReturnValue({
       data: {
         time_range: { from: '2025-01-01T00:00:00Z', to: '2025-01-02T00:00:00Z' },
-        data_points: [],
-        summary: null,
+        points: [],
+        summary: {
+          total_stations: 0,
+          total_departures: 0,
+          total_cancellations: 0,
+          overall_cancellation_rate: 0,
+          most_affected_station: null,
+          most_affected_line: null,
+        },
+        total_impacted_stations: 0,
+        last_updated_at: '2025-01-01T00:00:00Z',
       },
       isLoading: false,
       error: new Error('Boom'),
       refetch,
-    } as ReturnType<typeof useHeatmap>)
+    } as unknown as ReturnType<typeof useHeatmapOverview>)
 
     renderPage()
     await screen.findByTestId('mock-heatmap')
@@ -138,21 +177,30 @@ describe('HeatmapPage', () => {
     expect(refetch).toHaveBeenCalled()
   })
 
-  it('shows live unavailable message for 503 responses', async () => {
-    mockUseHeatmap.mockReturnValue({
+  it('shows no data message when points are empty', async () => {
+    mockUseHeatmapOverview.mockReturnValue({
       data: {
         time_range: { from: '2025-01-01T00:00:00Z', to: '2025-01-02T00:00:00Z' },
-        data_points: [],
-        summary: null,
+        points: [],
+        summary: {
+          total_stations: 0,
+          total_departures: 0,
+          total_cancellations: 0,
+          overall_cancellation_rate: 0,
+          most_affected_station: null,
+          most_affected_line: null,
+        },
+        total_impacted_stations: 0,
+        last_updated_at: '2025-01-01T00:00:00Z',
       },
       isLoading: false,
-      error: new ApiError('Service unavailable', 503, 'Live data not ready'),
+      error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof useHeatmap>)
+    } as unknown as ReturnType<typeof useHeatmapOverview>)
 
     renderPage()
     await screen.findByTestId('mock-heatmap')
 
-    expect(screen.getByText('Live data not ready')).toBeInTheDocument()
+    expect(screen.getByText('No data available yet')).toBeInTheDocument()
   })
 })

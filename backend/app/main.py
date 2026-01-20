@@ -22,6 +22,7 @@ from app.core.telemetry import (
 from app.jobs.rt_processor import gtfs_rt_lifespan_manager
 from app.jobs.gtfs_scheduler import GTFSFeedScheduler
 from app.services.cache import get_cache_service
+from app.services.gtfs_import_lock import init_import_lock
 from app.services.gtfs_realtime_harvester import GTFSRTDataHarvester
 
 # Configure logging for the application (after imports per PEP 8)
@@ -88,6 +89,10 @@ async def lifespan(app: FastAPI):
 
     # Instrument httpx for outbound request tracing
     instrument_httpx(enabled=settings.otel_enabled)
+
+    # Initialize the GTFS import lock for coordination between
+    # the GTFS feed importer and the realtime harvester
+    init_import_lock(cache_service=cache_service)
 
     # Start GTFS static feed scheduler (handles initial import if DB empty)
     gtfs_scheduler = GTFSFeedScheduler(settings)

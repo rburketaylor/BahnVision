@@ -3,9 +3,9 @@
  * Interactive map visualization of cancellation data across Germany
  */
 
-import { useEffect, useState, lazy, Suspense } from 'react'
-import { useHeatmap } from '../hooks/useHeatmap'
-import { ApiError } from '../services/api'
+import { useEffect, useState, lazy, Suspense, useCallback } from 'react'
+import { useHeatmapOverview } from '../hooks/useHeatmapOverview'
+import { useStationStats } from '../hooks/useStationStats'
 import {
   HeatmapControls,
   HeatmapLegend,
@@ -15,7 +15,7 @@ import {
 } from '../components/heatmap'
 import type { TransportType } from '../types/api'
 import type { TimeRangePreset, HeatmapEnabledMetrics } from '../types/heatmap'
-import { DEFAULT_ZOOM, HEATMAP_METRIC_LABELS, DEFAULT_ENABLED_METRICS } from '../types/heatmap'
+import { HEATMAP_METRIC_LABELS, DEFAULT_ENABLED_METRICS } from '../types/heatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
 const CancellationHeatmap = lazy(() =>
@@ -23,34 +23,6 @@ const CancellationHeatmap = lazy(() =>
 )
 
 const CONTROLS_OPEN_STORAGE_KEY = 'bahnvision-heatmap-controls-open-v1'
-const MAP_VIEW_STORAGE_KEY = 'bahnvision-heatmap-view-v1'
-
-function loadInitialZoom(): number {
-  if (typeof window === 'undefined') return DEFAULT_ZOOM
-  try {
-    const raw = window.localStorage.getItem(MAP_VIEW_STORAGE_KEY)
-    if (!raw) return DEFAULT_ZOOM
-    const parsed = JSON.parse(raw) as unknown
-    const zoomValue = (parsed as { zoom?: unknown } | null)?.zoom
-    if (typeof zoomValue !== 'number' || Number.isNaN(zoomValue)) return DEFAULT_ZOOM
-    if (zoomValue < 0 || zoomValue > 22) return DEFAULT_ZOOM
-    return zoomValue
-  } catch {
-    return DEFAULT_ZOOM
-  }
-}
-
-// Loading skeleton for the map
-function MapLoadingSkeleton() {
-  return (
-    <div className="w-full h-full flex items-center justify-center bg-muted/30 rounded-lg">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-3" />
-        <p className="text-sm text-muted-foreground">Loading map...</p>
-      </div>
-    </div>
-  )
-}
 
 function isTypingTarget(target: EventTarget | null) {
   if (!target) return false
@@ -86,33 +58,62 @@ function getHeatmapDescription(enabledMetrics: HeatmapEnabledMetrics): string {
   if (enabledMetrics.delays) {
     return 'Visualize transit delay patterns across Germany'
   }
-  return 'Enable at least one metric to view the heatmap'
+  return 'Enable at least one metric to view heatmap'
+}
+
+// Loading skeleton for the map
+function MapLoadingSkeleton() {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-muted/30 rounded-lg">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-3" />
+        <p className="text-sm text-muted-foreground">Loading map...</p>
+      </div>
+    </div>
+  )
 }
 
 export default function HeatmapPage() {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('live')
   const [transportModes, setTransportModes] = useState<TransportType[]>([])
-  const [zoom, setZoom] = useState<number>(() => loadInitialZoom())
   const [enabledMetrics, setEnabledMetrics] = useState<HeatmapEnabledMetrics>(() => ({
     ...DEFAULT_ENABLED_METRICS,
   }))
   const [controlsOpen, setControlsOpen] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [selectedStationId, setSelectedStationId] = useState<string | null>(null)
 
-  const { data, isLoading, error, refetch } = useHeatmap(
+  // Fetch lightweight overview (all stations)
+  const {
+    data: overviewData,
+    isLoading: isOverviewLoading,
+    error,
+    refetch,
+  } = useHeatmapOverview(
     {
       time_range: timeRange,
       transport_modes: transportModes.length > 0 ? transportModes : undefined,
-      zoom: Math.round(zoom), // API requires integer zoom
     },
     { autoRefresh }
   )
 
-  const dataPoints = data?.data_points ?? []
-  const summary = data?.summary ?? null
-  const snapshotUpdatedAt = data?.last_updated_at
-  const liveUnavailable =
-    timeRange === 'live' && error instanceof ApiError && error.statusCode === 503
+  // Map TimeRangePreset to StationStatsTimeRange (live -> 24h since station stats doesn't support live)
+  const stationStatsTimeRange = timeRange === 'live' ? '24h' : timeRange
+
+  // Fetch details on-demand when station is selected
+  const { data: stationStats, isLoading: isStationStatsLoading } = useStationStats(
+    selectedStationId ?? undefined,
+    stationStatsTimeRange,
+    { enabled: !!selectedStationId }
+  )
+
+  const handleStationDetailRequested = useCallback((stationId: string) => {
+    setSelectedStationId(stationId)
+  }, [])
+
+  const dataPoints = overviewData?.points ?? []
+  const heatmapSummary = overviewData?.summary ?? null
+  const snapshotUpdatedAt = overviewData?.last_updated_at
 
   useEffect(() => {
     try {
@@ -159,10 +160,13 @@ export default function HeatmapPage() {
       <div className="relative w-full h-full overflow-hidden p-2 sm:p-3">
         <Suspense fallback={<MapLoadingSkeleton />}>
           <CancellationHeatmap
-            dataPoints={dataPoints}
-            isLoading={isLoading}
-            onZoomChange={setZoom}
+            overviewPoints={dataPoints}
+            isLoading={isOverviewLoading}
             enabledMetrics={enabledMetrics}
+            onStationDetailRequested={handleStationDetailRequested}
+            selectedStationId={selectedStationId}
+            stationStats={stationStats ?? null}
+            isStationStatsLoading={isStationStatsLoading}
             overlay={
               <HeatmapOverlayPanel
                 open={controlsOpen}
@@ -170,8 +174,8 @@ export default function HeatmapPage() {
                 title={getHeatmapTitle(enabledMetrics)}
                 description={getHeatmapDescription(enabledMetrics)}
                 hasError={Boolean(error)}
-                isLoading={isLoading}
-                onRefresh={refetch}
+                isLoading={isOverviewLoading}
+                onRefresh={() => refetch()}
               >
                 {error && (
                   <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
@@ -192,17 +196,12 @@ export default function HeatmapPage() {
                       <span className="text-sm font-medium">Failed to load heatmap data</span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {liveUnavailable
-                        ? (error.detail ??
-                          'Live data not available yet — the harvester may not have run.')
-                        : error instanceof Error
-                          ? error.message
-                          : 'An unexpected error occurred'}
+                      {error instanceof Error ? error.message : 'An unexpected error occurred'}
                     </p>
                   </div>
                 )}
 
-                {!error && !isLoading && dataPoints.length === 0 && (
+                {!error && !isOverviewLoading && dataPoints.length === 0 && (
                   <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
                     <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                       <svg
@@ -232,7 +231,7 @@ export default function HeatmapPage() {
                   <ul className="mt-2 text-xs text-muted-foreground space-y-1">
                     <li>Click a station dot to see details.</li>
                     <li>Click a cluster to zoom in.</li>
-                    <li>Use “Reset view” to return to Germany.</li>
+                    <li>Use "Reset view" to return to Germany.</li>
                   </ul>
                 </div>
 
@@ -246,14 +245,14 @@ export default function HeatmapPage() {
                   autoRefresh={autoRefresh}
                   onAutoRefreshChange={setAutoRefresh}
                   snapshotUpdatedAt={snapshotUpdatedAt}
-                  isLoading={isLoading}
+                  isLoading={isOverviewLoading}
                 />
 
                 <HeatmapLegend enabledMetrics={enabledMetrics} />
 
                 <HeatmapStats
-                  summary={summary}
-                  isLoading={isLoading}
+                  summary={heatmapSummary}
+                  isLoading={isOverviewLoading}
                   enabledMetrics={enabledMetrics}
                 />
 
