@@ -252,6 +252,22 @@ class TestGTFSScheduleService:
             )
 
     @pytest.mark.asyncio
+    async def test_get_stop_departures_skips_validation(self, service, mock_session):
+        """Test that validation is skipped when validate_existence=False."""
+        # Setup mock to return empty list for departures
+        mock_departure_result = MagicMock()
+        mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
+        mock_session.execute = AsyncMock(return_value=mock_departure_result)
+
+        # Call with validate_existence=False
+        await service.get_stop_departures(
+            "unknown_stop", datetime.now(timezone.utc), validate_existence=False
+        )
+
+        # Verify only one query was executed (the departures query), skipping the stop check
+        assert mock_session.execute.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_get_departures_for_stop_alias(self, service):
         """Test that get_departures_for_stop is an alias for get_stop_departures."""
         with patch.object(
