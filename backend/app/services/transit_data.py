@@ -91,50 +91,76 @@ class DepartureInfo:
             self.alerts = []
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary with JSON-serializable values"""
-        data = asdict(self)
+        """Convert to dictionary with JSON-serializable values.
 
-        # Convert enums to string
-        if isinstance(self.schedule_relationship, ScheduleRelationship):
-            data["schedule_relationship"] = self.schedule_relationship.value
-
-        # Convert datetimes to ISO format strings
-        for field in [
-            "scheduled_departure",
-            "scheduled_arrival",
-            "real_time_departure",
-            "real_time_arrival",
-        ]:
-            if data.get(field):
-                data[field] = data[field].isoformat()
-
-        # Handle alerts list - serialize ServiceAlert objects
+        Optimized to avoid asdict() overhead for better performance.
+        """
+        # Serialize alerts if present
+        alerts_data = []
         if self.alerts:
-            serialized_alerts = []
             for alert in self.alerts:
-                # If alert is a dataclass (ServiceAlert), use asdict
-                # We need to handle set types in ServiceAlert manually
-                alert_dict = asdict(alert)
+                # Handle both dict (from legacy) and ServiceAlert objects
+                if isinstance(alert, dict):
+                    # Already a dict, use as is but ensure serializable
+                    alerts_data.append(alert)
+                    continue
 
-                # Convert sets to lists for JSON serialization
-                if "affected_routes" in alert_dict and isinstance(
-                    alert_dict["affected_routes"], set
-                ):
-                    alert_dict["affected_routes"] = list(alert_dict["affected_routes"])
-                if "affected_stops" in alert_dict and isinstance(
-                    alert_dict["affected_stops"], set
-                ):
-                    alert_dict["affected_stops"] = list(alert_dict["affected_stops"])
+                # Manual serialization of ServiceAlert for performance
+                alerts_data.append(
+                    {
+                        "alert_id": alert.alert_id,
+                        "cause": alert.cause,
+                        "effect": alert.effect,
+                        "header_text": alert.header_text,
+                        "description_text": alert.description_text,
+                        "affected_routes": list(alert.affected_routes)
+                        if isinstance(alert.affected_routes, set)
+                        else alert.affected_routes,
+                        "affected_stops": list(alert.affected_stops)
+                        if isinstance(alert.affected_stops, set)
+                        else alert.affected_stops,
+                        "start_time": alert.start_time.isoformat()
+                        if alert.start_time
+                        else None,
+                        "end_time": alert.end_time.isoformat()
+                        if alert.end_time
+                        else None,
+                        "timestamp": alert.timestamp.isoformat()
+                        if alert.timestamp
+                        else None,
+                    }
+                )
 
-                # Convert datetimes in alerts
-                for alert_field in ["start_time", "end_time", "timestamp"]:
-                    if alert_dict.get(alert_field):
-                        alert_dict[alert_field] = alert_dict[alert_field].isoformat()
-
-                serialized_alerts.append(alert_dict)
-            data["alerts"] = serialized_alerts
-
-        return data
+        # Manually construct dictionary to avoid asdict() overhead
+        return {
+            "trip_id": self.trip_id,
+            "route_id": self.route_id,
+            "route_short_name": self.route_short_name,
+            "route_long_name": self.route_long_name,
+            "trip_headsign": self.trip_headsign,
+            "stop_id": self.stop_id,
+            "stop_name": self.stop_name,
+            "scheduled_departure": self.scheduled_departure.isoformat()
+            if self.scheduled_departure
+            else None,
+            "scheduled_arrival": self.scheduled_arrival.isoformat()
+            if self.scheduled_arrival
+            else None,
+            "real_time_departure": self.real_time_departure.isoformat()
+            if self.real_time_departure
+            else None,
+            "real_time_arrival": self.real_time_arrival.isoformat()
+            if self.real_time_arrival
+            else None,
+            "departure_delay_seconds": self.departure_delay_seconds,
+            "arrival_delay_seconds": self.arrival_delay_seconds,
+            "schedule_relationship": self.schedule_relationship.value
+            if isinstance(self.schedule_relationship, ScheduleRelationship)
+            else self.schedule_relationship,
+            "vehicle_id": self.vehicle_id,
+            "vehicle_position": self.vehicle_position,
+            "alerts": alerts_data,
+        }
 
     @staticmethod
     def from_dict(data: Dict) -> "DepartureInfo":
@@ -286,16 +312,10 @@ class TransitDataService:
                 minutes=offset_minutes
             )
             scheduled_departures = await self.gtfs_schedule.get_departures_for_stop(
-                stop_id, scheduled_time, limit
+                stop_id, scheduled_time, limit, validate_existence=False
             )
 
             if not scheduled_departures:
-                return []
-
-            # Get stop information (uses cached get_stop_info)
-            stop_info_obj = await self.get_stop_info(stop_id, include_departures=False)
-            if not stop_info_obj:
-                logger.warning(f"Stop {stop_id} not found")
                 return []
 
             # Convert to departure info
@@ -304,6 +324,8 @@ class TransitDataService:
                 # We use route info directly from the scheduled departure which
                 # already joins with the route table. This avoids a redundant
                 # cache/DB lookup.
+                # Optimization: We use stop_name directly from the joined departure query
+                # instead of fetching stop info separately. This saves a cache/DB lookup.
                 departure_info = DepartureInfo(
                     trip_id=str(dep.trip_id),
                     route_id=str(dep.route_id),
@@ -311,7 +333,7 @@ class TransitDataService:
                     route_long_name=str(dep.route_long_name or ""),
                     trip_headsign=str(dep.trip_headsign or ""),
                     stop_id=str(stop_id),
-                    stop_name=str(stop_info_obj.stop_name),
+                    stop_name=str(dep.stop_name),
                     scheduled_departure=dep.departure_time,
                     scheduled_arrival=dep.arrival_time,
                     schedule_relationship=ScheduleRelationship.SCHEDULED,
@@ -496,58 +518,23 @@ class TransitDataService:
     async def refresh_real_time_data(self) -> Dict[str, int]:
         """Refresh all real-time data and return counts"""
         try:
-            # Fetch all real-time data types
-            trip_updates_task = self.gtfs_realtime.fetch_trip_updates()
-            vehicle_positions_task = self.gtfs_realtime.fetch_vehicle_positions()
-            alerts_task = self.gtfs_realtime.fetch_alerts()
+            if not self.gtfs_realtime:
+                logger.warning("GTFS-RT service not available")
+                return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
 
-            results = await asyncio.gather(
-                trip_updates_task,
-                vehicle_positions_task,
-                alerts_task,
-                return_exceptions=True,
-            )
-            trip_updates_result = results[0]
-            vehicle_positions_result = results[1]
-            alerts_result = results[2]
+            # Fetch all real-time data types in a single request
+            result = await self.gtfs_realtime.fetch_and_process_feed()
 
-            # Handle exceptions
-            trip_updates_count = (
-                len(trip_updates_result)
-                if not isinstance(trip_updates_result, BaseException)
-                else 0
-            )
-            vehicle_positions_count = (
-                len(vehicle_positions_result)
-                if not isinstance(vehicle_positions_result, BaseException)
-                else 0
-            )
-            alerts_count = (
-                len(alerts_result)
-                if not isinstance(alerts_result, BaseException)
-                else 0
-            )
-
-            # Log any errors
-            if isinstance(trip_updates_result, BaseException):
-                logger.error(f"Failed to fetch trip updates: {trip_updates_result}")
-            if isinstance(vehicle_positions_result, BaseException):
-                logger.error(
-                    f"Failed to fetch vehicle positions: {vehicle_positions_result}"
-                )
-            if isinstance(alerts_result, BaseException):
-                logger.error(f"Failed to fetch alerts: {alerts_result}")
+            trip_updates_count = result.get("trip_updates", 0)
+            vehicle_positions_count = result.get("vehicle_positions", 0)
+            alerts_count = result.get("alerts", 0)
 
             logger.info(
                 f"Real-time data refresh: {trip_updates_count} trip updates, "
                 f"{vehicle_positions_count} vehicle positions, {alerts_count} alerts"
             )
 
-            return {
-                "trip_updates": trip_updates_count,
-                "vehicle_positions": vehicle_positions_count,
-                "alerts": alerts_count,
-            }
+            return result
 
         except Exception as e:
             logger.error(f"Failed to refresh real-time data: {e}")
@@ -634,8 +621,20 @@ class TransitDataService:
     ):
         """Apply real-time updates to scheduled departures"""
         try:
-            # Get trip updates for this stop
-            trip_updates = await self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
+            # Prepare tasks for concurrent execution
+            # 1. Get trip updates for this stop
+            trip_updates_task = self.gtfs_realtime.get_trip_updates_for_stop(stop_id)
+
+            # 2. Get vehicle positions for active trips (batch fetch)
+            trip_ids = list({dep.trip_id for dep in departures})
+            vehicle_positions_task = self.gtfs_realtime.get_vehicle_positions_by_trips(
+                trip_ids
+            )
+
+            # Execute both requests in parallel to reduce latency
+            trip_updates, vehicle_positions = await asyncio.gather(
+                trip_updates_task, vehicle_positions_task
+            )
 
             # Create lookup map
             update_map = {}
@@ -645,6 +644,7 @@ class TransitDataService:
 
             # Apply updates to departures
             for departure in departures:
+                # Apply trip updates
                 key = (departure.trip_id, departure.stop_id)
                 if key in update_map:
                     tu = update_map[key]
@@ -669,16 +669,7 @@ class TransitDataService:
                         tu.schedule_relationship
                     )
 
-            # Get vehicle positions for active trips (batch fetch)
-            trip_ids = list({dep.trip_id for dep in departures})
-
-            # Batch fetch vehicle positions for all trips
-            vehicle_positions = await self.gtfs_realtime.get_vehicle_positions_by_trips(
-                trip_ids
-            )
-
-            # Update departures with vehicle info
-            for departure in departures:
+                # Apply vehicle positions
                 vehicle_pos = vehicle_positions.get(departure.trip_id)
                 if vehicle_pos:
                     departure.vehicle_id = vehicle_pos.vehicle_id

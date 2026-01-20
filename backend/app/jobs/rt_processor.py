@@ -59,51 +59,16 @@ class GtfsRealtimeProcessor:
                     logger.warning("GTFS-RT service not initialized")
                     break
 
-                # Fetch all types of RT data
-                trip_updates_task = self.gtfs_service.fetch_trip_updates()
-                vehicle_positions_task = self.gtfs_service.fetch_vehicle_positions()
-                alerts_task = self.gtfs_service.fetch_alerts()
-
-                # Run all fetches concurrently
-                results = await asyncio.gather(
-                    trip_updates_task,
-                    vehicle_positions_task,
-                    alerts_task,
-                    return_exceptions=True,
-                )
-
-                # Log results and handle exceptions
-                trip_updates_count = 0
-                vehicle_positions_count = 0
-                alerts_count = 0
-
-                # Log individual failures and count successes
-                trip_updates_result = results[0]
-                vehicle_positions_result = results[1]
-                alerts_result = results[2]
-
-                if isinstance(trip_updates_result, Exception):
-                    logger.error(f"Trip updates fetch failed: {trip_updates_result}")
-                else:
-                    trip_updates_count = len(trip_updates_result)  # type: ignore
-
-                if isinstance(vehicle_positions_result, Exception):
-                    logger.error(
-                        f"Vehicle positions fetch failed: {vehicle_positions_result}"
-                    )
-                else:
-                    vehicle_positions_count = len(vehicle_positions_result)  # type: ignore
-
-                if isinstance(alerts_result, Exception):
-                    logger.error(f"Alerts fetch failed: {alerts_result}")
-                else:
-                    alerts_count = len(alerts_result)  # type: ignore
+                # Fetch and process all RT data in a single request
+                # This is more efficient than fetching each type separately
+                # as most GTFS-RT feeds combine all entities in one file
+                result = await self.gtfs_service.fetch_and_process_feed()
 
                 logger.debug(
                     f"GTFS-RT cycle completed: "
-                    f"{trip_updates_count} trip updates, "
-                    f"{vehicle_positions_count} vehicle positions, "
-                    f"{alerts_count} alerts"
+                    f"{result.get('trip_updates', 0)} trip updates, "
+                    f"{result.get('vehicle_positions', 0)} vehicle positions, "
+                    f"{result.get('alerts', 0)} alerts"
                 )
 
             except asyncio.CancelledError:

@@ -67,9 +67,11 @@ class TestGtfsRealtimeProcessor:
         """Test successful processing loop iteration."""
         # Mock GTFS service
         mock_gtfs_service = AsyncMock()
-        mock_gtfs_service.fetch_trip_updates.return_value = [{"id": "tu1"}]
-        mock_gtfs_service.fetch_vehicle_positions.return_value = [{"id": "vp1"}]
-        mock_gtfs_service.fetch_alerts.return_value = [{"id": "alert1"}]
+        mock_gtfs_service.fetch_and_process_feed.return_value = {
+            "trip_updates": 1,
+            "vehicle_positions": 1,
+            "alerts": 1,
+        }
 
         rt_processor.gtfs_service = mock_gtfs_service
 
@@ -83,19 +85,17 @@ class TestGtfsRealtimeProcessor:
         # Wait for loop to finish
         await asyncio.wait_for(loop_task, timeout=0.1)
 
-        # Verify all fetch methods were called at least once
-        mock_gtfs_service.fetch_trip_updates.assert_called()
-        mock_gtfs_service.fetch_vehicle_positions.assert_called()
-        mock_gtfs_service.fetch_alerts.assert_called()
+        # Verify fetch method was called
+        mock_gtfs_service.fetch_and_process_feed.assert_called()
 
     @pytest.mark.asyncio
     async def test_processing_loop_handles_exceptions(self, rt_processor):
         """Test that processing loop handles exceptions gracefully."""
-        # Mock GTFS service with one failing method
+        # Mock GTFS service with failing method
         mock_gtfs_service = AsyncMock()
-        mock_gtfs_service.fetch_trip_updates.side_effect = Exception("Network error")
-        mock_gtfs_service.fetch_vehicle_positions.return_value = [{"id": "vp1"}]
-        mock_gtfs_service.fetch_alerts.return_value = [{"id": "alert1"}]
+        mock_gtfs_service.fetch_and_process_feed.side_effect = Exception(
+            "Network error"
+        )
 
         rt_processor.gtfs_service = mock_gtfs_service
 
@@ -109,19 +109,19 @@ class TestGtfsRealtimeProcessor:
         # Wait for loop to finish
         await asyncio.wait_for(loop_task, timeout=0.1)
 
-        # Verify all fetch methods were still called despite exception
-        mock_gtfs_service.fetch_trip_updates.assert_called()
-        mock_gtfs_service.fetch_vehicle_positions.assert_called()
-        mock_gtfs_service.fetch_alerts.assert_called()
+        # Verify fetch method was still called despite exception
+        mock_gtfs_service.fetch_and_process_feed.assert_called()
 
     @pytest.mark.asyncio
     async def test_processing_loop_handles_cancelled_error(self, rt_processor):
         """Test that processing loop handles CancelledError gracefully."""
         # Mock GTFS service
         mock_gtfs_service = AsyncMock()
-        mock_gtfs_service.fetch_trip_updates.return_value = []
-        mock_gtfs_service.fetch_vehicle_positions.return_value = []
-        mock_gtfs_service.fetch_alerts.return_value = []
+        mock_gtfs_service.fetch_and_process_feed.return_value = {
+            "trip_updates": 0,
+            "vehicle_positions": 0,
+            "alerts": 0,
+        }
 
         rt_processor.gtfs_service = mock_gtfs_service
 

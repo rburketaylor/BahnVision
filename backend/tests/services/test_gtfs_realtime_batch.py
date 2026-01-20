@@ -26,12 +26,12 @@ async def test_store_trip_updates_uses_batch(gtfs_realtime_service, mock_cache):
 
     await gtfs_realtime_service._store_trip_updates(updates)
 
-    # Should call mset_json (once for updates, once for indexes)
-    assert mock_cache.mset_json.call_count == 2
+    # Should call mset_json (once for updates grouped by stop)
+    assert mock_cache.mset_json.call_count == 1
     # Individual set_json should NOT be called
     assert mock_cache.set_json.call_count == 0
 
     # Verify the batch content
-    first_call_args = mock_cache.mset_json.call_args_list[0][0][0]
-    assert "trip_update:T1:S1" in first_call_args
-    assert "trip_update:T2:S2" in first_call_args
+    call_args = mock_cache.mset_json.call_args[0][0]
+    assert "trip_updates:stop:S1" in call_args
+    assert "trip_updates:stop:S2" in call_args

@@ -291,3 +291,30 @@ def test_heatmap_cancellations_stop_list_failure(
     validated = HeatmapResponse.model_validate(data)
     assert validated.summary.total_stations == 0
     assert len(validated.data_points) == 0
+
+
+class TestDailyAggregationEndpoint:
+    """Tests for the daily aggregation endpoint."""
+
+    def test_trigger_daily_aggregation_queues_background_task(self, api_client):
+        """Test that the aggregation endpoint queues a background task."""
+        response = api_client.post("/api/v1/heatmap/aggregate-daily")
+
+        assert response.status_code == 200
+        assert response.headers.get("X-Background-Task") == "queued"
+
+        data = response.json()
+        assert data["status"] == "queued"
+        assert "message" in data
+
+    def test_trigger_daily_aggregation_response_structure(self, api_client):
+        """Test that the aggregation endpoint returns expected structure."""
+        response = api_client.post("/api/v1/heatmap/aggregate-daily")
+
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "status" in data
+        assert "message" in data
+        assert isinstance(data["status"], str)
+        assert isinstance(data["message"], str)

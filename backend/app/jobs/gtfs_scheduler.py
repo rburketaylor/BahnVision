@@ -8,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.core.config import Settings
 from app.core.database import get_session
 from app.services.gtfs_feed import GTFSFeedImporter
+from app.services.gtfs_import_lock import get_import_lock
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +51,23 @@ class GTFSFeedScheduler:
         """Update GTFS feed."""
         logger.info("Starting scheduled GTFS feed update")
 
+        import_lock = get_import_lock()
+
         try:
-            async for session in get_session():
-                importer = GTFSFeedImporter(session, self.settings)
-                feed_id = await importer.import_feed()
-                logger.info(f"Successfully updated GTFS feed: {feed_id}")
-                break
+            async with import_lock.import_session():
+                async for session in get_session():
+                    importer = GTFSFeedImporter(session, self.settings)
+                    feed_id = await importer.import_feed()
+                    logger.info(f"Successfully updated GTFS feed: {feed_id}")
+                    break
 
         except Exception as e:
             logger.error(f"Failed to update GTFS feed: {e}")
 
     async def _check_and_update_feed(self):
         """Check if feed needs updating and update if necessary."""
+        import_lock = get_import_lock()
+
         try:
             async for session in get_session():
                 # Check latest feed info
@@ -90,8 +96,13 @@ class GTFSFeedScheduler:
                     )
 
                     # Check if feed download is too old
+                    # Ensure downloaded_at is timezone-aware for comparison
+                    downloaded_at = latest_feed.downloaded_at
+                    if downloaded_at.tzinfo is None:
+                        downloaded_at = downloaded_at.replace(tzinfo=timezone.utc)
+
                     age_hours = (
-                        datetime.now(timezone.utc) - latest_feed.downloaded_at
+                        datetime.now(timezone.utc) - downloaded_at
                     ).total_seconds() / 3600
 
                     if feed_expired:
@@ -109,9 +120,11 @@ class GTFSFeedScheduler:
                         )
 
                 if should_update:
-                    importer = GTFSFeedImporter(session, self.settings)
-                    feed_id = await importer.import_feed()
-                    logger.info(f"Successfully imported GTFS feed: {feed_id}")
+                    # Use the import lock to prevent harvester from running during import
+                    async with import_lock.import_session():
+                        importer = GTFSFeedImporter(session, self.settings)
+                        feed_id = await importer.import_feed()
+                        logger.info(f"Successfully imported GTFS feed: {feed_id}")
 
                 break
 

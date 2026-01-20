@@ -103,15 +103,17 @@ class TestHeatmapCacheWarmer:
             warmer = HeatmapCacheWarmer(mock_cache)
             targets = warmer._build_targets()
 
-        # 2 time ranges * 2 max_points densities = 4 targets
-        assert len(targets) == 4
+        # 2 time ranges * 2 max_points densities = 4 targets + 3 overview = 6 targets
+        assert len(targets) == 6
 
         # Verify all combinations exist
         time_ranges = {t.time_range for t in targets}
         max_points = {t.max_points for t in targets}
+        is_overview = {t.is_overview for t in targets}
 
         assert time_ranges == {"1h", "24h"}
-        assert max_points == {500, 1000}
+        assert max_points == {500, 1000, 0}
+        assert is_overview == {False, True}
 
     def test_build_targets_uses_settings_bucket_width(
         self, mock_cache, mock_settings_enabled

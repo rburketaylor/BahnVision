@@ -74,6 +74,36 @@ export interface HeatmapResponse {
 /** Time range preset options */
 export type TimeRangePreset = 'live' | '1h' | '6h' | '24h' | '7d' | '30d'
 
+/** Lightweight heatmap point for overview display */
+export interface HeatmapPointLight {
+  /** GTFS stop_id identifier */
+  id: string
+  /** Station latitude (4 decimal precision) */
+  lat: number
+  /** Station longitude (4 decimal precision) */
+  lon: number
+  /** Intensity score 0-1 (normalized impact for heatmap weight) */
+  i: number
+  /** Station name (for hover tooltip) */
+  n: string
+}
+
+/** Lightweight heatmap overview response */
+export interface HeatmapOverviewResponse {
+  time_range: HeatmapTimeRange
+  points: HeatmapPointLight[]
+  summary: HeatmapSummary
+  last_updated_at?: string
+  total_impacted_stations: number
+}
+
+/** Parameters for heatmap overview API requests */
+export interface HeatmapOverviewParams {
+  time_range?: TimeRangePreset
+  transport_modes?: TransportType[]
+  bucket_width?: number
+}
+
 /** Parameters for heatmap API requests */
 export interface HeatmapParams {
   time_range?: TimeRangePreset

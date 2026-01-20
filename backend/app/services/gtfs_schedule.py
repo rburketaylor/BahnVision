@@ -100,12 +100,23 @@ class GTFSScheduleService:
         stop_id: str,
         from_time: datetime,
         limit: int = 20,
+        validate_existence: bool = True,
     ) -> List[ScheduledDeparture]:
-        """Get scheduled departures for a stop."""
-        # First verify stop exists
-        stop = await self.get_stop_by_id(stop_id)
-        if not stop:
-            raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
+        """Get scheduled departures for a stop.
+
+        Args:
+            stop_id: The ID of the stop to get departures for.
+            from_time: The start time for the departures window.
+            limit: The maximum number of departures to return.
+            validate_existence: Whether to verify the stop exists before querying departures.
+                Set to False if stop existence is already validated or not required.
+                Defaults to True for backward compatibility.
+        """
+        if validate_existence:
+            # First verify stop exists
+            stop = await self.get_stop_by_id(stop_id)
+            if not stop:
+                raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
 
         # Determine which service_ids are active today
         today = from_time.date()
@@ -181,11 +192,19 @@ class GTFSScheduleService:
             )
 
             if departure_dt:
-                row_dict = dict(row._mapping)
-                row_dict["departure_time"] = departure_dt
-                row_dict["arrival_time"] = arrival_dt
                 departures.append(
-                    ScheduledDeparture.from_row(type("Row", (), row_dict))
+                    ScheduledDeparture(
+                        departure_time=departure_dt,
+                        trip_headsign=row.trip_headsign or "",
+                        route_short_name=row.route_short_name or "",
+                        route_long_name=row.route_long_name or "",
+                        route_type=row.route_type,
+                        route_color=row.route_color,
+                        stop_name=row.stop_name,
+                        trip_id=row.trip_id,
+                        route_id=row.route_id,
+                        arrival_time=arrival_dt,
+                    )
                 )
 
         return departures
@@ -195,9 +214,12 @@ class GTFSScheduleService:
         stop_id: str,
         from_time: datetime,
         limit: int = 20,
+        validate_existence: bool = True,
     ) -> List[ScheduledDeparture]:
         """Alias for get_stop_departures to maintain API compatibility."""
-        return await self.get_stop_departures(stop_id, from_time, limit)
+        return await self.get_stop_departures(
+            stop_id, from_time, limit, validate_existence=validate_existence
+        )
 
     async def search_stops(
         self,

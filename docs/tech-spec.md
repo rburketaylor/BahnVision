@@ -8,7 +8,7 @@ BahnVision delivers live and near-real-time German public transit insights. A Fa
 
 - **Predictable latency:** Cache-first reads with single-flight locks, stale fallbacks, and Valkey circuit breakers.
 - **Operational visibility:** Prometheus-native cache/transit metrics; structured JSON logging and API-level metrics are planned.
-- **Historical readiness (planned):** Async SQLAlchemy models exist for departures, weather, and ingestion metadata, but only the station catalog is persisted today; broader analytics storage is planned.
+- **Historical readiness:** Async SQLAlchemy models and the `TransitDataRepository` support persisting Transit Lines, Departure Observations, Weather Observations, and Ingestion Runs. The station catalog and static GTFS data are actively persisted today; broader historical storage is planned for analytics.
 
 ## 2. Goals & Non-Goals
 
@@ -83,7 +83,7 @@ FastAPI app.main
 - `app.main` bootstraps FastAPI with lifespan hooks to initialize Valkey, SQLAlchemy engine, and metrics.
 - `services.cache.CacheService` abstracts cache access, stale reads, and fallback store.
 - `services.gtfs_schedule.GTFSScheduleService` provides GTFS data access and departure queries.
-- `persistence.repositories` provide async CRUD; currently the station catalog is persisted, with departures/weather persistence planned.
+- `persistence.repositories.TransitDataRepository` provides async CRUD with support for Transit Lines, Departure Observations, Weather Observations, and Ingestion Runs; currently station catalog and static GTFS data are actively persisted, with broader historical storage planned for analytics.
 - GTFS feed scheduler populates Valkey/Postgres before traffic.
 - Frontend consumes backend APIs through `frontend/src/services/httpClient.ts` and `frontend/src/services/endpoints/transitApi.ts`, with TanStack Query caching plus background updates.
 
@@ -92,7 +92,7 @@ FastAPI app.main
 - **Dependency Injection:** FastAPI dependencies wire config, cache, GTFS service, and repositories per request to keep services stateless.
 - **Caching Paths:** Cache keys include resource + params (e.g., `departure:{station}:{transport}:{limit}:{offset}`) with `:stale` suffix for fallback copy. Single-flight locks use TTL (`CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`) and wait/retry knobs to prevent thundering herds.
 - **Circuit Breaker:** When Valkey is unreachable, an in-process fallback store caches recent responses with opportunistic cleanup; breaker timeout controlled by `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`.
-- **Persistence:** Async SQLAlchemy models map to tables such as `gtfs_stops`, `gtfs_routes`, `gtfs_stop_times`, `gtfs_rt_observations`, `weather_observations`, `gtfs_feed_status`. The API currently persists and reads the GTFS catalog; deeper historical storage is planned (Phase 2).
+- **Persistence:** Async SQLAlchemy models map to tables such as `gtfs_stops`, `gtfs_routes`, `gtfs_stop_times`, `gtfs_rt_observations`, `weather_observations`, `gtfs_feed_status`. The `TransitDataRepository` supports persisting Transit Lines, Departure Observations, Weather Observations, and Ingestion Runs. The API currently persists and reads the GTFS catalog; deeper historical storage for analytics is planned (Phase 2).
 - **GTFS Flow:** GTFS feed scheduler downloads and imports Germany-wide GTFS data on startup and periodically.
 - **Error Handling:** Validation errors return 422, station not found returns 404 with descriptive payload, cache lock conflicts return 409 after >5 s wait, upstream outages return 503 with `Retry-After`.
 

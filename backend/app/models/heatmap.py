@@ -50,6 +50,50 @@ class HeatmapDataPoint(BaseModel):
     )
 
 
+class HeatmapPointLight(BaseModel):
+    """Lightweight heatmap point for overview display.
+
+    Contains only the minimum data needed for map rendering:
+    - Station identifier (for on-demand detail fetching)
+    - Coordinates (for positioning)
+    - Intensity (for heat visualization)
+    - Name (for hover tooltip)
+    """
+
+    id: str = Field(..., description="GTFS stop_id identifier.")
+    lat: float = Field(..., description="Station latitude (4 decimal precision).")
+    lon: float = Field(..., description="Station longitude (4 decimal precision).")
+    i: float = Field(
+        ...,
+        ge=0,
+        le=1,
+        description="Intensity score 0-1 (normalized impact for heatmap weight).",
+    )
+    n: str = Field(..., description="Station name (for hover tooltip).")
+
+
+class HeatmapOverviewResponse(BaseModel):
+    """Lightweight heatmap response for initial page load.
+
+    Optimized for minimum payload size while showing all impacted stations.
+    Use /transit/stops/{stop_id}/stats for full station details.
+    """
+
+    time_range: TimeRange = Field(..., description="Time range of the data.")
+    points: list[HeatmapPointLight] = Field(
+        default_factory=list,
+        description="Lightweight station points for map rendering.",
+    )
+    summary: HeatmapSummary = Field(..., description="Network-wide summary statistics.")
+    last_updated_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when the snapshot was generated (live only).",
+    )
+    total_impacted_stations: int = Field(
+        ..., description="Total count of stations with non-zero impact."
+    )
+
+
 class TimeRange(BaseModel):
     """Time range specification."""
 
