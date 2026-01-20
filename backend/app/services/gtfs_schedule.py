@@ -100,12 +100,23 @@ class GTFSScheduleService:
         stop_id: str,
         from_time: datetime,
         limit: int = 20,
+        validate_existence: bool = True,
     ) -> List[ScheduledDeparture]:
-        """Get scheduled departures for a stop."""
-        # First verify stop exists
-        stop = await self.get_stop_by_id(stop_id)
-        if not stop:
-            raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
+        """Get scheduled departures for a stop.
+
+        Args:
+            stop_id: The ID of the stop to get departures for.
+            from_time: The start time for the departures window.
+            limit: The maximum number of departures to return.
+            validate_existence: Whether to verify the stop exists before querying departures.
+                Set to False if stop existence is already validated or not required.
+                Defaults to True for backward compatibility.
+        """
+        if validate_existence:
+            # First verify stop exists
+            stop = await self.get_stop_by_id(stop_id)
+            if not stop:
+                raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
 
         # Determine which service_ids are active today
         today = from_time.date()
@@ -203,9 +214,12 @@ class GTFSScheduleService:
         stop_id: str,
         from_time: datetime,
         limit: int = 20,
+        validate_existence: bool = True,
     ) -> List[ScheduledDeparture]:
         """Alias for get_stop_departures to maintain API compatibility."""
-        return await self.get_stop_departures(stop_id, from_time, limit)
+        return await self.get_stop_departures(
+            stop_id, from_time, limit, validate_existence=validate_existence
+        )
 
     async def search_stops(
         self,

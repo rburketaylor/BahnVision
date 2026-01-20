@@ -677,7 +677,9 @@ class FakeGtfsSchedule:
             ),
         ]
 
-    async def get_departures_for_stop(self, stop_id: str, scheduled_time, limit: int):
+    async def get_departures_for_stop(
+        self, stop_id: str, scheduled_time, limit: int, validate_existence: bool = True
+    ):
         return self.departures[:limit]
 
     async def search_stops(self, query: str, limit: int = 10):
