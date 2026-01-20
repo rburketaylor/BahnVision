@@ -29,6 +29,7 @@ def station_stats_service(mock_gtfs_schedule, mock_cache):
 async def test_station_stats_caches_result(station_stats_service, mock_cache):
     """Station stats should be cached."""
     mock_cache.get_json.return_value = None
+    mock_cache.get.return_value = None  # Station name cache miss
 
     # Mock the DB result
     mock_result = MagicMock()
@@ -47,6 +48,7 @@ async def test_station_stats_caches_result(station_stats_service, mock_cache):
 async def test_network_averages_cached_separately(station_stats_service, mock_cache):
     """Network averages should have their own cache entry."""
     mock_cache.get_json.return_value = None
+    mock_cache.get.return_value = None  # Station name cache miss
 
     # Mock DB results with at least one row to trigger network average fetch
     mock_row = MagicMock()
