@@ -333,7 +333,10 @@ class GTFSRTDataHarvester:
             )
             async with httpx.AsyncClient(
                 timeout=timeout,
-                headers={"User-Agent": "BahnVision-GTFS-RT-Harvester/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT-Harvester/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
                 logger.info(

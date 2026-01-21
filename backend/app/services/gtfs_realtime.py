@@ -8,6 +8,7 @@ Handles fetching, parsing, and storing GTFS-RT data including:
 - Service alerts
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Set
@@ -160,7 +161,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -281,10 +285,11 @@ class GtfsRealtimeService:
                         )
                     )
 
-            # Store in cache
-            await self._store_trip_updates(trip_updates)
-            await self._store_vehicle_positions(vehicle_positions)
-            await self._store_alerts(alerts)
+            # Store in cache - parallelize independent storage operations
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self._store_trip_updates(trip_updates))
+                tg.create_task(self._store_vehicle_positions(vehicle_positions))
+                tg.create_task(self._store_alerts(alerts))
 
             self._record_success()
 
@@ -317,7 +322,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -372,7 +380,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -422,7 +433,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
