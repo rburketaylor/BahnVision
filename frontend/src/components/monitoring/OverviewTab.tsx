@@ -4,23 +4,17 @@
  */
 
 import { useHealth } from '../../hooks/useHealth'
+import { ErrorCard } from '../shared'
 
 export default function OverviewTab() {
   const { data: health, isLoading, error } = useHealth()
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 text-red-800 p-6 rounded-lg dark:bg-red-900/20 dark:border-red-800 dark:text-red-300">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🚨</span>
-          <div>
-            <h3 className="font-semibold">Failed to load system health</h3>
-            <p className="text-sm mt-1">
-              {typeof error === 'string' ? error : 'Unknown error occurred'}
-            </p>
-          </div>
-        </div>
-      </div>
+      <ErrorCard
+        title="Failed to load system health"
+        message={typeof error === 'string' ? error : 'Unknown error occurred'}
+      />
     )
   }
 

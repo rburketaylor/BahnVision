@@ -3,9 +3,11 @@
  * GTFS data pipeline status (static feed + realtime harvester)
  */
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { apiClient } from '../../services/api'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 import type { IngestionStatus } from '../../types/ingestion'
+import { ErrorCard, RefreshButton } from '../shared'
 
 export default function IngestionTab() {
   const [status, setStatus] = useState<IngestionStatus | null>(null)
@@ -25,12 +27,7 @@ export default function IngestionTab() {
     }
   }
 
-  useEffect(() => {
-    fetchStatus()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchStatus, 30000)
-    return () => clearInterval(interval)
-  }, [])
+  useAutoRefresh({ callback: fetchStatus, enabled: true, runOnMount: true })
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A'
@@ -44,21 +41,7 @@ export default function IngestionTab() {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 text-red-800 p-6 rounded-lg dark:bg-red-900/20 dark:border-red-800 dark:text-red-300">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🚨</span>
-          <div>
-            <h3 className="font-semibold">Failed to load ingestion status</h3>
-            <p className="text-sm mt-1">{error}</p>
-          </div>
-        </div>
-        <button
-          onClick={fetchStatus}
-          className="mt-4 px-4 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 transition-colors dark:bg-red-800 dark:text-red-100 dark:hover:bg-red-700"
-        >
-          Retry
-        </button>
-      </div>
+      <ErrorCard title="Failed to load ingestion status" message={error} onRetry={fetchStatus} />
     )
   }
 
@@ -66,20 +49,7 @@ export default function IngestionTab() {
     <div className="space-y-6">
       {/* Refresh Button */}
       <div className="flex justify-end">
-        <button
-          onClick={fetchStatus}
-          disabled={loading}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {loading ? (
-            <>
-              <span className="h-4 w-4 animate-spin rounded-full border border-current border-t-transparent" />
-              Refreshing...
-            </>
-          ) : (
-            <>🔄 Refresh</>
-          )}
-        </button>
+        <RefreshButton onClick={fetchStatus} loading={loading} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -4,9 +4,11 @@
  * (Content migrated from original InsightsPage)
  */
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useHealth } from '../../hooks/useHealth'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 import { apiClient } from '../../services/api'
+import { RefreshButton } from '../shared'
 
 interface SystemMetrics {
   cacheHitRate: number
@@ -82,18 +84,7 @@ export default function PerformanceTab() {
     }
   }
 
-  useEffect(() => {
-    fetchMetrics()
-
-    let interval: number
-    if (autoRefresh) {
-      interval = window.setInterval(fetchMetrics, 30000)
-    }
-
-    return () => {
-      if (interval) window.clearInterval(interval)
-    }
-  }, [autoRefresh])
+  useAutoRefresh({ callback: fetchMetrics, enabled: autoRefresh, runOnMount: true })
 
   return (
     <div className="space-y-6">
@@ -111,20 +102,7 @@ export default function PerformanceTab() {
           {autoRefresh ? 'Auto-refreshing' : 'Manual refresh'}
         </button>
 
-        <button
-          onClick={fetchMetrics}
-          disabled={metricsLoading}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {metricsLoading ? (
-            <>
-              <span className="h-4 w-4 animate-spin rounded-full border border-current border-t-transparent" />
-              Refreshing...
-            </>
-          ) : (
-            <>🔄 Refresh</>
-          )}
-        </button>
+        <RefreshButton onClick={fetchMetrics} loading={metricsLoading} />
       </div>
 
       {/* Metrics Cards */}
