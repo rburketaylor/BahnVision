@@ -59,3 +59,6 @@ mutants/
 .mutmut-cache
 backend/coverage.xml
 .serena/
+
+# Git worktrees (isolated development workspaces)
+.worktrees/
