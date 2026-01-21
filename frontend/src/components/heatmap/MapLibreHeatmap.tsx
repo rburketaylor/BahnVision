@@ -551,19 +551,31 @@ export function MapLibreHeatmap({
     // Add navigation controls
     map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
 
-    // Create popup instance for reuse
-    popupRef.current = new maplibregl.Popup({
-      closeButton: true,
-      closeOnClick: true,
-      maxWidth: '300px',
-    })
+    // Helper function to ensure popup exists and has close handler set up
+    const ensurePopup = () => {
+      if (!popupRef.current) {
+        popupRef.current = new maplibregl.Popup({
+          closeButton: true,
+          closeOnClick: true,
+          maxWidth: '300px',
+        })
 
-    const popup = popupRef.current as unknown as { on?: (event: string, cb: () => void) => void }
-    if (typeof popup.on === 'function') {
-      popup.on('close', () => {
-        onStationSelectRef.current?.(null)
-      })
+        const popup = popupRef.current as unknown as {
+          on?: (event: string, cb: () => void) => void
+        }
+        if (typeof popup.on === 'function') {
+          popup.on('close', () => {
+            onStationSelectRef.current?.(null)
+            // Clear the ref since popup is now closed
+            popupRef.current = null
+          })
+        }
+      }
+      return popupRef.current
     }
+
+    // Create popup instance for reuse
+    ensurePopup()
 
     const ensureLayers = () => {
       const theme: HeatmapResolvedTheme = currentTheme
@@ -894,6 +906,13 @@ export function MapLibreHeatmap({
         !props.cancellation_rate && !props.delay_rate && props.intensity !== undefined
 
       if (isOverviewPoint && onStationDetailRequested) {
+        // Close any existing popup first to avoid stale state
+        popupRef.current?.remove()
+        popupRef.current = null
+
+        // Ensure we have a fresh popup instance
+        ensurePopup()
+
         // Trigger on-demand detail fetch for overview points
         onStationDetailRequested(stationId)
 
@@ -909,7 +928,7 @@ export function MapLibreHeatmap({
           </div>
         `
 
-        popupRef.current?.setLngLat(coordinates).setHTML(loadingHtml).addTo(map)
+        popupRef.current!.setLngLat(coordinates).setHTML(loadingHtml).addTo(map)
       } else {
         // Show full popup for regular data points
         const cancellationRate = props.cancellation_rate as number
@@ -974,7 +993,9 @@ export function MapLibreHeatmap({
           </div>
         `
 
-        popupRef.current?.setLngLat(coordinates).setHTML(popupContent).addTo(map)
+        // Ensure popup exists (it may have been closed and cleared)
+        ensurePopup()
+        popupRef.current!.setLngLat(coordinates).setHTML(popupContent).addTo(map)
       }
 
       // Notify parent of selection
@@ -1034,7 +1055,9 @@ export function MapLibreHeatmap({
         </div>
       `
 
-      popupRef.current?.setLngLat(coordinates).setHTML(popupContent).addTo(map)
+      // Ensure popup exists (it may have been closed and cleared)
+      ensurePopup()
+      popupRef.current!.setLngLat(coordinates).setHTML(popupContent).addTo(map)
 
       // Notify parent of selection
       onStationSelectRef.current?.(props.station_id as string)
@@ -1043,6 +1066,7 @@ export function MapLibreHeatmap({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       popupRef.current?.remove()
+      popupRef.current = null
       onStationSelectRef.current?.(null)
     }
     window.addEventListener('keydown', handleKeyDown)
