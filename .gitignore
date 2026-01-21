@@ -45,6 +45,13 @@ build/
 # Local KiloCode config
 .kilocode/
 
+# Claude Code local settings (track skills/)
+.claude/settings.local.json
+.claude/settings.*.json
+
+# direnv
+.direnv/
+
 # Mutation testing
 mutants/
 .stryker-tmp/

@@ -22,6 +22,23 @@ docker compose up --build
 source .dev-env          # Activate the environment
 ```
 
+**Auto-loading with direnv (recommended):**
+
+```bash
+# Install direnv
+sudo apt install direnv   # Ubuntu/Debian
+# or: brew install direnv  # macOS
+
+# Add to ~/.bashrc or ~/.zshrc:
+echo 'eval "$(direnv hook bash)"' >> ~/.bashrc   # or zsh
+source ~/.bashrc
+
+# Allow the project's .envrc
+direnv allow
+```
+
+The dev environment now loads automatically when you `cd` into the project.
+
 **Backend:**
 
 ```bash
