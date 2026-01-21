@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import tempfile
 import zipfile
@@ -68,7 +69,7 @@ class GTFSFeedImporter:
             raise ValueError("GTFS feed URL must be http(s)")
 
     async def _import_from_path(self, feed_path: Path, feed_url: str) -> str:
-        """Internal method to import feed from path using fast COPY."""
+        """Internal method to import feed from path using fast COPY with parallelization."""
         logger.info(f"Loading GTFS feed from {feed_path}")
 
         if not feed_path.exists():
@@ -94,12 +95,29 @@ class GTFSFeedImporter:
                 calendar_dates_df = self._read_gtfs_table(zf, "calendar_dates.txt")
                 feed_info_df = self._read_gtfs_table(zf, "feed_info.txt")
 
-                logger.info(f"Persisting GTFS feed {feed_id} to database using COPY...")
-                await self._copy_stops(stops_df, feed_id)
-                await self._copy_routes(routes_df, feed_id)
+                logger.info(
+                    f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
+                )
+
+                # Phase 1: Parallel import of independent tables (stops, routes, calendar)
+                # These have no dependencies on each other
+                try:
+                    async with asyncio.TaskGroup() as tg:
+                        tg.create_task(self._copy_stops(stops_df, feed_id))
+                        tg.create_task(self._copy_routes(routes_df, feed_id))
+                        tg.create_task(
+                            self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
+                        )
+                except* Exception:  # type: ignore
+                    # ExceptionGroup handling for Python 3.11+
+                    logger.exception("Errors during parallel independent table import")
+                    raise
+
+                # Phase 2: Import dependent tables (trips depends on routes, calendar)
                 await self._copy_trips(trips_df, feed_id)
+
+                # Phase 3: Import stop_times (depends on trips, stops)
                 await self._copy_stop_times_from_zip(zf, feed_id)
-                await self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
         else:
             stops_df = self._read_gtfs_table(feed_path, "stops.txt")
             routes_df = self._read_gtfs_table(feed_path, "routes.txt")
@@ -108,12 +126,27 @@ class GTFSFeedImporter:
             calendar_dates_df = self._read_gtfs_table(feed_path, "calendar_dates.txt")
             feed_info_df = self._read_gtfs_table(feed_path, "feed_info.txt")
 
-            logger.info(f"Persisting GTFS feed {feed_id} to database using COPY...")
-            await self._copy_stops(stops_df, feed_id)
-            await self._copy_routes(routes_df, feed_id)
+            logger.info(
+                f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
+            )
+
+            # Phase 1: Parallel import of independent tables
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(self._copy_stops(stops_df, feed_id))
+                    tg.create_task(self._copy_routes(routes_df, feed_id))
+                    tg.create_task(
+                        self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
+                    )
+            except* Exception:  # type: ignore
+                logger.exception("Errors during parallel independent table import")
+                raise
+
+            # Phase 2: Import dependent tables
             await self._copy_trips(trips_df, feed_id)
+
+            # Phase 3: Import stop_times
             await self._copy_stop_times_from_path(feed_path, feed_id)
-            await self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
 
         feed_start_date, feed_end_date = self._resolve_feed_dates(
             feed_info_df, calendar_df
@@ -560,16 +593,44 @@ class GTFSFeedImporter:
 
             logger.info("Extracted stop_times.txt to temp file for processing")
 
-            batch_count = 0
+            # Process batches in parallel with a semaphore to limit concurrency
+            semaphore = asyncio.Semaphore(3)  # Max 3 concurrent COPY operations
+
+            async def process_batch(batch_df: pl.DataFrame, batch_num: int) -> None:
+                async with semaphore:
+                    await self._copy_stop_times_batch(batch_df, feed_id)
+                    if batch_num % 10 == 0:
+                        logger.info("Copied %s stop_times batches...", batch_num)
+
+            # Read all batches first (memory efficient, as we get lazy iterators)
             reader = self._read_csv_batched(tmp_path, batch_size=batch_size)
+
+            # Collect batches and process them in parallel
+            # Using a queue approach to avoid loading all batches into memory at once
+            batch_tasks = []
+            batch_count = 0
             while True:
                 batches = reader.next_batches(1)
                 if not batches:
                     break
                 batch_count += 1
-                await self._copy_stop_times_batch(batches[0], feed_id)
-                if batch_count % 10 == 0:
-                    logger.info("Copied %s stop_times batches...", batch_count)
+                batch_tasks.append(
+                    asyncio.create_task(process_batch(batches[0], batch_count))
+                )
+
+                # Wait for some tasks to complete if we have many pending
+                # This prevents memory buildup while maintaining parallelism
+                if len(batch_tasks) >= 6:  # 2x the semaphore size
+                    # Wait for at least half to complete before adding more
+                    done, pending = await asyncio.wait(
+                        batch_tasks, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    batch_tasks = list(pending)
+
+            # Wait for remaining tasks
+            if batch_tasks:
+                await asyncio.gather(*batch_tasks)
+
         finally:
             if tmp_path is not None:
                 try:
@@ -588,16 +649,39 @@ class GTFSFeedImporter:
             await self._recreate_stop_times_indexes_and_fks()
             return
 
-        batch_count = 0
+        # Process batches in parallel with a semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(3)  # Max 3 concurrent COPY operations
+
+        async def process_batch(batch_df: pl.DataFrame, batch_num: int) -> None:
+            async with semaphore:
+                await self._copy_stop_times_batch(batch_df, feed_id)
+                if batch_num % 10 == 0:
+                    logger.info("Copied %s stop_times batches...", batch_num)
+
         reader = self._read_csv_batched(str(stop_times_path), batch_size=batch_size)
+
+        # Collect batches and process them in parallel
+        batch_tasks = []
+        batch_count = 0
         while True:
             batches = reader.next_batches(1)
             if not batches:
                 break
             batch_count += 1
-            await self._copy_stop_times_batch(batches[0], feed_id)
-            if batch_count % 10 == 0:
-                logger.info("Copied %s stop_times batches...", batch_count)
+            batch_tasks.append(
+                asyncio.create_task(process_batch(batches[0], batch_count))
+            )
+
+            # Wait for some tasks to complete if we have many pending
+            if len(batch_tasks) >= 6:  # 2x the semaphore size
+                done, pending = await asyncio.wait(
+                    batch_tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+                batch_tasks = list(pending)
+
+        # Wait for remaining tasks
+        if batch_tasks:
+            await asyncio.gather(*batch_tasks)
 
         await self._recreate_stop_times_indexes_and_fks()
 
