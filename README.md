@@ -120,7 +120,7 @@ This project implements several security best practices:
 - **Production Safeguards**: Application refuses to start with default credentials in production mode
 - **CI/CD Security Scanning**: Bandit, Safety, Semgrep, npm audit, and Trivy container scanning
 
-**CSP Note**: The Content Security Policy currently allows `'unsafe-inline'` for compatibility with MapLibre GL's WebGL rendering pipeline. A future enhancement would implement nonce-based CSP with server-side nonce injection. See [`docs/planning/security-changes.md`](docs/planning/security-changes.md) for the planned approach.
+**CSP Note**: The Content Security Policy currently allows `'unsafe-inline'` for compatibility with MapLibre GL's WebGL rendering pipeline.
 
 ## Contributing
 
