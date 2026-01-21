@@ -2,9 +2,9 @@ fastapi==0.128.0
 uvicorn[standard]==0.40.0
 valkey==6.1.1
 pydantic-settings==2.12.0
-prometheus-client==0.23.1
+prometheus-client==0.24.1
 SQLAlchemy==2.0.45
-alembic==1.17.2
+alembic==1.18.1
 asyncpg==0.31.0
 httpx==0.28.1
 opentelemetry-api==1.39.1
@@ -14,7 +14,7 @@ opentelemetry-instrumentation-httpx==0.60b1
 opentelemetry-exporter-otlp==1.39.1
 opentelemetry-propagator-b3==1.39.1
 slowapi==0.1.9
-gtfs-kit==12.0.0
+gtfs-kit==12.0.2
 protobuf>=5.0.0
 gtfs-realtime-bindings==2.0.0
 apscheduler==3.11.2
