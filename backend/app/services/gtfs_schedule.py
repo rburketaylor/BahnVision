@@ -112,11 +112,21 @@ class GTFSScheduleService:
                 Set to False if stop existence is already validated or not required.
                 Defaults to True for backward compatibility.
         """
-        if validate_existence:
-            # First verify stop exists
-            stop = await self.get_stop_by_id(stop_id)
-            if not stop:
-                raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
+        # Optimization: Pre-fetch relevant stop IDs to avoid inefficient OR join in the main query.
+        # This resolves the set of stops (parent + children) into a concrete list of IDs
+        # allowing the database to use the index on gtfs_stop_times.stop_id efficiently.
+        stop_ids_stmt = select(GTFSStop.stop_id).where(
+            or_(GTFSStop.stop_id == stop_id, GTFSStop.parent_station == stop_id)
+        )
+        stop_ids_result = await self.session.execute(stop_ids_stmt)
+        stop_ids = [row[0] for row in stop_ids_result]
+
+        if validate_existence and not stop_ids:
+            # If no stops found and validation is required
+            raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
+        elif not stop_ids:
+            # If no stops found and validation skipped (or implicity handled), return empty
+            return []
 
         # Determine which service_ids are active today
         today = from_time.date()
@@ -161,7 +171,7 @@ class GTFSScheduleService:
             .outerjoin(c, t.service_id == c.service_id)
             .outerjoin(cd, and_(t.service_id == cd.service_id, cd.date == today))
             .where(
-                or_(st.stop_id == stop_id, s.parent_station == stop_id),
+                st.stop_id.in_(stop_ids),
                 st.departure_time >= from_interval,
                 or_(
                     # Calendar-based service with possible exceptions
