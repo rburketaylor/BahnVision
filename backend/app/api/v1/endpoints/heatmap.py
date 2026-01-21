@@ -20,6 +20,7 @@ from fastapi import (
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.shared import RATE_LIMIT_HEATMAP_OVERVIEW
 from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_session
@@ -425,7 +426,7 @@ async def get_cancellation_heatmap(
         }
     },
 )
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_HEATMAP_OVERVIEW.value)
 async def get_heatmap_overview(
     request: Request,
     response: Response,

@@ -6,12 +6,24 @@ Provides stop search and information using GTFS data.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+
+from app.api.v1.shared import (
+    RATE_LIMIT_EXPENSIVE,
+    RATE_LIMIT_NEARBY,
+    RATE_LIMIT_SEARCH,
+    gtfs_stop_to_transit_stop,
+    set_station_search_cache_header,
+    set_stats_cache_header,
+    set_transit_cache_header,
+    station_not_found,
+    stop_not_found,
+)
 from app.api.v1.shared.dependencies import get_transit_data_service
 from app.api.v1.shared.rate_limit import limiter
-from app.core.config import get_settings
 from app.core.database import get_session
 from app.models.heatmap import TimeRangePreset
 from app.models.station_stats import StationStats, StationTrends, TrendGranularity
@@ -44,7 +56,7 @@ async def get_station_stats_service(
     summary="Search for stops by name",
     description="Find transit stops matching a search query.",
 )
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_SEARCH.value)
 async def search_stops(
     request: Request,
     query: Annotated[
@@ -70,23 +82,10 @@ async def search_stops(
     stop_infos = await transit_service.search_stops(query, limit)
 
     # Convert to response models
-    results = [
-        TransitStop(
-            id=stop.stop_id,
-            name=stop.stop_name,
-            latitude=stop.stop_lat,
-            longitude=stop.stop_lon,
-            zone_id=stop.zone_id,
-            wheelchair_boarding=stop.wheelchair_boarding,
-        )
-        for stop in stop_infos
-    ]
+    results = [gtfs_stop_to_transit_stop(stop) for stop in stop_infos]
 
     # Set cache headers using the correct search TTL
-    settings = get_settings()
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.transit_station_search_cache_ttl_seconds}"
-    )
+    set_station_search_cache_header(response)
 
     return TransitStopSearchResponse(
         query=query,
@@ -100,7 +99,7 @@ async def search_stops(
     summary="Find stops near a location",
     description="Find transit stops within a radius of a given location.",
 )
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_NEARBY.value)
 async def get_nearby_stops(
     request: Request,
     latitude: Annotated[
@@ -140,10 +139,8 @@ async def get_nearby_stops(
     db: AsyncSession = Depends(get_session),
 ) -> list[TransitStop]:
     """Find transit stops near a location."""
-    settings = get_settings()
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
-    )
+    # Set cache header for GTFS stop data
+    set_transit_cache_header(response)
 
     # Bucket coordinates to reduce cache key cardinality
     # Using ~100m precision (0.001 degrees ≈ 111m at equator)
@@ -172,21 +169,15 @@ async def get_nearby_stops(
     radius_km = radius_meters / 1000.0
     stops = await gtfs_schedule.get_nearby_stops(latitude, longitude, radius_km, limit)
 
-    # Convert to response models
+    # Convert to response models (exclude zone and wheelchair for nearby)
     results = [
-        TransitStop(
-            id=str(stop.stop_id),
-            name=str(stop.stop_name),
-            latitude=float(stop.stop_lat) if stop.stop_lat else 0.0,
-            longitude=float(stop.stop_lon) if stop.stop_lon else 0.0,
-            zone_id=None,
-            wheelchair_boarding=0,
-        )
+        gtfs_stop_to_transit_stop(stop, include_zone=False, include_wheelchair=False)
         for stop in stops
     ]
 
     # Cache the result (stops rarely change)
     try:
+        settings = get_settings()
         serialized = [r.model_dump() for r in results]
         await cache.set_json(
             cache_key,
@@ -210,7 +201,7 @@ async def get_nearby_stops(
     summary="Get stop details",
     description="Get detailed information about a specific stop.",
 )
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_SEARCH.value)
 async def get_stop(
     request: Request,
     stop_id: str,
@@ -221,25 +212,12 @@ async def get_stop(
     stop_info = await transit_service.get_stop_info(stop_id)
 
     if not stop_info:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Stop '{stop_id}' not found",
-        )
+        raise stop_not_found(stop_id)
 
     # Set cache headers
-    settings = get_settings()
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_stop_cache_ttl_seconds}"
-    )
+    set_transit_cache_header(response)
 
-    return TransitStop(
-        id=stop_info.stop_id,
-        name=stop_info.stop_name,
-        latitude=stop_info.stop_lat,
-        longitude=stop_info.stop_lon,
-        zone_id=stop_info.zone_id,
-        wheelchair_boarding=stop_info.wheelchair_boarding,
-    )
+    return gtfs_stop_to_transit_stop(stop_info)
 
 
 @router.get(
@@ -248,7 +226,7 @@ async def get_stop(
     summary="Get station statistics",
     description="Get cancellation and delay statistics for a specific station.",
 )
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_SEARCH.value)
 async def get_station_stats(
     request: Request,
     stop_id: str,
@@ -263,13 +241,10 @@ async def get_station_stats(
     stats = await stats_service.get_station_stats(stop_id, time_range)
 
     if not stats:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Station '{stop_id}' not found",
-        )
+        raise station_not_found(stop_id)
 
     # Set cache headers - shorter TTL for stats (5 minutes)
-    response.headers["Cache-Control"] = "public, max-age=300"
+    set_stats_cache_header(response)
 
     return stats
 
@@ -280,7 +255,7 @@ async def get_station_stats(
     summary="Get station trends",
     description="Get historical trend data for a specific station.",
 )
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_EXPENSIVE.value)
 async def get_station_trends(
     request: Request,
     stop_id: str,
@@ -299,12 +274,9 @@ async def get_station_trends(
     trends = await stats_service.get_station_trends(stop_id, time_range, granularity)
 
     if not trends:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Station '{stop_id}' not found",
-        )
+        raise station_not_found(stop_id)
 
     # Set cache headers - shorter TTL for trends (5 minutes)
-    response.headers["Cache-Control"] = "public, max-age=300"
+    set_stats_cache_header(response)
 
     return trends

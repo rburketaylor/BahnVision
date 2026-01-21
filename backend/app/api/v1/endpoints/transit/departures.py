@@ -6,15 +6,19 @@ Provides real-time departure information using GTFS static + real-time data.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response
 
+from app.api.v1.shared import (
+    RATE_LIMIT_SEARCH,
+    gtfs_stop_to_transit_stop,
+    set_schedule_cache_header,
+    stop_not_found,
+)
 from app.api.v1.shared.dependencies import get_transit_data_service
 from app.api.v1.shared.rate_limit import limiter
-from app.core.config import get_settings
 from app.models.transit import (
     TransitDeparture,
     TransitDeparturesResponse,
-    TransitStop,
 )
 from app.services.transit_data import DepartureInfo, TransitDataService
 
@@ -60,7 +64,7 @@ def _departure_info_to_response(dep: DepartureInfo) -> TransitDeparture:
     summary="Get upcoming departures for a stop",
     description="Returns scheduled departures with real-time updates when available.",
 )
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_SEARCH.value)
 async def get_departures(
     request: Request,
     stop_id: Annotated[
@@ -99,10 +103,7 @@ async def get_departures(
     # Get stop info first to validate the stop exists
     stop_info = await transit_service.get_stop_info(stop_id)
     if not stop_info:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Stop '{stop_id}' not found",
-        )
+        raise stop_not_found(stop_id)
 
     # Get departures
     departures = await transit_service.get_departures_for_stop(
@@ -113,22 +114,12 @@ async def get_departures(
     )
 
     # Convert to response models
-    transit_stop = TransitStop(
-        id=stop_info.stop_id,
-        name=stop_info.stop_name,
-        latitude=stop_info.stop_lat,
-        longitude=stop_info.stop_lon,
-        zone_id=stop_info.zone_id,
-        wheelchair_boarding=stop_info.wheelchair_boarding,
-    )
+    transit_stop = gtfs_stop_to_transit_stop(stop_info)
 
     transit_departures = [_departure_info_to_response(dep) for dep in departures]
 
     # Set cache headers
-    settings = get_settings()
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.gtfs_schedule_cache_ttl_seconds}"
-    )
+    set_schedule_cache_header(response)
 
     realtime_available = include_realtime and transit_service.is_realtime_available()
 

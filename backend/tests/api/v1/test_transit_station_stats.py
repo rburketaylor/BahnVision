@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from app.api.routes import api_router
 from app.api.v1.endpoints.transit import stops as stops_module
 from app.api.v1.shared import dependencies as dependencies_module
+from app.api.v1.shared import cache_headers as cache_headers_module
 from app.models.station_stats import StationStats, StationTrends, TrendDataPoint
 
 
@@ -188,6 +189,9 @@ class TestNearbyStopsEndpoint:
             stops_module, "GTFSScheduleService", FakeGTFSScheduleService
         )
         monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
+        monkeypatch.setattr(
+            cache_headers_module, "get_settings", lambda: FakeSettings()
+        )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/nearby?latitude=1&longitude=2")
 
@@ -236,6 +240,9 @@ class TestNearbyStopsEndpoint:
             stops_module, "GTFSScheduleService", ShouldNotBeCalledScheduleService
         )
         monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
+        monkeypatch.setattr(
+            cache_headers_module, "get_settings", lambda: FakeSettings()
+        )
 
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/nearby?latitude=1&longitude=2")
