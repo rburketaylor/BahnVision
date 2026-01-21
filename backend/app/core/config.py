@@ -43,8 +43,8 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
         description="Database connection URL. Use environment variable in production.",
     )
-    database_pool_size: int = Field(default=5, alias="DATABASE_POOL_SIZE", ge=1)
-    database_max_overflow: int = Field(default=5, alias="DATABASE_MAX_OVERFLOW", ge=0)
+    database_pool_size: int = Field(default=10, alias="DATABASE_POOL_SIZE", ge=1)
+    database_max_overflow: int = Field(default=10, alias="DATABASE_MAX_OVERFLOW", ge=0)
     database_echo: bool = Field(default=False, alias="DATABASE_ECHO")
 
     # ==========================================================================
