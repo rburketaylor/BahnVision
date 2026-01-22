@@ -1,6 +1,7 @@
 /**
  * Heatmap Overlay Panel
  * Floating, toggleable panel that sits above the map.
+ * BVV-styled with blue accent strip and stronger backdrop blur.
  */
 
 import { useEffect, useId, useRef, type ReactNode } from 'react'
@@ -63,14 +64,19 @@ export function HeatmapOverlayPanel({
           type="button"
           onClick={() => onOpenChange(true)}
           ref={showButtonRef}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/95 border border-border text-foreground shadow-lg backdrop-blur hover:bg-muted transition-colors"
+          className="btn-bvv flex items-center gap-2 px-3 py-2 rounded-lg bg-card/95 border border-border text-foreground shadow-lg backdrop-blur-md hover:bg-muted transition-colors"
           aria-label="Show heatmap controls (C)"
           aria-expanded={false}
           title="Show controls (C)"
         >
           <ControlsIcon />
-          <span className="text-xs font-medium">Controls</span>
-          {hasError && <span className="w-2 h-2 rounded-full bg-destructive" aria-hidden="true" />}
+          <span className="text-small font-medium">Controls</span>
+          {hasError && (
+            <span
+              className="w-2 h-2 rounded-full bg-status-critical animate-pulse"
+              aria-hidden="true"
+            />
+          )}
         </button>
       </div>
     )
@@ -83,13 +89,20 @@ export function HeatmapOverlayPanel({
     >
       <div
         id={panelId}
-        className="bg-card/95 border border-border shadow-xl backdrop-blur rounded-xl h-full max-h-full flex flex-col overflow-hidden"
+        className="bg-card/95 border border-border shadow-xl backdrop-blur-md rounded-xl h-full max-h-full flex flex-col overflow-hidden animate-slideIn"
+        style={{
+          animationDuration: '300ms',
+          animationTimingFunction: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+        }}
       >
+        {/* Blue accent strip at top */}
+        <div className="h-1 bg-primary shrink-0" />
+
         <div className="px-4 pt-4 pb-3 border-b border-border/60">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-base font-semibold text-foreground truncate">{title}</h1>
-              <p className="text-xs text-muted-foreground mt-1">{description}</p>
+              <h1 className="text-h1 text-foreground truncate">{title}</h1>
+              <p className="text-small text-muted mt-1">{description}</p>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
@@ -97,7 +110,7 @@ export function HeatmapOverlayPanel({
                 type="button"
                 onClick={onRefresh}
                 disabled={isLoading}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="btn-bvv flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 aria-label="Refresh heatmap data"
                 title="Refresh"
               >
@@ -114,7 +127,7 @@ export function HeatmapOverlayPanel({
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                   />
                 </svg>
-                <span className="text-xs font-medium hidden sm:inline">
+                <span className="text-small font-medium hidden sm:inline">
                   {isLoading ? 'Loading' : 'Refresh'}
                 </span>
               </button>
@@ -122,7 +135,7 @@ export function HeatmapOverlayPanel({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="p-2 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+                className="btn-bvv p-2 rounded-lg border border-border bg-card hover:bg-muted transition-colors"
                 aria-label="Hide heatmap controls (C)"
                 aria-expanded={true}
                 title="Hide controls (C)"
@@ -131,7 +144,7 @@ export function HeatmapOverlayPanel({
               </button>
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">
+          <p className="text-tiny text-muted mt-2">
             Tip: press <span className="font-medium text-foreground">C</span> to toggle controls.
           </p>
         </div>
