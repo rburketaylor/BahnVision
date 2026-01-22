@@ -1,7 +1,7 @@
 /**
  * Heatmap Search Overlay
  * Floating, collapsible search bar that sits at the top of the heatmap.
- * When a station is selected, it calls onStationSelect to zoom/highlight.
+ * BVV-styled with focus rings, staggered fade-in, and blue accent on select.
  */
 
 import { useState, useRef, useEffect } from 'react'
@@ -88,12 +88,12 @@ export function HeatmapSearchOverlay({
         <button
           type="button"
           onClick={() => setIsExpanded(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/95 border border-border text-foreground shadow-lg backdrop-blur hover:bg-muted transition-colors"
+          className="btn-bvv flex items-center gap-2 px-3 py-2 rounded-lg bg-card/95 border border-border text-foreground shadow-lg backdrop-blur-md hover:bg-muted transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           aria-label="Search stations (S)"
           title="Search stations (S)"
         >
           <SearchIcon />
-          <span className="text-xs font-medium">Search</span>
+          <span className="text-small font-medium">Search</span>
         </button>
       </div>
     )
@@ -104,24 +104,24 @@ export function HeatmapSearchOverlay({
       ref={searchRef}
       className="absolute top-4 right-4 z-[1200] w-[min(22rem,calc(100vw-2rem))]"
     >
-      <div className="bg-card/95 border border-border shadow-xl backdrop-blur rounded-xl overflow-visible">
+      <div className="bg-card/95 border border-border shadow-xl backdrop-blur-md rounded-xl overflow-visible animate-slideIn stagger-animation">
         <div className="px-4 pt-3 pb-2 border-b border-border/60">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <SearchIcon />
-              <span className="text-sm font-medium text-foreground">Find Station</span>
+              <span className="text-h3 text-foreground">Find Station</span>
             </div>
             <button
               type="button"
               onClick={handleClose}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              className="btn-bvv p-1.5 rounded-md hover:bg-muted transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
               aria-label="Close search (Escape)"
               title="Close (Escape)"
             >
               <CloseIcon />
             </button>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-1">
+          <p className="text-tiny text-muted mt-1">
             Press <span className="font-medium text-foreground">S</span> to toggle search
           </p>
         </div>
@@ -134,21 +134,22 @@ export function HeatmapSearchOverlay({
           />
 
           {selectedStop && (
-            <div className="mt-3 p-3 rounded-lg bg-muted/50 border border-border/60">
+            <div
+              className="mt-3 p-3 rounded-lg bg-muted/50 border-l-4 border-primary animate-scaleIn"
+              style={{ animationDuration: '200ms' }}
+            >
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
+                <div className="min-w-0 flex-1">
+                  <p className="text-body font-medium text-foreground truncate">
                     {selectedStop.name}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Click on map or use button below
-                  </p>
+                  <p className="text-small text-muted mt-1">Click on map or use button below</p>
                 </div>
                 {showDetailsLink && (
                   <button
                     type="button"
                     onClick={handleGoToDetails}
-                    className="shrink-0 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+                    className="btn-bvv shrink-0 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-small font-medium hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                   >
                     View Details
                   </button>
