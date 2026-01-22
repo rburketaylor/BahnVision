@@ -1,6 +1,7 @@
 /**
  * Heatmap Stats Component
  * Displays summary statistics for cancellation and delay data
+ * BVV-styled with metric cards, color-coded accents, and tabular numbers
  */
 
 import type { HeatmapSummary, HeatmapEnabledMetrics } from '../../types/heatmap'
@@ -14,11 +15,11 @@ interface HeatmapStatsProps {
 export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: HeatmapStatsProps) {
   if (isLoading) {
     return (
-      <div className="bg-card rounded-lg border border-border p-4 animate-pulse">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Statistics</h3>
-        <div className="space-y-3">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-h3 text-foreground mb-3">Statistics</h3>
+        <div className="space-y-3 stagger-animation">
           {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="h-6 bg-muted rounded" />
+            <div key={i} className="h-6 bg-muted rounded animate-pulse" />
           ))}
         </div>
       </div>
@@ -28,8 +29,8 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
   if (!summary) {
     return (
       <div className="bg-card rounded-lg border border-border p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Statistics</h3>
-        <p className="text-sm text-muted-foreground">No data available</p>
+        <h3 className="text-h3 text-foreground mb-3">Statistics</h3>
+        <p className="text-body text-muted">No data available</p>
       </div>
     )
   }
@@ -48,6 +49,7 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
       return {
         rate: combinedRate,
         label: 'combined',
+        accent: 'red' as const,
         highThreshold: 0.25,
         mediumThreshold: 0.12,
       }
@@ -56,6 +58,7 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
       return {
         rate: delayRate,
         label: 'delays',
+        accent: 'orange' as const,
         highThreshold: 0.2,
         mediumThreshold: 0.1,
       }
@@ -63,6 +66,7 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
     return {
       rate: cancellationRate,
       label: 'cancellations',
+      accent: 'red' as const,
       highThreshold: 0.05,
       mediumThreshold: 0.02,
     }
@@ -70,56 +74,65 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
 
   const rateInfo = getOverallRateInfo()
 
+  // Determine accent color based on rate
+  const getRateAccent = (rate: number) => {
+    if (rate > rateInfo.highThreshold) return 'red'
+    if (rate > rateInfo.mediumThreshold) return 'orange'
+    return 'green'
+  }
+
+  const rateAccent = getRateAccent(rateInfo.rate)
+  const accentColors = {
+    red: 'text-status-critical',
+    orange: 'text-status-warning',
+    green: 'text-status-healthy',
+  }
+  const cardAccentClass = `card-accent-${rateAccent}`
+
   return (
     <div className="bg-card rounded-lg border border-border p-4">
-      <h3 className="text-sm font-semibold text-foreground mb-3">Statistics</h3>
+      <h3 className="text-h3 text-foreground mb-3">Statistics</h3>
 
-      <div className="space-y-3">
-        {/* Overall rate - highlighted based on enabled metrics */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">Overall Rate</span>
-          <span
-            className={`text-sm font-medium ${
-              rateInfo.rate > rateInfo.highThreshold
-                ? 'text-red-500'
-                : rateInfo.rate > rateInfo.mediumThreshold
-                  ? 'text-yellow-500'
-                  : 'text-green-500'
-            }`}
-          >
-            {formatPercent(rateInfo.rate)}
-            <span className="text-xs text-muted-foreground ml-1">({rateInfo.label})</span>
-          </span>
+      <div className="space-y-3 stagger-animation">
+        {/* Overall rate - highlighted metric card */}
+        <div className={`card-base ${cardAccentClass} p-3 -ml-1`}>
+          <div className="flex justify-between items-center">
+            <span className="text-body text-muted">Overall Rate</span>
+            <span className={`text-h2 tabular-nums ${accentColors[rateAccent]}`}>
+              {formatPercent(rateInfo.rate)}
+            </span>
+          </div>
+          <span className="text-tiny text-muted">{rateInfo.label}</span>
         </div>
 
         {/* Total departures */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">Total Departures</span>
-          <span className="text-sm font-medium text-foreground">
+        <div className="flex justify-between items-center py-2 border-b border-border/60">
+          <span className="text-body text-muted">Total Departures</span>
+          <span className="text-body font-medium text-foreground tabular-nums">
             {formatNumber(summary.total_departures)}
           </span>
         </div>
 
         {/* Cancellations count */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">Cancellations</span>
-          <span className="text-sm font-medium text-red-500">
+        <div className="flex justify-between items-center py-2 border-b border-border/60">
+          <span className="text-body text-muted">Cancellations</span>
+          <span className="text-body font-medium text-status-critical tabular-nums">
             {formatNumber(summary.total_cancellations)}
           </span>
         </div>
 
         {/* Delays count */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">Delays</span>
-          <span className="text-sm font-medium text-orange-500">
+        <div className="flex justify-between items-center py-2 border-b border-border/60">
+          <span className="text-body text-muted">Delays</span>
+          <span className="text-body font-medium text-status-warning tabular-nums">
             {formatNumber(summary.total_delays ?? 0)}
           </span>
         </div>
 
         {/* Stations monitored */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">Stations</span>
-          <span className="text-sm font-medium text-foreground">
+        <div className="flex justify-between items-center py-2 border-b border-border/60">
+          <span className="text-body text-muted">Stations</span>
+          <span className="text-body font-medium text-foreground tabular-nums">
             {formatNumber(summary.total_stations)}
           </span>
         </div>
@@ -130,8 +143,8 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
         {/* Most affected station */}
         {summary.most_affected_station && (
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Most Affected Station</span>
-            <p className="text-sm font-medium text-foreground truncate">
+            <span className="text-small text-muted">Most Affected Station</span>
+            <p className="text-body font-medium text-foreground truncate">
               {summary.most_affected_station}
             </p>
           </div>
@@ -140,8 +153,8 @@ export function HeatmapStats({ summary, enabledMetrics, isLoading = false }: Hea
         {/* Most affected line */}
         {summary.most_affected_line && (
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Most Affected Line</span>
-            <p className="text-sm font-medium text-foreground">{summary.most_affected_line}</p>
+            <span className="text-small text-muted">Most Affected Line</span>
+            <p className="text-body font-medium text-foreground">{summary.most_affected_line}</p>
           </div>
         )}
       </div>
