@@ -30,6 +30,16 @@ import {
   LIGHT_HEATMAP_CONFIG,
 } from '../../types/heatmap'
 import { useTheme } from '../../contexts/ThemeContext'
+import {
+  BVV_POINT_COLOR,
+  BVV_CLUSTER_COLOR,
+  BVV_CLUSTER_GLOW,
+  BVV_MARKER_RADIUS,
+  BVV_CLUSTER_RADIUS,
+  BVV_GLOW_RADIUS,
+  BVV_CLUSTER_GLOW_RADIUS,
+  getBVVMarkerColor,
+} from './markerStyles'
 
 // Error Boundary for Heatmap component
 interface HeatmapErrorBoundaryProps {
@@ -376,13 +386,10 @@ function overviewToGeoJSON(points: HeatmapPointLight[]): GeoJSONResult {
 
 /**
  * Get marker color based on normalized intensity (0..1).
- * Uses orange-to-red gradient matching the Show Metrics toggles.
+ * Uses BVV gradient: green (healthy) → amber (warning) → red (critical).
  */
 function getMarkerColor(intensity: number): string {
-  if (intensity > 0.8) return '#ef4444' // red-500
-  if (intensity > 0.5) return '#dc2626' // red-600
-  if (intensity > 0.3) return '#ea580c' // orange-600
-  return '#f97316' // orange-500
+  return getBVVMarkerColor(intensity)
 }
 
 function sanitize(value: string): string {
@@ -656,43 +663,12 @@ export function MapLibreHeatmap({
         })
       }
 
-      const avgIntensityExpr = [
-        '/',
-        ['coalesce', ['get', 'intensity_sum'], 0],
-        ['max', 1, ['coalesce', ['get', 'point_count'], 1]],
-      ] as unknown as ExpressionSpecification
+      // BVV cluster colors: green (healthy) → amber (warning) → red (critical)
+      const clusterColor = BVV_CLUSTER_COLOR as unknown as ExpressionSpecification
 
-      // Cluster colors: red (#ef4444) to orange (#f97316) gradient
-      // Same colors in both dark and light mode to match Show Metrics toggles
-      const clusterColor = [
-        'interpolate',
-        ['linear'],
-        avgIntensityExpr,
-        0,
-        'rgba(249, 115, 22, 0.55)', // orange-500
-        0.5,
-        'rgba(234, 88, 12, 0.75)', // orange-600
-        0.8,
-        'rgba(220, 38, 38, 0.90)', // red-600
-        1,
-        'rgba(239, 68, 68, 1.0)', // red-500
-      ] as unknown as ExpressionSpecification
+      const clusterGlowColor = BVV_CLUSTER_GLOW as unknown as ExpressionSpecification
 
-      const clusterGlowColor = [
-        'interpolate',
-        ['linear'],
-        avgIntensityExpr,
-        0,
-        'rgba(249, 115, 22, 0.20)', // orange-500
-        0.5,
-        'rgba(234, 88, 12, 0.28)', // orange-600
-        0.8,
-        'rgba(220, 38, 38, 0.32)', // red-600
-        1,
-        'rgba(239, 68, 68, 0.38)', // red-500
-      ] as unknown as ExpressionSpecification
-
-      // Cluster glow (beneath clusters)
+      // Cluster glow (beneath clusters) - BVV styling
       if (!map.getLayer('cluster-glow')) {
         map.addLayer({
           id: 'cluster-glow',
@@ -701,13 +677,13 @@ export function MapLibreHeatmap({
           filter: ['has', 'point_count'],
           paint: {
             'circle-color': clusterGlowColor,
-            'circle-radius': ['step', ['get', 'point_count'], 22, 10, 28, 50, 34],
+            'circle-radius': BVV_CLUSTER_GLOW_RADIUS as unknown as ExpressionSpecification,
             'circle-blur': 0.9,
           },
         })
       }
 
-      // Cluster circles
+      // Cluster circles - BVV styling
       if (!map.getLayer('clusters')) {
         map.addLayer({
           id: 'clusters',
@@ -716,11 +692,11 @@ export function MapLibreHeatmap({
           filter: ['has', 'point_count'],
           paint: {
             'circle-color': clusterColor,
-            'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 50, 24],
-            'circle-stroke-width': 1,
+            'circle-radius': BVV_CLUSTER_RADIUS as unknown as ExpressionSpecification,
+            'circle-stroke-width': 2,
             'circle-stroke-color': isDark
-              ? 'rgba(255, 248, 235, 0.55)'
-              : 'rgba(255, 255, 255, 0.75)',
+              ? 'rgba(255, 248, 235, 0.65)'
+              : 'rgba(255, 255, 255, 0.85)',
           },
         })
       }
@@ -745,23 +721,10 @@ export function MapLibreHeatmap({
         })
       }
 
-      // Point colors: orange to red gradient matching Show Metrics toggles
-      // Same colors in both dark and light mode
-      const pointColor = [
-        'interpolate',
-        ['linear'],
-        ['coalesce', ['get', 'intensity'], 0],
-        0,
-        'rgba(249, 115, 22, 0.65)', // orange-500
-        0.5,
-        'rgba(234, 88, 12, 0.82)', // orange-600
-        0.8,
-        'rgba(220, 38, 38, 0.92)', // red-600
-        1,
-        'rgba(239, 68, 68, 1.0)', // red-500
-      ] as unknown as ExpressionSpecification
+      // BVV point colors: green (healthy) → amber (warning) → red (critical)
+      const pointColor = BVV_POINT_COLOR as unknown as ExpressionSpecification
 
-      // Unclustered glow (beneath points)
+      // Unclustered glow (beneath points) - BVV styling
       if (!map.getLayer('unclustered-glow')) {
         map.addLayer({
           id: 'unclustered-glow',
@@ -770,14 +733,14 @@ export function MapLibreHeatmap({
           filter: ['!', ['has', 'point_count']],
           paint: {
             'circle-color': pointColor,
-            'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 5, 10, 10, 15, 16],
+            'circle-radius': BVV_GLOW_RADIUS as unknown as ExpressionSpecification,
             'circle-opacity': 0.28,
             'circle-blur': 0.9,
           },
         })
       }
 
-      // Individual station markers (unclustered)
+      // Individual station markers (unclustered) - BVV styling
       if (!map.getLayer('unclustered-point')) {
         map.addLayer({
           id: 'unclustered-point',
@@ -786,11 +749,11 @@ export function MapLibreHeatmap({
           filter: ['!', ['has', 'point_count']],
           paint: {
             'circle-color': pointColor,
-            'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 10, 6, 15, 8],
-            'circle-stroke-width': 1,
+            'circle-radius': BVV_MARKER_RADIUS as unknown as ExpressionSpecification,
+            'circle-stroke-width': 2,
             'circle-stroke-color': isDark
-              ? 'rgba(255, 255, 255, 0.65)'
-              : 'rgba(255, 255, 255, 0.85)',
+              ? 'rgba(255, 255, 255, 0.75)'
+              : 'rgba(255, 255, 255, 0.90)',
           },
         })
       }
