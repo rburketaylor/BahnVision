@@ -58,6 +58,19 @@ class TripUpdate:
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary with JSON-serializable values."""
+        return {
+            "trip_id": self.trip_id,
+            "route_id": self.route_id,
+            "stop_id": self.stop_id,
+            "stop_sequence": self.stop_sequence,
+            "arrival_delay": self.arrival_delay,
+            "departure_delay": self.departure_delay,
+            "schedule_relationship": self.schedule_relationship,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
 
 @dataclass
 class VehiclePosition:
@@ -75,6 +88,19 @@ class VehiclePosition:
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary with JSON-serializable values."""
+        return {
+            "trip_id": self.trip_id,
+            "vehicle_id": self.vehicle_id,
+            "route_id": self.route_id,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "bearing": self.bearing,
+            "speed": self.speed,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
 
 
 @dataclass
@@ -95,6 +121,21 @@ class ServiceAlert:
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary with JSON-serializable values."""
+        return {
+            "alert_id": self.alert_id,
+            "cause": self.cause,
+            "effect": self.effect,
+            "header_text": self.header_text,
+            "description_text": self.description_text,
+            "affected_routes": list(self.affected_routes),
+            "affected_stops": list(self.affected_stops),
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
 
 
 class GtfsRealtimeService:
@@ -497,18 +538,6 @@ class GtfsRealtimeService:
             logger.error(f"Failed to fetch alerts: {e}")
             return []
 
-    def _serialize_dataclass(self, obj) -> dict[str, Any]:
-        """Serialize a dataclass to a JSON-safe dict, converting datetime to ISO format"""
-        result: dict[str, Any] = {}
-        for key, value in obj.__dict__.items():
-            if isinstance(value, datetime):
-                result[key] = value.isoformat()
-            elif isinstance(value, set):
-                result[key] = list(value)
-            else:
-                result[key] = value
-        return result
-
     async def _store_trip_updates(self, trip_updates: List[TripUpdate]):
         """Store trip updates in Valkey cache with stop-based indexing using batch writes."""
         if not trip_updates:
@@ -520,7 +549,7 @@ class GtfsRealtimeService:
         for tu in trip_updates:
             if tu.stop_id not in updates_by_stop:
                 updates_by_stop[tu.stop_id] = []
-            updates_by_stop[tu.stop_id].append(self._serialize_dataclass(tu))
+            updates_by_stop[tu.stop_id].append(tu.to_dict())
 
         # Build batch of items to store
         # Key: trip_updates:stop:{stop_id} -> Value: List[TripUpdate]
@@ -544,12 +573,12 @@ class GtfsRealtimeService:
         for vp in vehicle_positions:
             # Store by vehicle_id
             vehicle_key = f"vehicle_position:{vp.vehicle_id}"
-            items_to_store[vehicle_key] = self._serialize_dataclass(vp)
+            items_to_store[vehicle_key] = vp.to_dict()
 
             # Create trip-to-vehicle index if trip_id is available
             if vp.trip_id:
                 trip_vehicle_key = f"vehicle_position:trip:{vp.trip_id}"
-                items_to_store[trip_vehicle_key] = self._serialize_dataclass(vp)
+                items_to_store[trip_vehicle_key] = vp.to_dict()
 
         # Batch write all vehicle positions and indexes
         await self.cache.mset_json(
@@ -568,7 +597,7 @@ class GtfsRealtimeService:
 
         for alert in alerts:
             key = f"service_alert:{alert.alert_id}"
-            items_to_store[key] = self._serialize_dataclass(alert)
+            items_to_store[key] = alert.to_dict()
 
             # Build route-to-alerts index
             for route_id in alert.affected_routes:
@@ -576,20 +605,14 @@ class GtfsRealtimeService:
                     route_to_alerts[route_id] = set()
                 route_to_alerts[route_id].add(alert.alert_id)
 
-        # Batch write all alerts
-        await self.cache.mset_json(
-            items_to_store,
-            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-        )
-
-        # Batch write all route-based indexes
-        index_items: dict[str, Any] = {}
+        # Add route-based indexes to the same batch
         for route_id, alert_ids in route_to_alerts.items():
             index_key = f"service_alerts:route:{route_id}"
-            index_items[index_key] = list(alert_ids)
+            items_to_store[index_key] = list(alert_ids)
 
+        # Batch write all alerts and indexes
         await self.cache.mset_json(
-            index_items,
+            items_to_store,
             ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
         )
 
