@@ -25,20 +25,90 @@ from app.api.v1.shared import (
 from app.api.v1.shared.dependencies import get_transit_data_service
 from app.api.v1.shared.rate_limit import limiter
 from app.core.database import get_session
-from app.models.heatmap import TimeRangePreset
-from app.models.station_stats import StationStats, StationTrends, TrendGranularity
+from app.models.heatmap import HeatmapResponse, TimeRangePreset
+from app.models.station_stats import (
+    StationStats,
+    StationTrends,
+    TransportBreakdown,
+    TrendGranularity,
+)
 from app.models.transit import (
     TransitStop,
     TransitStopSearchResponse,
 )
 from app.services.cache import CacheService, get_cache_service
 from app.services.gtfs_schedule import GTFSScheduleService
+from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
+from app.services.heatmap_service import TRANSPORT_TYPE_NAMES
 from app.services.station_stats_service import StationStatsService
 from app.services.transit_data import TransitDataService
 
 router = APIRouter()
 
 # Cache names for metrics
+
+
+async def _get_station_stats_from_live_snapshot(
+    stop_id: str,
+    cache: CacheService,
+) -> StationStats | None:
+    """Extract station stats from the live snapshot cache.
+
+    For live mode, the heatmap overview has fresh data from GTFS-RT,
+    but the database may not have corresponding realtime_station_stats.
+    This function extracts the specific station's data from the live snapshot.
+    """
+    cache_key = heatmap_live_snapshot_cache_key()
+    cached_data = await cache.get_json(cache_key)
+    if not cached_data:
+        cached_data = await cache.get_stale_json(cache_key)
+
+    if not cached_data:
+        return None
+
+    snapshot = HeatmapResponse.model_validate(cached_data)
+
+    # Find the station in the snapshot
+    for point in snapshot.data_points:
+        if point.station_id == stop_id:
+            # Convert by_transport dict to TransportBreakdown list
+            by_transport = [
+                TransportBreakdown(
+                    transport_type=transport_type,
+                    display_name=TRANSPORT_TYPE_NAMES.get(
+                        transport_type, transport_type
+                    ),
+                    total_departures=stats.total,
+                    cancelled_count=stats.cancelled,
+                    cancellation_rate=min(stats.cancelled / stats.total, 1.0)
+                    if stats.total > 0
+                    else 0,
+                    delayed_count=stats.delayed,
+                    delay_rate=min(stats.delayed / stats.total, 1.0)
+                    if stats.total > 0
+                    else 0,
+                )
+                for transport_type, stats in point.by_transport.items()
+            ]
+
+            return StationStats(
+                station_id=stop_id,
+                station_name=point.station_name,
+                time_range="live",
+                total_departures=point.total_departures,
+                cancelled_count=point.cancelled_count,
+                cancellation_rate=point.cancellation_rate,
+                delayed_count=point.delayed_count,
+                delay_rate=point.delay_rate,
+                network_avg_cancellation_rate=snapshot.summary.overall_cancellation_rate,
+                network_avg_delay_rate=snapshot.summary.overall_delay_rate,
+                performance_score=None,  # Not calculated for live
+                by_transport=by_transport,
+                data_from=snapshot.time_range.from_time,
+                data_to=snapshot.time_range.to_time,
+            )
+
+    return None
 
 
 async def get_station_stats_service(
@@ -233,11 +303,21 @@ async def get_station_stats(
     response: Response,
     time_range: Annotated[
         TimeRangePreset,
-        Query(description="Time range preset (1h, 6h, 24h, 7d, 30d)."),
+        Query(description="Time range preset (live, 1h, 6h, 24h, 7d, 30d)."),
     ] = "24h",
     stats_service: StationStatsService = Depends(get_station_stats_service),
+    cache: CacheService = Depends(get_cache_service),
 ) -> StationStats:
     """Get station statistics including cancellation and delay rates."""
+    # Handle live mode - use snapshot cache as primary source
+    if time_range == "live":
+        stats = await _get_station_stats_from_live_snapshot(stop_id, cache)
+        if stats:
+            set_stats_cache_header(response)
+            return stats
+        # Fall through to database query with "1h" as fallback
+        time_range = "1h"
+
     stats = await stats_service.get_station_stats(stop_id, time_range)
 
     if not stats:

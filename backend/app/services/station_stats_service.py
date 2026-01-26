@@ -95,17 +95,19 @@ class StationStatsService:
         self,
         stop_id: str,
         time_range: TimeRangePreset = "24h",
+        bucket_width_minutes: int = 60,
     ) -> StationStats | None:
         """Get current statistics for a station with caching.
 
         Args:
             stop_id: GTFS stop_id to query
             time_range: Time range preset
+            bucket_width_minutes: Time bucket width for aggregation
 
         Returns:
             StationStats with current metrics, or None if station not found
         """
-        cache_key = f"station_stats:{stop_id}:{time_range}"
+        cache_key = f"station_stats:{stop_id}:{time_range}:{bucket_width_minutes}"
 
         # Try cache first
         if self._cache:
@@ -134,6 +136,7 @@ class StationStatsService:
             .where(RealtimeStationStats.stop_id == stop_id)
             .where(RealtimeStationStats.bucket_start >= from_time)
             .where(RealtimeStationStats.bucket_start < to_time)
+            .where(RealtimeStationStats.bucket_width_minutes == bucket_width_minutes)
             .group_by(RealtimeStationStats.route_type)
         )
 
@@ -252,6 +255,7 @@ class StationStatsService:
         stop_id: str,
         time_range: TimeRangePreset = "24h",
         granularity: TrendGranularity = "hourly",
+        bucket_width_minutes: int = 60,
     ) -> StationTrends | None:
         """Get historical trend data for a station with caching.
 
@@ -259,11 +263,12 @@ class StationStatsService:
             stop_id: GTFS stop_id to query
             time_range: Time range preset
             granularity: Data granularity (hourly or daily)
+            bucket_width_minutes: Time bucket width for aggregation
 
         Returns:
             StationTrends with time series data, or None if station not found
         """
-        cache_key = f"station_trends:{stop_id}:{time_range}:{granularity}"
+        cache_key = f"station_trends:{stop_id}:{time_range}:{granularity}:{bucket_width_minutes}"
 
         # Try cache first
         if self._cache:
@@ -299,6 +304,7 @@ class StationStatsService:
             .where(RealtimeStationStats.stop_id == stop_id)
             .where(RealtimeStationStats.bucket_start >= from_time)
             .where(RealtimeStationStats.bucket_start < to_time)
+            .where(RealtimeStationStats.bucket_width_minutes == bucket_width_minutes)
             .group_by(time_bucket)
             .order_by(time_bucket)
         )
