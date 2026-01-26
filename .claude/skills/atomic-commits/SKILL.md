@@ -1,35 +1,24 @@
 ---
 name: atomic-commits
-description: Plan and create organized atomic commits with detailed descriptions. Use when the user wants to commit changes with proper organization - the skill will analyze changes, group them into logical atomic commits, run the full test suite to verify, resolve any issues, and make commits without pushing.
+description: Plan and create organized atomic commits with clear Conventional Commits messages. Use when the user asks to "organize commits", "plan commits", "make atomic commits", or commit current work cleanly. Analyze diffs, propose a commit plan for confirmation, run repo-appropriate checks (pre-commit/pytest and/or frontend lint/typecheck/tests), then stage and commit each group without pushing.
 ---
 
 # Atomic Commits Skill
 
-This skill helps you create organized, atomic commits with detailed descriptions. It ensures all tests pass before committing by running the full validation suite.
-
-## When to Use
-
-Invoke this skill when:
-
-- User wants to commit current changes with proper organization
-- User asks to "plan commits" or "organize commits"
-- User wants to ensure tests pass before committing
-- User mentions "atomic commits" or "detailed commit messages"
+Create a small set of self-contained commits with descriptive messages and verified checks.
 
 ## Workflow
 
 ### Step 1: Analyze Changes
 
-First, gather information about the current state:
+Gather information about the current state:
 
 ```bash
-# Get overview of changes
 git status
 
-# See detailed diffs
-git diff HEAD
+git diff
+git diff --staged
 
-# Check recent commit history for style reference
 git log --oneline -10
 ```
 
@@ -71,22 +60,23 @@ Planned commits (N total):
 
 Ask for user confirmation before proceeding.
 
-### Step 4: Run Full Test Suite
+### Step 4: Run Appropriate Checks
 
-Before committing, run the full validation suite based on what files changed:
+Before committing, run checks appropriate to what changed (prefer targeted checks; run broader checks for risky/wide changes). If this repo uses `direnv`, ensure it is allowed; otherwise activate the dev env (often `source .dev-env`) before running Python tooling.
 
 ```bash
-# Backend-only changes
-source backend/.venv/bin/activate
+# Safe baseline for most repos (if configured)
 pre-commit run --all-files
+
+# Backend changes
 pytest backend/tests
 
-# Frontend-only changes
-cd frontend && npm run lint
-cd frontend && npm run type-check
-cd frontend && npm run test -- --run
+# Frontend changes
+(cd frontend && npm run lint)
+(cd frontend && npm run type-check)
+(cd frontend && npm run test -- --run)
 
-# Mixed changes - run all of the above
+# Mixed changes: run both backend and frontend checks
 ```
 
 Continue to Step 5 only after all checks pass.
@@ -107,13 +97,12 @@ Create commits one at a time, staging only the files for each commit:
 ```bash
 # For each planned commit:
 git add <files-for-this-commit>
-git commit -m "$(cat <<'EOF'
+git commit -F - <<'EOF'
 <type>: <brief description>
 
 <detailed explanation of changes>
 
 EOF
-)"
 ```
 
 **IMPORTANT:**
@@ -129,7 +118,7 @@ After all commits are created:
 
 ```bash
 # Show the commits created
-git log --oneline -N
+git log --oneline -10
 git status
 ```
 
