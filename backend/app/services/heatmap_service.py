@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import and_, func, select, Numeric
+from sqlalchemy import and_, func, select, text, Numeric
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.heatmap import (
@@ -539,10 +539,7 @@ class HeatmapService:
             # Combine and limit
             stations_stmt = (
                 tier1_stmt.union(tier2_stmt)
-                .order_by(
-                    func.literal_column("impact_score").desc(),
-                    func.literal_column("total_departures").desc(),
-                )
+                .order_by(text("impact_score DESC, total_departures DESC"))
                 .limit(max_points)
             )
 
@@ -807,10 +804,7 @@ class HeatmapService:
             # UNION automatically deduplicates, so stations in both appear only once
             stations_stmt = (
                 tier1_stmt.union(tier2_stmt)
-                .order_by(
-                    func.literal_column("impact_score").desc(),
-                    func.literal_column("total_departures").desc(),
-                )
+                .order_by(text("impact_score DESC, total_departures DESC"))
                 .limit(max_points)
             )
 
