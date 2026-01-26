@@ -3,7 +3,7 @@ uvicorn[standard]==0.40.0
 valkey==6.1.1
 pydantic-settings==2.12.0
 prometheus-client==0.24.1
-SQLAlchemy==2.0.45
+SQLAlchemy==2.0.46
 alembic==1.18.1
 asyncpg==0.31.0
 httpx==0.28.1
