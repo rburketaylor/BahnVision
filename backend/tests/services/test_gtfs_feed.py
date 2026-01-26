@@ -191,13 +191,24 @@ class TestGTFSFeedImporter:
             }
         )
 
-        await importer._copy_stops(stops_df, "test_feed")
+        # Mock the asyncpg connection context manager
+        mock_driver_conn = AsyncMock()
+        mock_driver_conn.copy_to_table = AsyncMock()
+
+        class FakeConnContext:
+            async def __aenter__(self):
+                return mock_driver_conn
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with patch.object(
+            importer, "_get_asyncpg_conn", return_value=FakeConnContext()
+        ):
+            await importer._copy_stops(stops_df, "test_feed")
 
         # Verify copy_to_table was called on the mock driver connection
-        raw_conn = await mock_session.connection()
-        dbapi_conn = await raw_conn.get_raw_connection()
-        asyncpg_conn = dbapi_conn.driver_connection
-        asyncpg_conn.copy_to_table.assert_called_once()
+        mock_driver_conn.copy_to_table.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_copy_routes_empty_df(self, importer):
