@@ -461,6 +461,12 @@ html.dark .bv-map-popup__link:hover {
   background-color: #1e40af;
 }
 
+.bv-station-popup-container {
+  min-width: 240px;
+  min-height: 140px;
+  position: relative;
+}
+
 body {
   min-height: 100vh;
   background-color: #121212;
