@@ -12,8 +12,9 @@ import io
 import hashlib
 import logging
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import httpx
 from sqlalchemy import delete, select, text
@@ -75,25 +76,36 @@ _MAX_UPSERT_RETRIES = 3
 _UPSERT_RETRY_DELAY_SECONDS = 1.0
 
 
-async def _with_deadlock_retry(coro, max_retries: int = _MAX_UPSERT_RETRIES):
+T = TypeVar("T")
+
+
+async def _with_deadlock_retry(
+    coro_factory: Callable[[], Awaitable[T]],
+    *,
+    rollback: Callable[[], Awaitable[None]] | None = None,
+    max_retries: int = _MAX_UPSERT_RETRIES,
+) -> T:
     """Retry a coroutine on deadlock errors with exponential backoff.
 
     Args:
-        coro: The coroutine to execute
+        coro_factory: A callable that returns a fresh coroutine to execute
+        rollback: Optional rollback callback to reset aborted transactions
         max_retries: Maximum number of retry attempts
 
     Returns:
-        Result of the coroutine
+        Result of the executed coroutine
     """
     for attempt in range(max_retries + 1):
         try:
-            return await coro
+            return await coro_factory()
         except Exception as e:
             error_str = str(e).lower()
             is_deadlock = (
                 "deadlock" in error_str or "current transaction is aborted" in error_str
             )
             if is_deadlock and attempt < max_retries:
+                if rollback is not None:
+                    await rollback()
                 delay = _UPSERT_RETRY_DELAY_SECONDS * (2**attempt)
                 logger.warning(
                     "Deadlock detected in DB operation, retrying in %.1fs (attempt %d/%d): %s",
@@ -105,6 +117,8 @@ async def _with_deadlock_retry(coro, max_retries: int = _MAX_UPSERT_RETRIES):
                 await asyncio.sleep(delay)
                 continue
             raise
+
+    raise RuntimeError("Unreachable: deadlock retry loop completed without result")
 
 
 def _escape_tsv(val) -> str:
@@ -308,8 +322,8 @@ class GTFSRTDataHarvester:
 
             return updated_count
 
-        except Exception as e:
-            logger.error("Failed to harvest GTFS-RT data: %s", e)
+        except Exception:
+            logger.exception("Failed to harvest GTFS-RT data")
             return 0
 
     async def _fetch_trip_updates(self) -> list[dict]:
@@ -621,7 +635,16 @@ class GTFSRTDataHarvester:
     ) -> None:
         """Build and cache the live heatmap snapshot."""
         if not self._cache or not hasattr(self._cache, "set_json"):
+            logger.warning(
+                "Live snapshot caching skipped: cache=%s, has_set_json=%s",
+                self._cache is not None,
+                hasattr(self._cache, "set_json") if self._cache else False,
+            )
             return
+
+        logger.info(
+            "Caching live snapshot with %d stop-route combinations", len(snapshot_stats)
+        )
 
         by_stop: dict[str, dict] = {}
         for (stop_id, route_type), stats in snapshot_stats.items():
@@ -639,8 +662,6 @@ class GTFSRTDataHarvester:
             entry["cancelled"] += cancelled
             entry["delayed"] += delayed
 
-            if route_type == UNKNOWN_ROUTE_TYPE:
-                continue
             transport_type = GTFS_ROUTE_TYPES.get(route_type, "BUS")
             transport_entry = entry["by_transport"].setdefault(
                 transport_type, {"total": 0, "cancelled": 0, "delayed": 0}
@@ -938,12 +959,6 @@ class GTFSRTDataHarvester:
         """Create a short hash of trip_id to reduce cache key size."""
         return hashlib.md5(trip_id.encode(), usedforsecurity=False).hexdigest()[:12]
 
-    async def _get_asyncpg_conn(self, session: AsyncSession):
-        """Get raw asyncpg connection for COPY operations."""
-        raw_conn = await session.connection()
-        dbapi_conn = await raw_conn.get_raw_connection()
-        return dbapi_conn.driver_connection
-
     async def _upsert_stats(
         self,
         session: AsyncSession,
@@ -1007,7 +1022,11 @@ class GTFSRTDataHarvester:
 
             tsv_data = "\n".join(lines)
 
-            asyncpg_conn = await self._get_asyncpg_conn(session)
+            # Get raw asyncpg connection for COPY operation
+            # get_raw_connection() returns a _ConnectionFairy wrapper; access driver_connection for the raw asyncpg connection
+            raw_conn = await session.connection()
+            raw_asyncpg = await raw_conn.get_raw_connection()
+            asyncpg_conn = raw_asyncpg.driver_connection
             await asyncpg_conn.copy_to_table(
                 "temp_rt_stats",
                 source=io.BytesIO(tsv_data.encode("utf-8")),
@@ -1054,7 +1073,7 @@ class GTFSRTDataHarvester:
 
             logger.debug("Upserted %d station stats via COPY", len(stop_stats))
 
-        await _with_deadlock_retry(_do_upsert)
+        await _with_deadlock_retry(_do_upsert, rollback=session.rollback)
 
     async def cleanup_old_stats(
         self,
