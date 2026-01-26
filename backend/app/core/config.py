@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     cache_circuit_breaker_timeout_seconds: float = Field(
         default=2.0, alias="CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS", ge=0.0
     )
+    cache_mset_batch_size: int = Field(
+        default=10000, alias="CACHE_MSET_BATCH_SIZE", gt=0
+    )
 
     # ==========================================================================
     # Cache Warmup
