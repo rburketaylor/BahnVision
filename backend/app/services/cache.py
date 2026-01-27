@@ -20,6 +20,7 @@ from functools import lru_cache, wraps
 from typing import Any, AsyncIterator, Callable, TypeVar
 
 import valkey.asyncio as valkey
+from fastapi.encoders import jsonable_encoder
 
 from app.core.config import get_settings
 from app.core.metrics import record_cache_event
@@ -432,7 +433,9 @@ class CacheService:
             return
 
         # Serialize all values to JSON
-        serialized = {key: json.dumps(value) for key, value in items.items()}
+        serialized = {
+            key: json.dumps(jsonable_encoder(value)) for key, value in items.items()
+        }
         await self.mset(serialized, ttl_seconds)
 
     async def get_json(self, key: str) -> Any | None:
@@ -471,7 +474,7 @@ class CacheService:
         stale_ttl_seconds: int | None = None,
     ) -> None:
         """Serialize and store a JSON-compatible document."""
-        encoded = json.dumps(value)
+        encoded = json.dumps(jsonable_encoder(value))
         stale_key = f"{key}{self._STALE_SUFFIX}"
 
         effective_ttl = self._config.get_effective_ttl(ttl_seconds)
@@ -566,6 +569,8 @@ def get_valkey_client() -> valkey.Valkey:
         settings.valkey_url,
         encoding="utf-8",
         decode_responses=True,
+        socket_connect_timeout=settings.valkey_socket_connect_timeout_seconds,
+        socket_timeout=settings.valkey_socket_timeout_seconds,
     )
 
 

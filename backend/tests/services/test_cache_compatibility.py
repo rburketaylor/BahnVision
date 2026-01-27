@@ -3,6 +3,7 @@ Test cache service functionality including circuit breaker, single-flight locks,
 """
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 
@@ -172,6 +173,21 @@ class TestCacheService:
         await cache_service.set_json(test_key, complex_value)
         result = await cache_service.get_json(test_key)
         assert result == complex_value
+
+    @pytest.mark.asyncio
+    async def test_json_serialization_datetime_values(self, cache_service):
+        """Cache JSON helpers should handle datetime values without raising."""
+        test_key = "json_datetime_test"
+        dt = datetime(2026, 1, 27, 12, 34, 56, tzinfo=timezone.utc)
+
+        await cache_service.set_json(test_key, {"at": dt})
+        result = await cache_service.get_json(test_key)
+
+        assert result == {"at": dt.isoformat()}
+
+        await cache_service.mset_json({"json_datetime_test_2": {"at": dt}})
+        result2 = await cache_service.get_json("json_datetime_test_2")
+        assert result2 == {"at": dt.isoformat()}
 
     @pytest.mark.asyncio
     async def test_fallback_store_ttl_expiration(self, cache_service, fake_valkey):
