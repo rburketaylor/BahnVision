@@ -51,6 +51,8 @@ router = APIRouter()
 async def _get_station_stats_from_live_snapshot(
     stop_id: str,
     cache: CacheService,
+    *,
+    include_network_averages: bool,
 ) -> StationStats | None:
     """Extract station stats from the live snapshot cache.
 
@@ -100,8 +102,16 @@ async def _get_station_stats_from_live_snapshot(
                 cancellation_rate=point.cancellation_rate,
                 delayed_count=point.delayed_count,
                 delay_rate=point.delay_rate,
-                network_avg_cancellation_rate=snapshot.summary.overall_cancellation_rate,
-                network_avg_delay_rate=snapshot.summary.overall_delay_rate,
+                network_avg_cancellation_rate=(
+                    snapshot.summary.overall_cancellation_rate
+                    if include_network_averages
+                    else None
+                ),
+                network_avg_delay_rate=(
+                    snapshot.summary.overall_delay_rate
+                    if include_network_averages
+                    else None
+                ),
                 performance_score=None,  # Not calculated for live
                 by_transport=by_transport,
                 data_from=snapshot.time_range.from_time,
@@ -305,20 +315,34 @@ async def get_station_stats(
         TimeRangePreset,
         Query(description="Time range preset (live, 1h, 6h, 24h, 7d, 30d)."),
     ] = "24h",
+    include_network_averages: Annotated[
+        bool,
+        Query(
+            description="Whether to include network-wide average rates (expensive for long time ranges)."
+        ),
+    ] = True,
     stats_service: StationStatsService = Depends(get_station_stats_service),
     cache: CacheService = Depends(get_cache_service),
 ) -> StationStats:
     """Get station statistics including cancellation and delay rates."""
     # Handle live mode - use snapshot cache as primary source
     if time_range == "live":
-        stats = await _get_station_stats_from_live_snapshot(stop_id, cache)
+        stats = await _get_station_stats_from_live_snapshot(
+            stop_id,
+            cache,
+            include_network_averages=include_network_averages,
+        )
         if stats:
             set_stats_cache_header(response)
             return stats
         # Fall through to database query with "1h" as fallback
         time_range = "1h"
 
-    stats = await stats_service.get_station_stats(stop_id, time_range)
+    stats = await stats_service.get_station_stats(
+        stop_id,
+        time_range,
+        include_network_averages=include_network_averages,
+    )
 
     if not stats:
         raise station_not_found(stop_id)

@@ -527,20 +527,23 @@ export function MapLibreHeatmap({
 
       popupRef.current.on('close', () => {
         onStationSelectRef.current?.(null)
-        if (popupRootRef.current) {
-          setTimeout(() => {
-            if (popupRootRef.current) {
-              try {
-                popupRootRef.current.unmount()
-              } catch (e) {
-                console.warn('Failed to unmount popup root:', e)
-              }
-              popupRootRef.current = null
+
+        // IMPORTANT: capture the current root/container before scheduling cleanup.
+        // MapLibre can emit "close" right before a new selection re-opens the popup.
+        // If we reference `popupRootRef.current` in an async callback, we risk
+        // unmounting the *new* popup content (race), leaving a blank popup.
+        const rootToUnmount = popupRootRef.current
+        popupRootRef.current = null
+        popupContainerRef.current = null
+
+        if (rootToUnmount) {
+          queueMicrotask(() => {
+            try {
+              rootToUnmount.unmount()
+            } catch (e) {
+              console.warn('Failed to unmount popup root:', e)
             }
-            if (popupContainerRef.current) {
-              popupContainerRef.current = null
-            }
-          }, 0)
+          })
         }
       })
     }

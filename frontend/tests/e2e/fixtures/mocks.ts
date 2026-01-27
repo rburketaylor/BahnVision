@@ -125,31 +125,31 @@ export const mockStationTrends = {
 }
 
 export const mockHeatmapData = {
-  time_range: '24h',
-  generated_at: '2025-01-01T12:00:00Z',
-  total_stations: 150,
-  stations: [
+  time_range: {
+    from: '2025-01-01T00:00:00Z',
+    to: '2025-01-02T00:00:00Z',
+  },
+  points: [
     {
-      stop_id: mockStation.id,
-      stop_name: mockStation.name,
-      latitude: mockStation.latitude,
-      longitude: mockStation.longitude,
-      total_departures: 100,
-      cancellation_rate: 0.05,
-      delay_rate: 0.1,
-      performance_score: 82,
-    },
-    {
-      stop_id: mockSecondStation.id,
-      stop_name: mockSecondStation.name,
-      latitude: mockSecondStation.latitude,
-      longitude: mockSecondStation.longitude,
-      total_departures: 200,
-      cancellation_rate: 0.02,
-      delay_rate: 0.05,
-      performance_score: 93,
+      // Place the point at Germany center so a click on the map canvas center hits it reliably.
+      id: mockStation.id,
+      n: mockStation.name,
+      lat: 51.1,
+      lon: 10.4,
+      i: 0.2,
     },
   ],
+  summary: {
+    total_stations: 150,
+    total_departures: 300,
+    total_cancellations: 10,
+    overall_cancellation_rate: 0.03,
+    total_delays: 15,
+    overall_delay_rate: 0.05,
+    most_affected_station: mockStation.name,
+    most_affected_line: null,
+  },
+  total_impacted_stations: 1,
 }
 
 export const mockHealthResponse = {
@@ -220,13 +220,49 @@ export function setupStationMocks(page: import('@playwright/test').Page) {
 }
 
 export function setupHeatmapMocks(page: import('@playwright/test').Page) {
-  return page.route('**/api/v1/heatmap**', async route => {
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(mockHeatmapData),
-    })
-  })
+  const emptyBasemapStyle = {
+    version: 8,
+    name: 'Empty (E2E)',
+    sources: {},
+    layers: [
+      {
+        id: 'background',
+        type: 'background',
+        paint: { 'background-color': '#ffffff' },
+      },
+    ],
+    // MapLibre needs a glyphs URL if symbol layers are added (cluster counts).
+    glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
+  }
+
+  return Promise.all([
+    // Avoid external network dependency for basemap style.
+    page.route('https://basemaps.cartocdn.com/**/style.json', async route => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(emptyBasemapStyle),
+      })
+    }),
+
+    // Satisfy glyph requests from the empty style (we don't need actual glyphs for these tests).
+    page.route('**/fonts/**', async route => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/octet-stream',
+        body: '',
+      })
+    }),
+
+    // Heatmap overview endpoint used by the landing page.
+    page.route('**/api/v1/heatmap/overview**', async route => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockHeatmapData),
+      })
+    }),
+  ])
 }
 
 export function setupHealthMocks(page: import('@playwright/test').Page) {

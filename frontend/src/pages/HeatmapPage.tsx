@@ -104,7 +104,11 @@ export default function HeatmapPage() {
   const { data: stationStats, isLoading: isStationStatsLoading } = useStationStats(
     selectedStationId ?? undefined,
     stationStatsTimeRange,
-    { enabled: !!selectedStationId }
+    {
+      enabled: !!selectedStationId,
+      // The popup doesn't use network averages, and they can be very expensive for long ranges (7d/30d).
+      includeNetworkAverages: false,
+    }
   )
 
   const handleStationDetailRequested = useCallback((stationId: string) => {

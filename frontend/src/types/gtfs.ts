@@ -296,6 +296,7 @@ export interface StationTrends {
 export interface StationStatsParams {
   stop_id: string
   time_range?: StationStatsTimeRange
+  include_network_averages?: boolean
 }
 
 /** Query parameters for station trends endpoint */

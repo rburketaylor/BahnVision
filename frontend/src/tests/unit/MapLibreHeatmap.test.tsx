@@ -425,6 +425,54 @@ describe('MapLibreHeatmap Component', () => {
     expect(rootInstance!.unmount).toHaveBeenCalled()
   })
 
+  it('does not let a stale popup close unmount a newly selected station popup', async () => {
+    const overviewPoints = [
+      { id: 'station-1', n: 'Station 1', lat: 52.5, lon: 13.4, i: 0.2 },
+      { id: 'station-2', n: 'Station 2', lat: 52.6, lon: 13.5, i: 0.2 },
+    ]
+
+    const { rerender } = render(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          overviewPoints={overviewPoints}
+          selectedStationId="station-1"
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => expect(createRoot).toHaveBeenCalledTimes(1))
+    const firstRoot = (createRoot as unknown as { mock: { results: Array<{ value: unknown }> } })
+      .mock.results[0]?.value as { unmount: ReturnType<typeof vi.fn> } | undefined
+    expect(firstRoot?.unmount).toBeDefined()
+
+    // Simulate MapLibre emitting a popup close (e.g., clicking another point).
+    const popupInstance = (
+      maplibregl as unknown as { Popup: { mock: { instances: Array<Record<string, unknown>> } } }
+    ).Popup.mock.instances.at(-1) as { _emit?: (event: string) => void } | undefined
+    expect(popupInstance?._emit).toBeTypeOf('function')
+    popupInstance!._emit!('close')
+
+    // Immediately switch to another station before the close handler's async cleanup runs.
+    rerender(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          overviewPoints={overviewPoints}
+          selectedStationId="station-2"
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
+      </ThemeProvider>
+    )
+
+    // The second selection should render into a new root, not be unmounted by the prior close.
+    await waitFor(() => expect(createRoot).toHaveBeenCalledTimes(2))
+    const secondRoot = (createRoot as unknown as { mock: { results: Array<{ value: unknown }> } })
+      .mock.results[1]?.value as { unmount: ReturnType<typeof vi.fn> } | undefined
+    expect(secondRoot?.unmount).toBeDefined()
+    await waitFor(() => expect(firstRoot!.unmount).toHaveBeenCalledTimes(1))
+    expect(secondRoot!.unmount).not.toHaveBeenCalled()
+  })
+
   it('resets map instance on error boundary retry', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const dataPoints: HeatmapDataPoint[] = []

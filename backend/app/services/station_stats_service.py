@@ -8,7 +8,7 @@ by querying the realtime_station_stats table.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.cache import CacheService
 
-from app.models.heatmap import TimeRangePreset
+from app.models.heatmap import HeatmapOverviewResponse, TimeRangePreset
 from app.models.station_stats import (
     StationStats,
     StationTrends,
@@ -25,6 +25,7 @@ from app.models.station_stats import (
     TrendGranularity,
 )
 from app.persistence.models import RealtimeStationStats
+from app.persistence.models import RealtimeStationStatsDaily
 from app.services.gtfs_schedule import GTFSScheduleService
 from app.services.heatmap_service import (
     GTFS_ROUTE_TYPES,
@@ -96,6 +97,8 @@ class StationStatsService:
         stop_id: str,
         time_range: TimeRangePreset = "24h",
         bucket_width_minutes: int = 60,
+        *,
+        include_network_averages: bool = True,
     ) -> StationStats | None:
         """Get current statistics for a station with caching.
 
@@ -107,7 +110,10 @@ class StationStatsService:
         Returns:
             StationStats with current metrics, or None if station not found
         """
-        cache_key = f"station_stats:{stop_id}:{time_range}:{bucket_width_minutes}"
+        cache_key = (
+            f"station_stats:{stop_id}:{time_range}:{bucket_width_minutes}:"
+            f"{1 if include_network_averages else 0}"
+        )
 
         # Try cache first
         if self._cache:
@@ -208,8 +214,15 @@ class StationStatsService:
                 else 0
             )
 
-            # Get network averages for comparison
-            network_avg = await self._get_network_averages(from_time, to_time)
+            network_avg: dict[str, float] = {}
+            if include_network_averages:
+                # Get network averages for comparison
+                network_avg = await self._get_network_averages(
+                    time_range=time_range,
+                    from_time=from_time,
+                    to_time=to_time,
+                    bucket_width_minutes=bucket_width_minutes,
+                )
 
             # Calculate performance score (100 = perfect)
             # Score decreases with higher cancellation/delay rates
@@ -228,8 +241,14 @@ class StationStatsService:
                 cancellation_rate=overall_cancellation_rate,
                 delayed_count=total_delayed,
                 delay_rate=overall_delay_rate,
-                network_avg_cancellation_rate=network_avg.get("cancellation_rate"),
-                network_avg_delay_rate=network_avg.get("delay_rate"),
+                network_avg_cancellation_rate=(
+                    network_avg.get("cancellation_rate")
+                    if include_network_averages
+                    else None
+                ),
+                network_avg_delay_rate=(
+                    network_avg.get("delay_rate") if include_network_averages else None
+                ),
                 performance_score=performance_score,
                 by_transport=by_transport,
                 data_from=from_time,
@@ -379,14 +398,18 @@ class StationStatsService:
 
     async def _get_network_averages(
         self,
+        time_range: TimeRangePreset,
         from_time: datetime,
         to_time: datetime,
+        bucket_width_minutes: int,
     ) -> dict[str, float]:
         """Get network-wide average cancellation and delay rates with caching.
 
         Args:
+            time_range: Time range preset (used for fast path via heatmap overview cache)
             from_time: Start of time range
             to_time: End of time range
+            bucket_width_minutes: Bucket width to match aggregation
 
         Returns:
             Dict with 'cancellation_rate' and 'delay_rate' keys
@@ -394,7 +417,7 @@ class StationStatsService:
         # Use hour-bucketed cache key for network averages
         from_bucket = from_time.strftime("%Y%m%d%H")
         to_bucket = to_time.strftime("%Y%m%d%H")
-        cache_key = f"network_averages:{from_bucket}:{to_bucket}"
+        cache_key = f"network_averages:{bucket_width_minutes}:{from_bucket}:{to_bucket}"
 
         if self._cache:
             try:
@@ -404,24 +427,146 @@ class StationStatsService:
             except Exception as e:
                 logger.warning(f"Network averages cache read failed: {e}")
 
-        stmt = select(
-            func.sum(RealtimeStationStats.trip_count).label("total"),
-            func.sum(RealtimeStationStats.cancelled_count).label("cancelled"),
-            func.sum(RealtimeStationStats.delayed_count).label("delayed"),
-        ).where(
-            RealtimeStationStats.bucket_start >= from_time,
-            RealtimeStationStats.bucket_start < to_time,
-        )
+        # Fast path: reuse cached heatmap overview summary if available.
+        # The heatmap landing page always hits /api/v1/heatmap/overview first, so this avoids
+        # a full-table SUM over realtime_station_stats on the first station click.
+        if self._cache:
+            overview_cache_key = (
+                f"heatmap:overview:{time_range or 'default'}:all:{bucket_width_minutes}"
+            )
+            try:
+                overview_cached = await self._cache.get_json(overview_cache_key)
+                if not overview_cached:
+                    overview_cached = await self._cache.get_stale_json(
+                        overview_cache_key
+                    )
+                if overview_cached:
+                    overview = HeatmapOverviewResponse.model_validate(overview_cached)
+                    res = {
+                        "cancellation_rate": float(
+                            overview.summary.overall_cancellation_rate
+                        ),
+                        "delay_rate": float(overview.summary.overall_delay_rate),
+                    }
+                    try:
+                        await self._cache.set_json(cache_key, res, ttl_seconds=600)
+                    except Exception as e:
+                        logger.warning(f"Network averages cache write failed: {e}")
+                    return res
+            except Exception as e:
+                logger.warning(
+                    "Heatmap overview cache read failed for network averages: %s",
+                    e,
+                )
 
-        result = await self._session.execute(stmt)
-        row = result.one_or_none()
+        async def _sum_hourly(start: datetime, end: datetime) -> tuple[int, int, int]:
+            stmt = select(
+                func.sum(RealtimeStationStats.trip_count).label("total"),
+                func.sum(RealtimeStationStats.cancelled_count).label("cancelled"),
+                func.sum(RealtimeStationStats.delayed_count).label("delayed"),
+            ).where(
+                RealtimeStationStats.bucket_start >= start,
+                RealtimeStationStats.bucket_start < end,
+                RealtimeStationStats.bucket_width_minutes == bucket_width_minutes,
+            )
+            result = await self._session.execute(stmt)
+            row = result.one_or_none()
+            if not row or not row.total:
+                return 0, 0, 0
+            return int(row.total or 0), int(row.cancelled or 0), int(row.delayed or 0)
 
-        if not row or not row.total:
+        async def _sum_daily(start_date: date, end_date: date) -> tuple[int, int, int]:
+            stmt = select(
+                func.sum(RealtimeStationStatsDaily.trip_count).label("total"),
+                func.sum(RealtimeStationStatsDaily.cancelled_count).label("cancelled"),
+                func.sum(RealtimeStationStatsDaily.delayed_count).label("delayed"),
+            ).where(
+                RealtimeStationStatsDaily.date >= start_date,
+                RealtimeStationStatsDaily.date < end_date,
+            )
+            result = await self._session.execute(stmt)
+            row = result.one_or_none()
+            if not row or not row.total:
+                return 0, 0, 0
+            return int(row.total or 0), int(row.cancelled or 0), int(row.delayed or 0)
+
+        total = cancelled = delayed = 0
+
+        # For longer ranges, prefer daily summaries for the full-day middle segment.
+        # This avoids scanning tens of millions of hourly rows for 7d/30d requests.
+        if (
+            bucket_width_minutes == 60
+            and (to_time - from_time).total_seconds() >= 48 * 3600
+        ):
+            from_midnight_next = datetime.combine(
+                from_time.date() + timedelta(days=1), time(0, 0), tzinfo=timezone.utc
+            )
+            to_midnight = datetime.combine(
+                to_time.date(), time(0, 0), tzinfo=timezone.utc
+            )
+
+            # Head: from_time -> next midnight (partial first day)
+            head_end = min(from_midnight_next, to_time)
+            head_total, head_cancelled, head_delayed = await _sum_hourly(
+                from_time, head_end
+            )
+            total += head_total
+            cancelled += head_cancelled
+            delayed += head_delayed
+
+            # Middle: full days between head_end and to_midnight (exclusive of the last partial day)
+            middle_start_date = head_end.date()
+            middle_end_date = to_midnight.date()
+            if middle_start_date < middle_end_date:
+                # Only use daily summaries if we actually have at least one row in the range;
+                # otherwise fall back to hourly for correctness in fresh installs.
+                probe_stmt = (
+                    select(RealtimeStationStatsDaily.id)
+                    .where(
+                        RealtimeStationStatsDaily.date >= middle_start_date,
+                        RealtimeStationStatsDaily.date < middle_end_date,
+                    )
+                    .limit(1)
+                )
+                probe = await self._session.execute(probe_stmt)
+                if probe.scalar_one_or_none() is not None:
+                    mid_total, mid_cancelled, mid_delayed = await _sum_daily(
+                        middle_start_date, middle_end_date
+                    )
+                    total += mid_total
+                    cancelled += mid_cancelled
+                    delayed += mid_delayed
+                else:
+                    mid_start_dt = datetime.combine(
+                        middle_start_date, time(0, 0), tzinfo=timezone.utc
+                    )
+                    mid_end_dt = datetime.combine(
+                        middle_end_date, time(0, 0), tzinfo=timezone.utc
+                    )
+                    mid_total, mid_cancelled, mid_delayed = await _sum_hourly(
+                        mid_start_dt, mid_end_dt
+                    )
+                    total += mid_total
+                    cancelled += mid_cancelled
+                    delayed += mid_delayed
+
+            # Tail: last midnight -> to_time (partial last day)
+            if to_midnight < to_time:
+                tail_total, tail_cancelled, tail_delayed = await _sum_hourly(
+                    to_midnight, to_time
+                )
+                total += tail_total
+                cancelled += tail_cancelled
+                delayed += tail_delayed
+        else:
+            total, cancelled, delayed = await _sum_hourly(from_time, to_time)
+
+        if total <= 0:
             res = {"cancellation_rate": 0.0, "delay_rate": 0.0}
         else:
             res = {
-                "cancellation_rate": min((row.cancelled or 0) / row.total, 1.0),
-                "delay_rate": min((row.delayed or 0) / row.total, 1.0),
+                "cancellation_rate": min((cancelled or 0) / total, 1.0),
+                "delay_rate": min((delayed or 0) / total, 1.0),
             }
 
         # Cache for 10 minutes (network averages change slowly)

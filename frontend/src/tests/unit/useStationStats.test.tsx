@@ -118,6 +118,7 @@ describe('useStationStats hook', () => {
     expect(mockTransitApiClient.getStationStats).toHaveBeenCalledWith({
       stop_id: 'de:09162:1',
       time_range: '24h',
+      include_network_averages: true,
     })
   })
 

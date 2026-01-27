@@ -37,8 +37,14 @@ class FakeStationStatsService:
         self._trends = trends
         self.calls: list[tuple] = []
 
-    async def get_station_stats(self, stop_id: str, time_range: str):
-        self.calls.append(("stats", stop_id, time_range))
+    async def get_station_stats(
+        self,
+        stop_id: str,
+        time_range: str,
+        *,
+        include_network_averages: bool = True,
+    ):
+        self.calls.append(("stats", stop_id, time_range, include_network_averages))
         return self._stats
 
     async def get_station_trends(self, stop_id: str, time_range: str, granularity: str):
