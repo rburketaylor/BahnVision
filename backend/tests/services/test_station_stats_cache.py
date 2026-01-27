@@ -41,7 +41,7 @@ async def test_station_stats_caches_result(station_stats_service, mock_cache):
     mock_cache.get_json.assert_called()
     mock_cache.set_json.assert_called()
     key = mock_cache.set_json.call_args[0][0]
-    assert key == "station_stats:stop_123:24h"
+    assert key == "station_stats:stop_123:24h:60"  # includes bucket_width_minutes
 
 
 @pytest.mark.asyncio

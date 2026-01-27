@@ -87,7 +87,7 @@ describe('HeatmapStats', () => {
     expect(screen.queryByText('Most Affected Line')).not.toBeInTheDocument()
   })
 
-  it('shows high rate with red color', () => {
+  it('shows high rate with critical color', () => {
     const highRateSummary: HeatmapSummary = {
       ...mockSummary,
       overall_cancellation_rate: 0.08, // 8%
@@ -97,10 +97,10 @@ describe('HeatmapStats', () => {
 
     const rateValue = screen.getByText('8.0%')
     expect(rateValue).toBeInTheDocument()
-    expect(rateValue).toHaveClass('text-red-500')
+    expect(rateValue).toHaveClass('text-status-critical')
   })
 
-  it('shows moderate rate with yellow color', () => {
+  it('shows moderate rate with warning color', () => {
     const moderateRateSummary: HeatmapSummary = {
       ...mockSummary,
       overall_cancellation_rate: 0.03, // 3%
@@ -110,7 +110,7 @@ describe('HeatmapStats', () => {
 
     const rateValue = screen.getByText('3.0%')
     expect(rateValue).toBeInTheDocument()
-    expect(rateValue).toHaveClass('text-yellow-500')
+    expect(rateValue).toHaveClass('text-status-warning')
   })
 
   it('displays delay rate when only delays enabled', () => {
@@ -120,8 +120,8 @@ describe('HeatmapStats', () => {
 
     const rateValue = screen.getByText('5.0%')
     expect(rateValue).toBeInTheDocument()
-    expect(rateValue).toHaveClass('text-green-500')
-    expect(screen.getByText('(delays)')).toBeInTheDocument()
+    expect(rateValue).toHaveClass('text-status-healthy')
+    expect(screen.getByText('delays')).toBeInTheDocument()
   })
 
   it('displays combined rate when both metrics enabled', () => {
@@ -132,6 +132,6 @@ describe('HeatmapStats', () => {
     // Combined rate = 3.5% + 5% = 8.5%
     const rateValue = screen.getByText('8.5%')
     expect(rateValue).toBeInTheDocument()
-    expect(screen.getByText('(combined)')).toBeInTheDocument()
+    expect(screen.getByText('combined')).toBeInTheDocument()
   })
 })

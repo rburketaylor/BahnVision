@@ -11,6 +11,7 @@ Provides distributed caching via Valkey with:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import time
@@ -41,6 +42,7 @@ class TTLConfig:
         self.valkey_cache_ttl = settings.valkey_cache_ttl_seconds
         self.valkey_cache_ttl_not_found = settings.valkey_cache_ttl_not_found_seconds
         self.circuit_breaker_timeout = settings.cache_circuit_breaker_timeout_seconds
+        self.cache_mset_batch_size = settings.cache_mset_batch_size
 
         self._validate_ttls()
 
@@ -386,17 +388,26 @@ class CacheService:
             return
 
         effective_ttl = self._config.get_effective_ttl(ttl_seconds)
+        batch_size = self._config.cache_mset_batch_size
+        if batch_size <= 0:
+            batch_size = len(items)
 
-        # Write to Valkey using pipeline
+        # Write to Valkey using pipeline with batching
         if not self._circuit_breaker.is_open():
             try:
-                pipe = self._client.pipeline()
-                for key, value in items.items():
-                    if effective_ttl and effective_ttl > 0:
-                        pipe.set(key, value, ex=effective_ttl)
-                    else:
-                        pipe.set(key, value)
-                await pipe.execute()
+                # Process in batches to avoid timeouts
+                item_iter = iter(items.items())
+                while True:
+                    batch = dict(itertools.islice(item_iter, batch_size))
+                    if not batch:
+                        break
+                    pipe = self._client.pipeline()
+                    for key, value in batch.items():
+                        if effective_ttl and effective_ttl > 0:
+                            pipe.set(key, value, ex=effective_ttl)
+                        else:
+                            pipe.set(key, value)
+                    await pipe.execute()
                 self._circuit_breaker.close()
             except Exception as exc:
                 logger.warning("MSET pipeline failed: %s", exc)

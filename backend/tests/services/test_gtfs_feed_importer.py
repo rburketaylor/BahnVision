@@ -825,11 +825,17 @@ class TestGTFSFeedImporterCopyPolarsDf:
         class FakeConn:
             copy_to_table = AsyncMock()
 
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
         with patch.object(
             importer,
             "_get_asyncpg_conn",
-            new_callable=AsyncMock,
-            return_value=FakeConn(),
+            return_value=FakeConnContext(),
         ):
             tmp_csv = tmp_path / "tmp.csv"
 
@@ -858,12 +864,10 @@ class TestGTFSFeedImporterCopyPolarsDf:
         importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
         empty_df = pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)})
 
-        with patch.object(
-            importer, "_get_asyncpg_conn", new_callable=AsyncMock
-        ) as get_conn:
+        with patch.object(importer, "_get_asyncpg_conn") as get_conn:
             await importer._copy_polars_df(empty_df, "gtfs_table", columns=["a"])
 
-        get_conn.assert_not_awaited()
+        get_conn.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_copy_polars_df_logs_when_temp_cleanup_fails(self, tmp_path: Path):
@@ -872,6 +876,13 @@ class TestGTFSFeedImporterCopyPolarsDf:
 
         class FakeConn:
             copy_to_table = AsyncMock()
+
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
 
         tmp_csv = tmp_path / "tmp.csv"
 
@@ -889,8 +900,7 @@ class TestGTFSFeedImporterCopyPolarsDf:
             patch.object(
                 importer,
                 "_get_asyncpg_conn",
-                new_callable=AsyncMock,
-                return_value=FakeConn(),
+                return_value=FakeConnContext(),
             ),
             patch(
                 "app.services.gtfs_feed.tempfile.NamedTemporaryFile",
@@ -956,14 +966,29 @@ class TestGTFSFeedImporterNetworkAndPersistence:
 
     @pytest.mark.asyncio
     async def test_get_asyncpg_conn_returns_driver_connection(self, tmp_path: Path):
+        """_get_asyncpg_conn returns a context manager that yields the driver connection."""
         driver = object()
         dbapi = MagicMock(driver_connection=driver)
-        raw = AsyncMock(get_raw_connection=AsyncMock(return_value=dbapi))
-        session = _make_session()
-        session.connection = AsyncMock(return_value=raw)
+        sa_conn = AsyncMock(get_raw_connection=AsyncMock(return_value=dbapi))
+        sa_conn.close = AsyncMock()
 
-        importer = GTFSFeedImporter(session, _make_settings(tmp_path))
-        assert await importer._get_asyncpg_conn() is driver
+        # Mock the engine.connect() to return our mock sa_conn
+        with patch("app.core.database.engine") as mock_engine:
+            mock_engine.connect = AsyncMock(return_value=sa_conn)
+
+            importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+            conn_ctx = importer._get_asyncpg_conn()
+
+            # The returned value is an async context manager
+            assert hasattr(conn_ctx, "__aenter__")
+            assert hasattr(conn_ctx, "__aexit__")
+
+            # When entered, it yields the driver connection
+            async with conn_ctx as conn:
+                assert conn is driver
+
+            # Verify the connection was closed
+            sa_conn.close.assert_awaited_once()
 
 
 class TestGTFSFeedImporterCsvBatchCompatibility:

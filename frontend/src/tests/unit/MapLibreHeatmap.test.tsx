@@ -11,6 +11,15 @@ import '@testing-library/jest-dom'
 import { ThemeProvider } from '../../contexts/ThemeContext'
 import { useTheme } from '../../contexts/ThemeContext'
 
+vi.mock('react-dom/client', () => {
+  return {
+    createRoot: vi.fn(() => ({
+      render: vi.fn(),
+      unmount: vi.fn(),
+    })),
+  }
+})
+
 // Mock maplibre-gl since it requires WebGL - use class syntax for proper constructor behavior
 vi.mock('maplibre-gl', () => {
   // Mock types for maplibre features
@@ -90,8 +99,10 @@ vi.mock('maplibre-gl', () => {
     })
     this.setLngLat = vi.fn().mockReturnThis()
     this.setHTML = vi.fn().mockReturnThis()
+    this.setDOMContent = vi.fn().mockReturnThis()
     this.addTo = vi.fn().mockReturnThis()
     this.remove = vi.fn()
+    this.isOpen = vi.fn(() => false)
   })
 
   // Minimal Marker mock for hotspot overlay
@@ -139,6 +150,8 @@ vi.mock('maplibre-gl', () => {
 // Import after mocking
 import { MapLibreHeatmap } from '../../components/heatmap/MapLibreHeatmap'
 import maplibregl from 'maplibre-gl'
+import { createRoot } from 'react-dom/client'
+import type { HeatmapDataPoint, HeatmapEnabledMetrics } from '../../types/heatmap'
 
 function ThemeToggler() {
   const { toggleTheme } = useTheme()
@@ -156,7 +169,7 @@ function getMockMapInstance(): MockedMapInstance {
   const mapConstructor = (
     maplibregl as unknown as { Map: { mock: { instances: MockedMapInstance[] } } }
   ).Map
-  const instance = mapConstructor.mock.instances[0]
+  const instance = mapConstructor.mock.instances.at(-1)
   if (!instance) {
     throw new Error('Expected MapLibre map instance to be constructed')
   }
@@ -261,13 +274,28 @@ describe('MapLibreHeatmap Component', () => {
   // NOTE: The "creates hotspot markers for high-intensity clusters" test was removed
   // because the pulsing hotspot marker feature was removed from the MapLibreHeatmap component
 
-  it('opens a popup and sanitizes station name on point click, and clears selection on Escape', async () => {
+  it('calls onStationSelect when clicking a point and clears on Escape', async () => {
     const onStationSelect = vi.fn()
 
     render(
       <ThemeProvider defaultTheme="light">
         <MapLibreHeatmap
-          dataPoints={[]}
+          dataPoints={[
+            {
+              station_id: 'de:09162:1',
+              station_name: 'Test Station',
+              latitude: 48.14,
+              longitude: 11.558,
+              cancellation_rate: 0.2,
+              delay_rate: 0.1,
+              total_departures: 100,
+              cancelled_count: 20,
+              delayed_count: 10,
+            },
+          ]}
+          overviewPoints={[
+            { id: 'de:09162:1', n: 'Test Station', lat: 48.14, lon: 11.558, i: 0.95 },
+          ]}
           enabledMetrics={{ cancellations: true, delays: true }}
           onStationSelect={onStationSelect}
         />
@@ -286,7 +314,7 @@ describe('MapLibreHeatmap Component', () => {
       geometry: { type: 'Point', coordinates: [11.558, 48.14] },
       properties: {
         station_id: 'de:09162:1',
-        station_name: '<script>alert(1)</script>',
+        station_name: 'Test Station',
         cancellation_rate: 0.2,
         delay_rate: 0.1,
         total_departures: 100,
@@ -305,18 +333,11 @@ describe('MapLibreHeatmap Component', () => {
 
     map._emit('click:unclustered-point', { point: { x: 10, y: 10 } })
 
-    const popupInstance = (
-      maplibregl as unknown as { Popup: { mock: { instances: MockedMapInstance[] } } }
-    ).Popup.mock.instances[0]
-    // DOMPurify sanitizes by stripping script tags entirely (not just escaping them)
-    const htmlArg = popupInstance.setHTML.mock.calls[0][0] as string
-    expect(htmlArg).not.toContain('<script>')
-    expect(htmlArg).not.toContain('</script>')
+    // The click should call onStationSelect with the station ID
     expect(onStationSelect).toHaveBeenCalledWith('de:09162:1')
 
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onStationSelect).toHaveBeenCalledWith(null)
-    expect(popupInstance.remove).toHaveBeenCalled()
   })
 
   it('resets view, clears stored view, and eases to Germany center', async () => {
@@ -374,5 +395,77 @@ describe('MapLibreHeatmap Component', () => {
 
     // Verify the old map was removed
     expect(map.remove).toHaveBeenCalled()
+  })
+
+  it('unmounts the popup root when the component unmounts', async () => {
+    const { unmount } = render(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          overviewPoints={[
+            {
+              id: 'station-1',
+              n: 'Station',
+              lat: 52.5,
+              lon: 13.4,
+              i: 0.2,
+            },
+          ]}
+          selectedStationId="station-1"
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => expect(createRoot).toHaveBeenCalled())
+    const rootInstance = (createRoot as unknown as { mock: { results: Array<{ value: unknown }> } })
+      .mock.results[0]?.value as { unmount: ReturnType<typeof vi.fn> } | undefined
+    expect(rootInstance?.unmount).toBeDefined()
+
+    unmount()
+    expect(rootInstance!.unmount).toHaveBeenCalled()
+  })
+
+  it('resets map instance on error boundary retry', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const dataPoints: HeatmapDataPoint[] = []
+    const enabledMetrics: HeatmapEnabledMetrics = { cancellations: true, delays: true }
+    const StableOverlay = () => null
+    const ThrowingOverlay = () => {
+      throw new Error('boom')
+    }
+
+    const { rerender } = render(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          dataPoints={dataPoints}
+          isLoading={false}
+          enabledMetrics={enabledMetrics}
+          overlay={<StableOverlay />}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => {
+      expect((maplibregl as unknown as { Map: ReturnType<typeof vi.fn> }).Map).toHaveBeenCalled()
+    })
+
+    rerender(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          dataPoints={dataPoints}
+          isLoading={false}
+          enabledMetrics={enabledMetrics}
+          overlay={<ThrowingOverlay />}
+        />
+      </ThemeProvider>
+    )
+
+    expect(await screen.findByText('Heatmap Error')).toBeInTheDocument()
+    const currentMapInstance = getMockMapInstance()
+    currentMapInstance.remove.mockClear()
+    fireEvent.click(screen.getByText('Retry'))
+
+    expect(currentMapInstance.remove).toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 })

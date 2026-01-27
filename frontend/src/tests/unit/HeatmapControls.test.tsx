@@ -31,11 +31,12 @@ describe('HeatmapControls', () => {
   it('renders transport mode buttons', () => {
     render(<HeatmapControls {...defaultProps} />)
 
-    expect(screen.getByText('U-Bahn')).toBeInTheDocument()
-    expect(screen.getByText('S-Bahn')).toBeInTheDocument()
-    expect(screen.getByText('Tram')).toBeInTheDocument()
-    expect(screen.getByText('Bus')).toBeInTheDocument()
-    expect(screen.getByText('Regional')).toBeInTheDocument()
+    // Transport badges now use aria-label instead of text content
+    expect(screen.getByLabelText('Toggle U-Bahn')).toBeInTheDocument()
+    expect(screen.getByLabelText('Toggle S-Bahn')).toBeInTheDocument()
+    expect(screen.getByLabelText('Toggle Tram')).toBeInTheDocument()
+    expect(screen.getByLabelText('Toggle Bus')).toBeInTheDocument()
+    expect(screen.getByLabelText('Toggle Regional')).toBeInTheDocument()
   })
 
   it('calls onTimeRangeChange when time range button is clicked', () => {
@@ -53,7 +54,7 @@ describe('HeatmapControls', () => {
     const onTransportModesChange = vi.fn()
     render(<HeatmapControls {...defaultProps} onTransportModesChange={onTransportModesChange} />)
 
-    fireEvent.click(screen.getByText('U-Bahn'))
+    fireEvent.click(screen.getByLabelText('Toggle U-Bahn'))
     expect(onTransportModesChange).toHaveBeenCalledWith(['UBAHN'])
   })
 
@@ -67,7 +68,7 @@ describe('HeatmapControls', () => {
       />
     )
 
-    fireEvent.click(screen.getByText('U-Bahn'))
+    fireEvent.click(screen.getByLabelText('Toggle U-Bahn'))
     expect(onTransportModesChange).toHaveBeenCalledWith(['SBAHN'])
   })
 
@@ -105,8 +106,8 @@ describe('HeatmapControls', () => {
     expect(screen.getByText('Last 24 hours')).toBeDisabled()
 
     // Transport mode buttons should be disabled
-    expect(screen.getByText('U-Bahn')).toBeDisabled()
-    expect(screen.getByText('S-Bahn')).toBeDisabled()
+    expect(screen.getByLabelText('Toggle U-Bahn')).toBeDisabled()
+    expect(screen.getByLabelText('Toggle S-Bahn')).toBeDisabled()
   })
 
   it('shows message when no transport modes selected', () => {
@@ -245,6 +246,19 @@ describe('HeatmapControls', () => {
       )
 
       expect(screen.queryByText(/Auto-refresh on/)).not.toBeInTheDocument()
+    })
+
+    it('shows "unknown" for invalid snapshotUpdatedAt timestamps', () => {
+      render(
+        <HeatmapControls
+          {...defaultProps}
+          timeRange="live"
+          snapshotUpdatedAt="not-a-timestamp"
+          autoRefresh={false}
+        />
+      )
+
+      expect(screen.getByText(/Snapshot updated unknown/)).toBeInTheDocument()
     })
 
     it('disables auto-refresh toggle when loading', () => {

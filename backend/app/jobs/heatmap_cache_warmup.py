@@ -60,6 +60,20 @@ class HeatmapCacheWarmer:
             return
         self._task = asyncio.create_task(self._warmup(reason=reason))
 
+    async def shutdown(self) -> None:
+        """Cancel any in-flight warmup task and wait for it to finish."""
+        task = self._task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if self._task is task:
+                self._task = None
+
     def _build_targets(self) -> list[HeatmapWarmupTarget]:
         targets: list[HeatmapWarmupTarget] = []
 

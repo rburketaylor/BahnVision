@@ -20,6 +20,7 @@ class TestTTLConfig:
             settings.valkey_cache_ttl_seconds = 300
             settings.valkey_cache_ttl_not_found_seconds = 60
             settings.cache_circuit_breaker_timeout_seconds = 30
+            settings.cache_mset_batch_size = 10000
             mock.return_value = settings
             yield settings
 

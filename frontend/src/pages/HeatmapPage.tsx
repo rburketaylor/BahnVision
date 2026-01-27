@@ -164,6 +164,7 @@ export default function HeatmapPage() {
             isLoading={isOverviewLoading}
             enabledMetrics={enabledMetrics}
             onStationDetailRequested={handleStationDetailRequested}
+            onStationSelect={setSelectedStationId}
             selectedStationId={selectedStationId}
             stationStats={stationStats ?? null}
             isStationStatsLoading={isStationStatsLoading}

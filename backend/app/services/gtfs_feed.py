@@ -20,6 +20,28 @@ from app.models.gtfs import (
 logger = logging.getLogger(__name__)
 
 
+class _ConnectionContext:
+    """Async context manager that yields a raw asyncpg connection.
+
+    Manages the lifecycle of a pooled SQLAlchemy connection and yields
+    the underlying asyncpg connection for COPY operations.
+    """
+
+    def __init__(self, engine):
+        self._engine = engine
+        self._sa_conn = None
+        self._asyncpg_conn = None
+
+    async def __aenter__(self):
+        self._sa_conn = await self._engine.connect()
+        dbapi_conn = await self._sa_conn.get_raw_connection()
+        self._asyncpg_conn = dbapi_conn.driver_connection
+        return self._asyncpg_conn
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._sa_conn.close()
+
+
 def _clean_value(val):
     """Convert common NA/NaN values and numpy scalars to Python native types."""
     if val is None:
@@ -230,12 +252,18 @@ class GTFSFeedImporter:
             logger.info("GTFS tables set to LOGGED mode")
         await self.session.commit()
 
-    async def _get_asyncpg_conn(self):
-        """Get raw asyncpg connection for COPY operations."""
-        raw_conn = await self.session.connection()
-        dbapi_conn = await raw_conn.get_raw_connection()
-        # SQLAlchemy wraps asyncpg, need to get the actual driver connection
-        return dbapi_conn.driver_connection
+    def _get_asyncpg_conn(self):
+        """Get raw asyncpg connection for COPY operations.
+
+        Creates a dedicated connection for each COPY operation to support
+        concurrent COPY operations in parallel tasks.
+        """
+        # Import here to avoid circular dependency
+        from app.core.database import engine
+
+        # Create and return a connection context that will acquire
+        # a dedicated connection when entered
+        return _ConnectionContext(engine)
 
     def _read_gtfs_table(
         self, source: zipfile.ZipFile | Path, filename: str
@@ -329,7 +357,7 @@ class GTFSFeedImporter:
         if df.is_empty():
             return
 
-        asyncpg_conn = await self._get_asyncpg_conn()
+        conn_ctx = self._get_asyncpg_conn()
         tmp_path: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -344,13 +372,14 @@ class GTFSFeedImporter:
                 quote_style="necessary",
             )
 
-            with open(tmp_path, "rb") as f:
-                await asyncpg_conn.copy_to_table(
-                    table_name,
-                    source=f,
-                    columns=columns,
-                    format="csv",
-                )
+            async with conn_ctx as asyncpg_conn:
+                with open(tmp_path, "rb") as f:
+                    await asyncpg_conn.copy_to_table(
+                        table_name,
+                        source=f,
+                        columns=columns,
+                        format="csv",
+                    )
         finally:
             if tmp_path is not None:
                 try:
