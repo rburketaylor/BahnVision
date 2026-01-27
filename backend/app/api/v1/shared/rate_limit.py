@@ -5,6 +5,7 @@ endpoint routers to apply consistent rate limiting across the API.
 """
 
 from typing import cast
+from urllib.parse import urlparse
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -41,11 +42,21 @@ def get_limiter() -> Limiter:
 
         if settings.rate_limit_enabled:
             try:
-                _limiter = Limiter(
-                    key_func=get_remote_address,
-                    storage_uri=settings.valkey_url,
-                    default_limits=cast(list, default_limits),
-                )
+                limiter_kwargs: dict[str, object] = {
+                    "key_func": get_remote_address,
+                    "storage_uri": settings.valkey_url,
+                    "default_limits": cast(list, default_limits),
+                }
+
+                # Only pass redis/valkey-specific connection options to redis backends.
+                parsed = urlparse(settings.valkey_url)
+                if parsed.scheme in {"valkey", "redis", "rediss"}:
+                    limiter_kwargs["storage_options"] = {
+                        "socket_connect_timeout": settings.valkey_socket_connect_timeout_seconds,
+                        "socket_timeout": settings.valkey_socket_timeout_seconds,
+                    }
+
+                _limiter = Limiter(**limiter_kwargs)
             except Exception:
                 # Fallback to in-memory if Valkey connection fails
                 _limiter = Limiter(

@@ -37,6 +37,16 @@ class Settings(BaseSettings):
         default="valkey://localhost:6379/0",
         validation_alias=_valkey_alias("VALKEY_URL"),
     )
+    valkey_socket_connect_timeout_seconds: float = Field(
+        default=0.2,
+        validation_alias=_valkey_alias("VALKEY_SOCKET_CONNECT_TIMEOUT_SECONDS"),
+        ge=0.0,
+    )
+    valkey_socket_timeout_seconds: float = Field(
+        default=0.5,
+        validation_alias=_valkey_alias("VALKEY_SOCKET_TIMEOUT_SECONDS"),
+        ge=0.0,
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision",
