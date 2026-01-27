@@ -11,6 +11,15 @@ import '@testing-library/jest-dom'
 import { ThemeProvider } from '../../contexts/ThemeContext'
 import { useTheme } from '../../contexts/ThemeContext'
 
+vi.mock('react-dom/client', () => {
+  return {
+    createRoot: vi.fn(() => ({
+      render: vi.fn(),
+      unmount: vi.fn(),
+    })),
+  }
+})
+
 // Mock maplibre-gl since it requires WebGL - use class syntax for proper constructor behavior
 vi.mock('maplibre-gl', () => {
   // Mock types for maplibre features
@@ -141,6 +150,8 @@ vi.mock('maplibre-gl', () => {
 // Import after mocking
 import { MapLibreHeatmap } from '../../components/heatmap/MapLibreHeatmap'
 import maplibregl from 'maplibre-gl'
+import { createRoot } from 'react-dom/client'
+import type { HeatmapDataPoint, HeatmapEnabledMetrics } from '../../types/heatmap'
 
 function ThemeToggler() {
   const { toggleTheme } = useTheme()
@@ -158,7 +169,7 @@ function getMockMapInstance(): MockedMapInstance {
   const mapConstructor = (
     maplibregl as unknown as { Map: { mock: { instances: MockedMapInstance[] } } }
   ).Map
-  const instance = mapConstructor.mock.instances[0]
+  const instance = mapConstructor.mock.instances.at(-1)
   if (!instance) {
     throw new Error('Expected MapLibre map instance to be constructed')
   }
@@ -384,5 +395,77 @@ describe('MapLibreHeatmap Component', () => {
 
     // Verify the old map was removed
     expect(map.remove).toHaveBeenCalled()
+  })
+
+  it('unmounts the popup root when the component unmounts', async () => {
+    const { unmount } = render(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          overviewPoints={[
+            {
+              id: 'station-1',
+              n: 'Station',
+              lat: 52.5,
+              lon: 13.4,
+              i: 0.2,
+            },
+          ]}
+          selectedStationId="station-1"
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => expect(createRoot).toHaveBeenCalled())
+    const rootInstance = (createRoot as unknown as { mock: { results: Array<{ value: unknown }> } })
+      .mock.results[0]?.value as { unmount: ReturnType<typeof vi.fn> } | undefined
+    expect(rootInstance?.unmount).toBeDefined()
+
+    unmount()
+    expect(rootInstance!.unmount).toHaveBeenCalled()
+  })
+
+  it('resets map instance on error boundary retry', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const dataPoints: HeatmapDataPoint[] = []
+    const enabledMetrics: HeatmapEnabledMetrics = { cancellations: true, delays: true }
+    const StableOverlay = () => null
+    const ThrowingOverlay = () => {
+      throw new Error('boom')
+    }
+
+    const { rerender } = render(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          dataPoints={dataPoints}
+          isLoading={false}
+          enabledMetrics={enabledMetrics}
+          overlay={<StableOverlay />}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => {
+      expect((maplibregl as unknown as { Map: ReturnType<typeof vi.fn> }).Map).toHaveBeenCalled()
+    })
+
+    rerender(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          dataPoints={dataPoints}
+          isLoading={false}
+          enabledMetrics={enabledMetrics}
+          overlay={<ThrowingOverlay />}
+        />
+      </ThemeProvider>
+    )
+
+    expect(await screen.findByText('Heatmap Error')).toBeInTheDocument()
+    const currentMapInstance = getMockMapInstance()
+    currentMapInstance.remove.mockClear()
+    fireEvent.click(screen.getByText('Retry'))
+
+    expect(currentMapInstance.remove).toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 })

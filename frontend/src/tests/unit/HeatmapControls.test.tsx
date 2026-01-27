@@ -248,6 +248,19 @@ describe('HeatmapControls', () => {
       expect(screen.queryByText(/Auto-refresh on/)).not.toBeInTheDocument()
     })
 
+    it('shows "unknown" for invalid snapshotUpdatedAt timestamps', () => {
+      render(
+        <HeatmapControls
+          {...defaultProps}
+          timeRange="live"
+          snapshotUpdatedAt="not-a-timestamp"
+          autoRefresh={false}
+        />
+      )
+
+      expect(screen.getByText(/Snapshot updated unknown/)).toBeInTheDocument()
+    })
+
     it('disables auto-refresh toggle when loading', () => {
       render(<HeatmapControls {...defaultProps} isLoading={true} />)
 
