@@ -112,11 +112,20 @@ class GTFSScheduleService:
                 Set to False if stop existence is already validated or not required.
                 Defaults to True for backward compatibility.
         """
-        if validate_existence:
-            # First verify stop exists
-            stop = await self.get_stop_by_id(stop_id)
-            if not stop:
+        # Resolve stop IDs (including children) and names upfront
+        stmt = select(GTFSStop.stop_id, GTFSStop.stop_name).where(
+            or_(GTFSStop.stop_id == stop_id, GTFSStop.parent_station == stop_id)
+        )
+        result = await self.session.execute(stmt)
+        stop_rows = result.all()
+
+        if not stop_rows:
+            if validate_existence:
                 raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
+            return []
+
+        stop_map = {row.stop_id: row.stop_name for row in stop_rows}
+        relevant_stop_ids = list(stop_map.keys())
 
         # Determine which service_ids are active today
         today = from_time.date()
@@ -131,7 +140,7 @@ class GTFSScheduleService:
         st = aliased(GTFSStopTime, name="st")
         t = aliased(GTFSTrip, name="t")
         r = aliased(GTFSRoute, name="r")
-        s = aliased(GTFSStop, name="s")
+        # s = aliased(GTFSStop, name="s")  # Removed join to GTFSStop
         c = aliased(GTFSCalendar, name="c")
         cd = aliased(GTFSCalendarDate, name="cd")
 
@@ -150,18 +159,19 @@ class GTFSScheduleService:
                 r.route_long_name,
                 r.route_type,
                 r.route_color,
-                s.stop_name,
+                # s.stop_name,  # Populated from Python dictionary
+                st.stop_id,
                 t.trip_id,
                 r.route_id,
             )
             .select_from(st)
             .join(t, st.trip_id == t.trip_id)
             .join(r, t.route_id == r.route_id)
-            .join(s, st.stop_id == s.stop_id)
+            # .join(s, st.stop_id == s.stop_id)  # Removed expensive join
             .outerjoin(c, t.service_id == c.service_id)
             .outerjoin(cd, and_(t.service_id == cd.service_id, cd.date == today))
             .where(
-                or_(st.stop_id == stop_id, s.parent_station == stop_id),
+                st.stop_id.in_(relevant_stop_ids),
                 st.departure_time >= from_interval,
                 or_(
                     # Calendar-based service with possible exceptions
@@ -192,6 +202,7 @@ class GTFSScheduleService:
             )
 
             if departure_dt:
+                stop_name = stop_map.get(row.stop_id, "")
                 departures.append(
                     ScheduledDeparture(
                         departure_time=departure_dt,
@@ -200,7 +211,7 @@ class GTFSScheduleService:
                         route_long_name=row.route_long_name or "",
                         route_type=row.route_type,
                         route_color=row.route_color,
-                        stop_name=row.stop_name,
+                        stop_name=stop_name,
                         trip_id=row.trip_id,
                         route_id=row.route_id,
                         arrival_time=arrival_dt,
