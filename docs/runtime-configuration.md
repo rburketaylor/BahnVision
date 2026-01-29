@@ -38,8 +38,8 @@ Place variables in the root `.env` or export them in the shell. Defaults are sho
 - `CORS_ALLOW_ORIGINS` — Comma-separated list of allowed origins (no `*`).
 - `CORS_ALLOW_ORIGIN_REGEX` — Optional regex for origins.
 - `DATABASE_URL` (postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision) — Async SQLAlchemy DSN.
-- `DATABASE_POOL_SIZE` (5) — SQLAlchemy pool size.
-- `DATABASE_MAX_OVERFLOW` (5) — SQLAlchemy max overflow.
+- `DATABASE_POOL_SIZE` (10) — SQLAlchemy pool size.
+- `DATABASE_MAX_OVERFLOW` (10) — SQLAlchemy max overflow.
 - `DATABASE_ECHO` (False) — Verbose SQL logging.
 
 Notes
