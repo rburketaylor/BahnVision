@@ -64,8 +64,8 @@ See `docs/runtime-configuration.md` for cross-project configuration details.
 - **Framework:** React 19 with TypeScript
 - **Build Tool:** Vite 7
 - **Routing:** React Router 7
-- **State Management:** TanStack Query 5 (server state) + Zustand 5 (UI state)
-- **Styling:** Tailwind CSS 4 + Headless UI 2
+- **State Management:** TanStack Query 5 (server state)
+- **Styling:** Tailwind CSS 4
 - **Maps:** maplibre-gl 5
 - **Testing:** Vitest 4 + React Testing Library + Playwright + MSW 2
 - **Error Tracking:** Sentry 10 (planned; SDK not yet wired)
@@ -102,9 +102,10 @@ docker compose up --build
 ### Build Standalone
 
 ```bash
-docker build -t bahnvision-frontend .
+docker build \
+  --build-arg VITE_API_BASE_URL=http://localhost:8000 \
+  -t bahnvision-frontend .
 docker run -p 3000:80 \
-  -e VITE_API_BASE_URL=http://localhost:8000 \
   bahnvision-frontend
 ```
 
@@ -113,9 +114,10 @@ docker run -p 3000:80 \
 The frontend consumes REST endpoints from the BahnVision backend:
 
 - `GET /api/v1/health` — System health status
-- `GET /api/v1/transit/stations/search?query={query}` — Station autocomplete
-- `GET /api/v1/transit/departures?station={id}` — Live departures board
-- `GET /api/v1/transit/heatmap/data` — Heatmap activity data
+- `GET /api/v1/transit/stops/search?query={query}` — Stop autocomplete
+- `GET /api/v1/transit/departures?stop_id={id}` — Live departures board
+- `GET /api/v1/heatmap/cancellations` — Heatmap activity data
+- `GET /api/v1/heatmap/overview` — Heatmap overview
 - `GET /metrics` — Prometheus metrics (for analysts)
 
 See [docs/archive/api-integration.md](./docs/archive/api-integration.md) for complete API documentation.

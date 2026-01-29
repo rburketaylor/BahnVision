@@ -55,17 +55,18 @@ npm run dev
 
 ## API Endpoints
 
-| Endpoint                                                | Description           |
-| ------------------------------------------------------- | --------------------- |
-| `GET /api/v1/transit/stations/search?query=marienplatz` | Station search        |
-| `GET /api/v1/transit/departures?station=marienplatz`    | Live departures       |
-| `GET /api/v1/transit/heatmap/data`                      | Heatmap activity data |
-| `GET /api/v1/health`                                    | Health check          |
-| `GET /metrics`                                          | Prometheus metrics    |
+| Endpoint                                             | Description           |
+| ---------------------------------------------------- | --------------------- |
+| `GET /api/v1/transit/stops/search?query=marienplatz` | Stop search           |
+| `GET /api/v1/transit/departures?stop_id=de:09162:6`  | Live departures       |
+| `GET /api/v1/heatmap/cancellations`                  | Heatmap activity data |
+| `GET /api/v1/heatmap/overview`                       | Heatmap overview      |
+| `GET /api/v1/health`                                 | Health check          |
+| `GET /metrics`                                       | Prometheus metrics    |
 
 **Response Headers:**
 
-- `X-Cache-Status`: `hit`, `miss`, `stale`, or `stale-refresh`
+- `X-Cache-Status`: `hit`, `miss`, `stale`, or `stale-refresh` (heatmap endpoints)
 - `X-Request-Id`: Request correlation ID
 
 ## Configuration

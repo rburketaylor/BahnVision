@@ -38,21 +38,20 @@ Primary flows:
 
 ### Backend APIs (FastAPI, `/api/v1`)
 
-| Endpoint                       | Description                                                                      | Cache TTL / Strategy                                                                                                           |
-| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /transit/stations/search` | Autocomplete stations by free-text query.                                        | Configurable TTL (`TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
-| `GET /transit/stations/list`   | Get all GTFS stops.                                                              | Heavily cached with long TTL (`TRANSIT_STATION_LIST_CACHE_TTL_SECONDS`) and stale fallback.                                    |
-| `GET /transit/departures`      | Live departures for a station with optional transport filter, limit, and offset. | TTL (`TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store.                           |
-| `GET /transit/heatmap/data`    | Heatmap activity data for visualization.                                         | TTL-based caching with stale fallback.                                                                                         |
-| `GET /health`                  | Readiness and dependency probes (Valkey, Postgres).                              | Non-cached; returns `503` when critical dependencies down.                                                                     |
-| `GET /metrics`                 | Prometheus metrics exported via `app.api.metrics`.                               | N/A                                                                                                                            |
+| Endpoint                     | Description                                                | Cache TTL / Strategy                                                                                                           |
+| ---------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /transit/stops/search`  | Autocomplete stops by free-text query.                     | Configurable TTL (`TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
+| `GET /transit/departures`    | Live departures for a stop with optional limit and offset. | TTL (`TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store.                           |
+| `GET /heatmap/cancellations` | Heatmap activity data for visualization.                   | TTL-based caching with stale fallback.                                                                                         |
+| `GET /heatmap/overview`      | Lightweight heatmap overview for initial render.           | TTL-based caching with stale fallback.                                                                                         |
+| `GET /health`                | Lightweight uptime/version probe.                          | Non-cached; returns `200` with version + uptime.                                                                               |
+| `GET /metrics`               | Prometheus metrics exported via `app.api.metrics`.         | N/A                                                                                                                            |
 
 ### Frontend Surface (React 19 + Vite)
 
 - **Pages:** Landing dashboard (departures + quick search), station search results, heatmap, observability/devtools gates.
 - **State/Data:** TanStack Query for API data, React Context for app config (locale, theme), Tailwind for styling.
-- **Offline/Error UX:** Displays cached/stale banners using `X-Cache-Status`; MSW-backed fallback for dev/testing.
-- **Offline/Error UX:** Displays cached/stale banners using `X-Cache-Status`; MSW-backed fallback for dev/testing.
+- **Offline/Error UX:** Displays cached/stale banners using `X-Cache-Status` (heatmap endpoints today); MSW-backed fallback for dev/testing.
 
 ## 5. Non-Functional Requirements
 
@@ -90,7 +89,7 @@ FastAPI app.main
 ## 7. Backend Design Notes
 
 - **Dependency Injection:** FastAPI dependencies wire config, cache, GTFS service, and repositories per request to keep services stateless.
-- **Caching Paths:** Cache keys include resource + params (e.g., `departure:{station}:{transport}:{limit}:{offset}`) with `:stale` suffix for fallback copy. Single-flight locks use TTL (`CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`) and wait/retry knobs to prevent thundering herds.
+- **Caching Paths:** Cache keys include resource + params (e.g., `departure:{stop_id}:{transport}:{limit}:{offset}`) with `:stale` suffix for fallback copy. Single-flight locks use TTL (`CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`) and wait/retry knobs to prevent thundering herds.
 - **Circuit Breaker:** When Valkey is unreachable, an in-process fallback store caches recent responses with opportunistic cleanup; breaker timeout controlled by `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`.
 - **Persistence:** Async SQLAlchemy models map to tables such as `gtfs_stops`, `gtfs_routes`, `gtfs_stop_times`, `gtfs_rt_observations`, `weather_observations`, `gtfs_feed_status`. The `TransitDataRepository` supports persisting Transit Lines, Departure Observations, Weather Observations, and Ingestion Runs. The API currently persists and reads the GTFS catalog; deeper historical storage for analytics is planned (Phase 2).
 - **GTFS Flow:** GTFS feed scheduler downloads and imports Germany-wide GTFS data on startup and periodically.
@@ -99,9 +98,9 @@ FastAPI app.main
 ## 8. Frontend Design Notes
 
 - **Stack:** Vite + React 19 + TypeScript, Tailwind CSS, TanStack Query, React Router, Vitest + Testing Library.
-- **API Service Layer:** `httpClient.ts` handles base URL (`VITE_API_BASE_URL`), timeout, and headers; `endpoints/transitApi.ts` wraps backend routes for health, stations, departures, heatmap, and metrics.
+- **API Service Layer:** `httpClient.ts` handles base URL (`VITE_API_BASE_URL`), timeout, and headers; `endpoints/transitApi.ts` wraps backend routes for health, stops, departures, heatmap, and metrics.
 - **State Management:** Query keys align with backend cache semantics (station, transport, pagination). Stale-while-refetch keeps UI responsive during data delays.
-- **Routing & Pages:** Current pages include `/` (landing/search), `/departures/:stationId`, `/heatmap`, and `/insights`. Map overlays are implemented via MapLibre.
+- **Routing & Pages:** Current pages include `/` (heatmap landing), `/search`, `/station/:stationId`, and `/monitoring`. Map overlays are implemented via MapLibre.
 - **Testing:** Vitest + RTL for components/hooks; MSW mocks backend endpoints. Playwright E2E tests validate key flows.
 
 ## 9. Data & Schema Highlights
