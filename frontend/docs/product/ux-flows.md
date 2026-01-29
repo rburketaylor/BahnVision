@@ -20,14 +20,14 @@
                   [Cache Badge + Timestamp]
 ```
 
-- Query: call `GET /api/v1/transit/stations/search?q=...&limit=8` on every debounced input change.
+- Query: call `GET /api/v1/transit/stops/search?query=...&limit=8` on every debounced input change.
 - Display: list station name + place with highlight of query match; show icon per `transport_mode` once known.
 - Upon selection: trigger `useDepartures` with station id (or name fallback), show spinner while waiting, reveal `X-Cache-Status` badge.
 
 ### 2. Departures Filtering & Refresh
 
 - Controls: transport type chips, limit slider (default 10, max 40), walking offset selector (0–60 min).
-- API: `GET /api/v1/transit/departures?station=...&limit=...&offset=...&transport_type=...`.
+- API: `GET /api/v1/transit/departures?stop_id=...&limit=...&offset_minutes=...`.
 - UI: table with line, destination, planned, realtime, delay, messages; highlight cancelled entries.
 - Refresh CTA: manual refresh button invalidates query; auto-refresh every 30 s respecting backend lock throttling.
 
@@ -67,5 +67,5 @@ Submit --> call tanstack mutation --> render itineraries list (map overlay plann
 ## Navigation Structure
 
 - Top nav with tabs: `Departures`, `Planner`, `Insights` (future). Mobile uses bottom nav for quick access.
-- Deep linking via query params (`/departures?station=...`) to allow bookmarks and kiosk configuration.
+- Deep linking via `/station/{stop_id}` (with optional `?tab=...`) to allow bookmarks and kiosk configuration.
 - Consider kiosk mode toggle that hides navigation chrome for wall displays.
