@@ -14,12 +14,14 @@ import {
   HeatmapSearchOverlay,
 } from '../components/heatmap'
 import type { TransportType } from '../types/api'
+import type { TransitStop } from '../types/gtfs'
 import type {
   TimeRangePreset,
   HeatmapEnabledMetrics,
   HeatmapOverviewMetric,
 } from '../types/heatmap'
 import { HEATMAP_METRIC_LABELS, DEFAULT_ENABLED_METRICS } from '../types/heatmap'
+import type { HeatmapMapFocusRequest } from '../components/heatmap/MapLibreHeatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
 const CancellationHeatmap = lazy(() =>
@@ -92,6 +94,7 @@ export default function HeatmapPage() {
   const [controlsOpen, setControlsOpen] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null)
+  const [focusRequest, setFocusRequest] = useState<HeatmapMapFocusRequest | null>(null)
 
   // Fetch lightweight overview (all stations)
   const {
@@ -124,6 +127,17 @@ export default function HeatmapPage() {
 
   const handleStationDetailRequested = useCallback((stationId: string) => {
     setSelectedStationId(stationId)
+  }, [])
+
+  const handleSearchStationSelect = useCallback((stop: TransitStop) => {
+    setFocusRequest({
+      requestId: Date.now(),
+      stopId: stop.id,
+      lat: stop.latitude,
+      lon: stop.longitude,
+      source: 'search',
+      openPopup: false,
+    })
   }, [])
 
   const dataPoints = overviewData?.points ?? []
@@ -183,6 +197,7 @@ export default function HeatmapPage() {
             selectedStationId={selectedStationId}
             stationStats={stationStats ?? null}
             isStationStatsLoading={isStationStatsLoading}
+            focusRequest={focusRequest}
             overlay={
               <HeatmapOverlayPanel
                 open={controlsOpen}
@@ -290,7 +305,7 @@ export default function HeatmapPage() {
             }
           />
         </Suspense>
-        <HeatmapSearchOverlay />
+        <HeatmapSearchOverlay onStationSelect={handleSearchStationSelect} />
       </div>
     </div>
   )

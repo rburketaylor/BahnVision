@@ -1,6 +1,6 @@
 ---
 name: atomic-commits
-description: Plan and create organized atomic commits with clear Conventional Commits messages. Use when the user asks to "organize commits", "plan commits", "make atomic commits", or commit current work cleanly. Analyze diffs, propose a commit plan for confirmation, run repo-appropriate checks (pre-commit/pytest and/or frontend lint/typecheck/tests), then stage and commit each group without pushing.
+description: Plan and create organized atomic commits with clear Conventional Commits messages. Use when the user asks to "organize commits", "plan commits", "make atomic commits", or commit current work cleanly. Analyze diffs, propose a commit plan for confirmation, run pre-commit --all-files ONCE before creating commits, then stage and commit each group without pushing.
 ---
 
 # Atomic Commits Skill
@@ -67,33 +67,31 @@ Planned commits (N total):
 
 Ask for user confirmation before proceeding.
 
-### Step 4: Run Appropriate Checks
+### Step 4: Run All Checks ONCE (Before Creating Commits)
 
-Before committing, run checks appropriate to what changed (prefer targeted checks; run broader checks for risky/wide changes). If this repo uses `direnv`, ensure it is allowed; otherwise activate the dev env (often `source .dev-env`) before running Python tooling.
+**IMPORTANT:** Run checks ONCE for all changes before starting to create commits. Pre-commit will run again during each `git commit`, so this catches issues upfront and avoids repeated runs.
 
 ```bash
-# Safe baseline for most repos (if configured)
+# Run pre-commit on all files (catches linting, type-check, test issues)
 pre-commit run --all-files
-
-# Backend changes
-pytest backend/tests
-
-# Frontend changes
-(cd frontend && npm run lint)
-(cd frontend && npm run type-check)
-(cd frontend && npm run test -- --run)
-
-# Mixed changes: run both backend and frontend checks
 ```
+
+If this repo uses `direnv`, ensure it is allowed before running. Otherwise activate the dev env (often `source .dev-env`) before running Python tooling.
+
+**Why this approach:**
+
+- Pre-commit already runs linting, type-checking, and tests
+- Running once before committing is more efficient than per-commit
+- Prevents the pre-commit hook from failing mid-commit sequence
 
 Continue to Step 5 only after all checks pass.
 
 ### Step 5: Resolve Issues
 
-If any tests fail or linting errors occur:
+If `pre-commit run --all-files` fails:
 
 1. Fix the issues
-2. Re-run the failing checks
+2. Re-run `pre-commit run --all-files` (not individual checks)
 3. Repeat until all checks pass
 4. Only then proceed to create commits
 
@@ -118,6 +116,7 @@ EOF
 - Each commit must be created separately (never batch multiple logical commits)
 - Do NOT use `git commit --amend` - always create new commits
 - Do NOT push commits - the skill only creates them locally
+- Pre-commit hooks will run during each `git commit` (but should pass since you ran `--all-files` first)
 
 ### Step 7: Verify and Report
 

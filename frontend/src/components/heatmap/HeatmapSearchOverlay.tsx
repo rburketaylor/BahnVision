@@ -143,7 +143,9 @@ export function HeatmapSearchOverlay({
                   <p className="text-body font-medium text-foreground truncate">
                     {selectedStop.name}
                   </p>
-                  <p className="text-small text-muted mt-1">Click on map or use button below</p>
+                  <p className="text-small text-muted mt-1">
+                    Station selected. Use the button below for details.
+                  </p>
                 </div>
                 {showDetailsLink && (
                   <button

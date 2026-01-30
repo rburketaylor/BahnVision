@@ -271,6 +271,72 @@ describe('MapLibreHeatmap Component', () => {
     expect(map.addLayer).toHaveBeenCalled()
   })
 
+  it('applies focus request after load with default zoom floor', async () => {
+    render(
+      <ThemeProvider defaultTheme="light">
+        <MapLibreHeatmap
+          dataPoints={[]}
+          enabledMetrics={{ cancellations: true, delays: true }}
+          focusRequest={{
+            requestId: 1,
+            stopId: 'stop-1',
+            lat: 52.5,
+            lon: 13.4,
+            source: 'search',
+          }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() =>
+      expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
+    )
+    const map = getMockMapInstance()
+    map.getZoom.mockReturnValue(6)
+    map._emit('load')
+
+    expect(map.easeTo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        center: [13.4, 52.5],
+        zoom: 12,
+        duration: 650,
+      })
+    )
+  })
+
+  it('does not zoom out when already zoomed in for focus request', async () => {
+    render(
+      <ThemeProvider defaultTheme="light">
+        <MapLibreHeatmap
+          dataPoints={[]}
+          enabledMetrics={{ cancellations: true, delays: true }}
+          focusRequest={{
+            requestId: 2,
+            stopId: 'stop-2',
+            lat: 48.1,
+            lon: 11.6,
+            source: 'search',
+          }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() =>
+      expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
+    )
+    const map = getMockMapInstance()
+    map.getZoom.mockReturnValue(14)
+    map._emit('load')
+
+    expect(map.easeTo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        center: [11.6, 48.1],
+        zoom: 14,
+        duration: 650,
+      })
+    )
+  })
+
   // NOTE: The "creates hotspot markers for high-intensity clusters" test was removed
   // because the pulsing hotspot marker feature was removed from the MapLibreHeatmap component
 

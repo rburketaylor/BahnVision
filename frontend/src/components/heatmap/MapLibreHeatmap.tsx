@@ -193,6 +193,18 @@ interface MapLibreHeatmapProps {
   selectedStationId?: string | null
   stationStats?: StationStats | null
   isStationStatsLoading?: boolean
+
+  focusRequest?: HeatmapMapFocusRequest | null
+}
+
+export type HeatmapMapFocusRequest = {
+  requestId: number
+  stopId: string
+  lat: number
+  lon: number
+  zoom?: number
+  openPopup?: boolean
+  source: 'search' | 'deeplink' | 'other'
 }
 
 /**
@@ -426,6 +438,7 @@ export function MapLibreHeatmap({
   selectedStationId,
   stationStats,
   isStationStatsLoading,
+  focusRequest,
 }: MapLibreHeatmapProps) {
   // Setup WebGL warning suppression
   useEffect(() => {
@@ -448,9 +461,12 @@ export function MapLibreHeatmap({
   const geoJsonDataRef = useRef<GeoJSONResult | null>(null)
   const zoomDebounceTimerRef = useRef<number | null>(null)
   const saveViewTimerRef = useRef<number | null>(null)
+  const pendingFocusRef = useRef<HeatmapMapFocusRequest | null>(null)
+  const lastAppliedFocusRequestIdRef = useRef<number | null>(null)
 
   const [isStyleTransitioning, setIsStyleTransitioning] = useState(false)
   const [mapKey, setMapKey] = useState(() => Date.now())
+  const [isMapLoaded, setIsMapLoaded] = useState(false)
 
   useEffect(() => {
     enabledMetricsRef.current = enabledMetrics
@@ -529,6 +545,23 @@ export function MapLibreHeatmap({
     saveViewTimerRef.current = window.setTimeout(() => {
       saveView(map.getCenter(), map.getZoom())
     }, 500)
+  }, [])
+
+  const applyFocusRequest = useCallback((request: HeatmapMapFocusRequest) => {
+    const map = mapRef.current
+    if (!map) return
+
+    const focusZoom = request.zoom ?? 12
+    const currentZoom = map.getZoom()
+    const computedZoom = Math.max(currentZoom, focusZoom)
+
+    map.easeTo({
+      center: [request.lon, request.lat],
+      zoom: computedZoom,
+      duration: 650,
+    })
+
+    lastAppliedFocusRequestIdRef.current = request.requestId
   }, [])
 
   const ensurePopup = useCallback(() => {
@@ -746,6 +779,8 @@ export function MapLibreHeatmap({
   useEffect(() => {
     if (!mapContainerRef.current) return
 
+    setIsMapLoaded(false)
+
     // Clean up existing map before creating a new one (e.g., on theme change)
     if (mapRef.current) {
       if (zoomDebounceTimerRef.current) window.clearTimeout(zoomDebounceTimerRef.current)
@@ -787,6 +822,11 @@ export function MapLibreHeatmap({
     map.on('load', () => {
       ensureLayers(map, currentTheme)
       scheduleZoomCallback()
+      setIsMapLoaded(true)
+      if (pendingFocusRef.current) {
+        applyFocusRequest(pendingFocusRef.current)
+        pendingFocusRef.current = null
+      }
     })
 
     // Handle zoom changes (debounced to avoid thrashing API calls)
@@ -908,6 +948,7 @@ export function MapLibreHeatmap({
     ensurePopup,
     ensureLayers,
     onStationDetailRequested,
+    applyFocusRequest,
   ])
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
@@ -945,6 +986,18 @@ export function MapLibreHeatmap({
   useEffect(() => {
     updateMapData()
   }, [updateMapData])
+
+  useEffect(() => {
+    if (!focusRequest) return
+    if (lastAppliedFocusRequestIdRef.current === focusRequest.requestId) return
+    if (!mapRef.current || !isMapLoaded) {
+      pendingFocusRef.current = focusRequest
+      return
+    }
+
+    pendingFocusRef.current = null
+    applyFocusRequest(focusRequest)
+  }, [focusRequest, isMapLoaded, applyFocusRequest])
 
   // Update popup when station selection or stats change
   useEffect(() => {

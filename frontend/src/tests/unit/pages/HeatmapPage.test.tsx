@@ -9,6 +9,7 @@ import { ThemeProvider } from '../../../contexts/ThemeContext'
 import HeatmapPage from '../../../pages/HeatmapPage'
 import { useHeatmapOverview } from '../../../hooks/useHeatmapOverview'
 import { useStationStats } from '../../../hooks/useStationStats'
+import type { TransitStop } from '../../../types/gtfs'
 
 vi.mock('../../../hooks/useHeatmapOverview', () => ({
   useHeatmapOverview: vi.fn(),
@@ -18,11 +19,23 @@ vi.mock('../../../hooks/useStationStats', () => ({
   useStationStats: vi.fn(),
 }))
 
+let lastMapProps: { overlay?: ReactNode; focusRequest?: unknown } | null = null
+
 vi.mock('../../../components/heatmap/MapLibreHeatmap', () => ({
-  MapLibreHeatmap: ({ overlay }: { overlay?: ReactNode }) => (
-    <div data-testid="mock-heatmap">{overlay}</div>
-  ),
+  MapLibreHeatmap: (props: { overlay?: ReactNode; focusRequest?: unknown }) => {
+    lastMapProps = props
+    return <div data-testid="mock-heatmap">{props.overlay}</div>
+  },
 }))
+
+const mockStop: TransitStop = {
+  id: 'stop-123',
+  name: 'Test Stop',
+  latitude: 52.5,
+  longitude: 13.4,
+  zone_id: null,
+  wheelchair_boarding: 0,
+}
 
 vi.mock('../../../components/heatmap', async () => {
   const actual = await vi.importActual<typeof import('../../../components/heatmap')>(
@@ -30,7 +43,19 @@ vi.mock('../../../components/heatmap', async () => {
   )
   return {
     ...actual,
-    HeatmapSearchOverlay: () => <div data-testid="heatmap-search" />,
+    HeatmapSearchOverlay: ({
+      onStationSelect,
+    }: {
+      onStationSelect?: (stop: TransitStop) => void
+    }) => (
+      <button
+        type="button"
+        data-testid="heatmap-search"
+        onClick={() => onStationSelect?.(mockStop)}
+      >
+        Select station
+      </button>
+    ),
     HeatmapControls: () => <div data-testid="heatmap-controls" />,
     HeatmapLegend: () => <div data-testid="heatmap-legend" />,
     HeatmapStats: () => <div data-testid="heatmap-stats" />,
@@ -59,6 +84,7 @@ describe('HeatmapPage', () => {
   const originalMatchMedia = window.matchMedia
 
   beforeEach(() => {
+    lastMapProps = null
     window.matchMedia = vi.fn().mockImplementation(query => ({
       matches: false,
       media: query,
@@ -202,5 +228,21 @@ describe('HeatmapPage', () => {
     await screen.findByTestId('mock-heatmap')
 
     expect(screen.getByText('No data available yet')).toBeInTheDocument()
+  })
+
+  it('creates a focus request when selecting a station in search overlay', async () => {
+    renderPage()
+    await screen.findByTestId('mock-heatmap')
+
+    fireEvent.click(screen.getByTestId('heatmap-search'))
+
+    expect(lastMapProps?.focusRequest).toEqual(
+      expect.objectContaining({
+        stopId: mockStop.id,
+        lat: mockStop.latitude,
+        lon: mockStop.longitude,
+        source: 'search',
+      })
+    )
   })
 })
