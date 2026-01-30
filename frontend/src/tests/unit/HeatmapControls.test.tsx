@@ -80,20 +80,6 @@ describe('HeatmapControls', () => {
     expect(onTransportModesChange).toHaveBeenCalledWith(['UBAHN', 'SBAHN', 'TRAM', 'BUS', 'BAHN'])
   })
 
-  it('clears all modes when None button is clicked', () => {
-    const onTransportModesChange = vi.fn()
-    render(
-      <HeatmapControls
-        {...defaultProps}
-        selectedTransportModes={['UBAHN', 'SBAHN']}
-        onTransportModesChange={onTransportModesChange}
-      />
-    )
-
-    fireEvent.click(screen.getByText('None'))
-    expect(onTransportModesChange).toHaveBeenCalledWith([])
-  })
-
   it('disables buttons when loading', () => {
     render(<HeatmapControls {...defaultProps} isLoading={true} />)
 

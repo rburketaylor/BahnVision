@@ -104,7 +104,7 @@ async def test_network_averages_uses_heatmap_overview_cache_fast_path(
     }
 
     async def get_json_side_effect(key: str):
-        if key == "heatmap:overview:24h:all:60":
+        if key == "heatmap:overview:24h:all:60:both":
             return heatmap_overview_cached
         return None
 

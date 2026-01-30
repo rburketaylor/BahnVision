@@ -102,7 +102,11 @@ export interface HeatmapOverviewParams {
   time_range?: TimeRangePreset
   transport_modes?: TransportType[]
   bucket_width?: number
+  metrics?: HeatmapOverviewMetric
 }
+
+/** Metric selection for heatmap overview endpoint */
+export type HeatmapOverviewMetric = 'cancellations' | 'delays' | 'both'
 
 /** Parameters for heatmap API requests */
 export interface HeatmapParams {

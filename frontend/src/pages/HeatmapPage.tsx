@@ -14,7 +14,11 @@ import {
   HeatmapSearchOverlay,
 } from '../components/heatmap'
 import type { TransportType } from '../types/api'
-import type { TimeRangePreset, HeatmapEnabledMetrics } from '../types/heatmap'
+import type {
+  TimeRangePreset,
+  HeatmapEnabledMetrics,
+  HeatmapOverviewMetric,
+} from '../types/heatmap'
 import { HEATMAP_METRIC_LABELS, DEFAULT_ENABLED_METRICS } from '../types/heatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
@@ -61,6 +65,12 @@ function getHeatmapDescription(enabledMetrics: HeatmapEnabledMetrics): string {
   return 'Enable at least one metric to view heatmap'
 }
 
+function toOverviewMetric(enabledMetrics: HeatmapEnabledMetrics): HeatmapOverviewMetric {
+  if (enabledMetrics.cancellations && enabledMetrics.delays) return 'both'
+  if (enabledMetrics.delays) return 'delays'
+  return 'cancellations'
+}
+
 // Loading skeleton for the map
 function MapLoadingSkeleton() {
   return (
@@ -93,6 +103,7 @@ export default function HeatmapPage() {
     {
       time_range: timeRange,
       transport_modes: transportModes.length > 0 ? transportModes : undefined,
+      metrics: toOverviewMetric(enabledMetrics),
     },
     { autoRefresh }
   )

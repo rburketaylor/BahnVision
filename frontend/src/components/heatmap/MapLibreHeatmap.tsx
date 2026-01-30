@@ -212,7 +212,8 @@ function validateHeatmapData(dataPoints: HeatmapDataPoint[]): HeatmapDataPoint[]
       !isNaN(point.longitude) &&
       typeof point?.total_departures === 'number' &&
       typeof point?.cancelled_count === 'number' &&
-      typeof point?.delayed_count === 'number'
+      (point?.delayed_count === undefined || typeof point?.delayed_count === 'number') &&
+      (point?.delay_rate === undefined || typeof point?.delay_rate === 'number')
 
     if (!isValid) {
       console.warn('Invalid data point filtered at index', index, {
@@ -315,6 +316,7 @@ function toGeoJSON(
         delayed_count: point.delayed_count ?? 0,
         intensity: intensity,
         is_coverage: !hasImpact, // Flag for coverage stations
+        data_kind: 'full',
       },
     }
 
@@ -367,6 +369,7 @@ function overviewToGeoJSON(points: HeatmapPointLight[]): GeoJSONResult {
         station_id: point.id,
         station_name: point.n,
         intensity: point.i,
+        data_kind: 'overview',
         // These are approximations for backwards compat with existing styling
         rate: point.i * 0.25, // Intensity is 4x rate, so reverse
         is_coverage: point.i === 0,
@@ -390,7 +393,7 @@ function sanitize(value: string): string {
 /**
  * Suppress WebGL deprecation warnings in development
  */
-function setupWebGLWarningSuppression() {
+function setupWebGLWarningSuppression(): (() => void) | null {
   // Only suppress warnings in development mode
   if (import.meta.env.MODE === 'development') {
     const originalConsoleWarn = console.warn
@@ -404,7 +407,11 @@ function setupWebGLWarningSuppression() {
       }
       originalConsoleWarn(...args)
     }
+    return () => {
+      console.warn = originalConsoleWarn
+    }
   }
+  return null
 }
 
 export function MapLibreHeatmap({
@@ -422,7 +429,10 @@ export function MapLibreHeatmap({
 }: MapLibreHeatmapProps) {
   // Setup WebGL warning suppression
   useEffect(() => {
-    setupWebGLWarningSuppression()
+    const restore = setupWebGLWarningSuppression()
+    return () => {
+      restore?.()
+    }
   }, [])
 
   const { resolvedTheme } = useTheme()
@@ -482,6 +492,11 @@ export function MapLibreHeatmap({
     const activeSource = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined
     if (activeSource) {
       activeSource.setData(geoJsonData.active)
+    }
+
+    const clusterSource = map.getSource('heatmap-clusters') as maplibregl.GeoJSONSource | undefined
+    if (clusterSource) {
+      clusterSource.setData(geoJsonData.active)
     }
 
     const coverageSource = map.getSource('coverage-data') as maplibregl.GeoJSONSource | undefined
@@ -561,6 +576,14 @@ export function MapLibreHeatmap({
           type: 'geojson',
           data: activeData,
           generateId: true,
+        })
+      }
+
+      if (!map.getSource('heatmap-clusters')) {
+        map.addSource('heatmap-clusters', {
+          type: 'geojson',
+          data: activeData,
+          generateId: true,
           cluster: true,
           clusterMaxZoom: 14,
           clusterRadius: 50,
@@ -629,7 +652,7 @@ export function MapLibreHeatmap({
         map.addLayer({
           id: 'cluster-glow',
           type: 'circle',
-          source: 'heatmap-data',
+          source: 'heatmap-clusters',
           filter: ['has', 'point_count'],
           paint: {
             'circle-color': clusterGlowColor,
@@ -643,7 +666,7 @@ export function MapLibreHeatmap({
         map.addLayer({
           id: 'clusters',
           type: 'circle',
-          source: 'heatmap-data',
+          source: 'heatmap-clusters',
           filter: ['has', 'point_count'],
           paint: {
             'circle-color': clusterColor,
@@ -660,7 +683,7 @@ export function MapLibreHeatmap({
         map.addLayer({
           id: 'cluster-count',
           type: 'symbol',
-          source: 'heatmap-data',
+          source: 'heatmap-clusters',
           filter: ['has', 'point_count'],
           layout: {
             'text-field': '{point_count_abbreviated}',
@@ -681,7 +704,7 @@ export function MapLibreHeatmap({
         map.addLayer({
           id: 'unclustered-glow',
           type: 'circle',
-          source: 'heatmap-data',
+          source: 'heatmap-clusters',
           filter: ['!', ['has', 'point_count']],
           paint: {
             'circle-color': pointColor,
@@ -696,7 +719,7 @@ export function MapLibreHeatmap({
         map.addLayer({
           id: 'unclustered-point',
           type: 'circle',
-          source: 'heatmap-data',
+          source: 'heatmap-clusters',
           filter: ['!', ['has', 'point_count']],
           paint: {
             'circle-color': pointColor,
@@ -711,6 +734,8 @@ export function MapLibreHeatmap({
 
       const src = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined
       if (src && geoJsonDataRef.current) src.setData(geoJsonDataRef.current.active)
+      const clusterSrc = map.getSource('heatmap-clusters') as maplibregl.GeoJSONSource | undefined
+      if (clusterSrc && geoJsonDataRef.current) clusterSrc.setData(geoJsonDataRef.current.active)
       const covSrc = map.getSource('coverage-data') as maplibregl.GeoJSONSource | undefined
       if (covSrc && geoJsonDataRef.current) covSrc.setData(geoJsonDataRef.current.coverage)
     },
@@ -789,7 +814,7 @@ export function MapLibreHeatmap({
       if (geometry.type !== 'Point') return
 
       const clusterCenter = geometry.coordinates as [number, number]
-      const source = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined
+      const source = map.getSource('heatmap-clusters') as maplibregl.GeoJSONSource | undefined
       if (!source) return
 
       // Known MapLibre issue: getClusterExpansionZoom can return unreliable values.
@@ -836,8 +861,7 @@ export function MapLibreHeatmap({
       if (!props) return
 
       const stationId = sanitize(String(props.station_id ?? ''))
-      const isOverviewPoint =
-        !props.cancellation_rate && !props.delay_rate && props.intensity !== undefined
+      const isOverviewPoint = props.data_kind === 'overview'
 
       if (isOverviewPoint && onStationDetailRequested) {
         onStationDetailRequested(stationId)
@@ -877,6 +901,7 @@ export function MapLibreHeatmap({
       mapRef.current = null
     }
   }, [
+    mapKey,
     resolvedTheme,
     scheduleViewSave,
     scheduleZoomCallback,

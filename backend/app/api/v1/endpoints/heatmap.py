@@ -6,7 +6,7 @@ Provides an endpoint to retrieve cancellation heatmap data for map visualization
 
 import time
 from datetime import date, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -53,6 +53,47 @@ router = APIRouter()
 
 _HEATMAP_SINGLEFLIGHT_LOCK_TTL_SECONDS = 60
 _SLOW_HEATMAP_REQUEST_LOG_MS = 1500
+
+HeatmapOverviewMetric = Literal["cancellations", "delays", "both"]
+
+
+def _overview_intensity_from_snapshot(
+    point: HeatmapDataPoint, metrics: HeatmapOverviewMetric
+) -> float:
+    if metrics == "delays":
+        return min((point.delay_rate or 0.0) * 5.0, 1.0)
+    if metrics == "cancellations":
+        return min((point.cancellation_rate or 0.0) * 10.0, 1.0)
+    return min((point.cancellation_rate + point.delay_rate) * 4.0, 1.0)
+
+
+def _overview_include_snapshot_point(
+    point: HeatmapDataPoint, metrics: HeatmapOverviewMetric
+) -> bool:
+    if metrics == "delays":
+        return point.delayed_count > 0
+    if metrics == "cancellations":
+        return point.cancelled_count > 0
+    return point.cancelled_count > 0 or point.delayed_count > 0
+
+
+def _overview_points_from_snapshot(
+    snapshot: HeatmapResponse, metrics: HeatmapOverviewMetric
+) -> list[HeatmapPointLight]:
+    points: list[HeatmapPointLight] = []
+    for point in snapshot.data_points:
+        if not _overview_include_snapshot_point(point, metrics):
+            continue
+        points.append(
+            HeatmapPointLight(
+                id=point.station_id,
+                n=point.station_name,
+                lat=point.latitude,
+                lon=point.longitude,
+                i=_overview_intensity_from_snapshot(point, metrics),
+            )
+        )
+    return points
 
 
 def _filter_live_snapshot(
@@ -442,6 +483,12 @@ async def get_heatmap_overview(
             description="Comma-separated transport types to include (e.g., 'UBAHN,SBAHN').",
         ),
     ] = None,
+    metrics: Annotated[
+        HeatmapOverviewMetric,
+        Query(
+            description="Metric selection for overview intensity: cancellations, delays, or both.",
+        ),
+    ] = "both",
     bucket_width: Annotated[
         int,
         Query(
@@ -463,19 +510,7 @@ async def get_heatmap_overview(
         if cached_data:
             response.headers["X-Cache-Status"] = "hit"
             snapshot = HeatmapResponse.model_validate(cached_data)
-            # Convert to overview format (lightweight points)
-            points = [
-                HeatmapPointLight(
-                    id=p.station_id,
-                    n=p.station_name,
-                    lat=p.latitude,
-                    lon=p.longitude,
-                    # Match DB query intensity scaling: * 4.0 multiplier ensures 25% impact = full heat (1.0)
-                    # See heatmap_service.py:706-710 for reference
-                    i=min((p.cancellation_rate + p.delay_rate) * 4.0, 1.0),
-                )
-                for p in snapshot.data_points
-            ]
+            points = _overview_points_from_snapshot(snapshot, metrics)
             return HeatmapOverviewResponse(
                 time_range=snapshot.time_range,
                 points=points,
@@ -487,16 +522,7 @@ async def get_heatmap_overview(
         if stale_data:
             response.headers["X-Cache-Status"] = "stale"
             snapshot = HeatmapResponse.model_validate(stale_data)
-            points = [
-                HeatmapPointLight(
-                    id=p.station_id,
-                    n=p.station_name,
-                    lat=p.latitude,
-                    lon=p.longitude,
-                    i=min((p.cancellation_rate + p.delay_rate) * 4.0, 1.0),
-                )
-                for p in snapshot.data_points
-            ]
+            points = _overview_points_from_snapshot(snapshot, metrics)
             return HeatmapOverviewResponse(
                 time_range=snapshot.time_range,
                 points=points,
@@ -507,7 +533,7 @@ async def get_heatmap_overview(
         # Fall through to normal handling if no live snapshot available
 
     # Build cache key
-    cache_key = f"heatmap:overview:{time_range or 'default'}:{transport_modes or 'all'}:{bucket_width}"
+    cache_key = f"heatmap:overview:{time_range or 'default'}:{transport_modes or 'all'}:{bucket_width}:{metrics}"
 
     # Check cache first
     try:
@@ -531,6 +557,7 @@ async def get_heatmap_overview(
         time_range=time_range,
         transport_modes=transport_modes,
         bucket_width_minutes=bucket_width,
+        metrics=metrics,
     )
 
     # Cache the result

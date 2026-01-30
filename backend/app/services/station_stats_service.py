@@ -431,9 +431,7 @@ class StationStatsService:
         # The heatmap landing page always hits /api/v1/heatmap/overview first, so this avoids
         # a full-table SUM over realtime_station_stats on the first station click.
         if self._cache:
-            overview_cache_key = (
-                f"heatmap:overview:{time_range or 'default'}:all:{bucket_width_minutes}"
-            )
+            overview_cache_key = f"heatmap:overview:{time_range or 'default'}:all:{bucket_width_minutes}:both"
             try:
                 overview_cached = await self._cache.get_json(overview_cache_key)
                 if not overview_cached:

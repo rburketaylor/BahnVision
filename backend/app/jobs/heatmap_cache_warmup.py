@@ -18,7 +18,11 @@ from app.core.config import Settings, get_settings
 from app.core.database import AsyncSessionFactory
 from app.models.heatmap import TimeRangePreset
 from app.services.heatmap_cache import heatmap_cancellations_cache_key
-from app.services.heatmap_service import HeatmapService, resolve_max_points
+from app.services.heatmap_service import (
+    HeatmapOverviewMetric,
+    HeatmapService,
+    resolve_max_points,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +34,15 @@ class HeatmapWarmupTarget:
     bucket_width_minutes: int
     max_points: int
     is_overview: bool = False
+    metrics: HeatmapOverviewMetric = "both"
 
     @property
     def cache_key(self) -> str:
         if self.is_overview:
-            return f"heatmap:overview:{self.time_range or 'default'}:{self.transport_modes or 'all'}:{self.bucket_width_minutes}"
+            return (
+                f"heatmap:overview:{self.time_range or 'default'}:"
+                f"{self.transport_modes or 'all'}:{self.bucket_width_minutes}:{self.metrics}"
+            )
         return heatmap_cancellations_cache_key(
             time_range=self.time_range,
             transport_modes=self.transport_modes,
@@ -102,6 +110,7 @@ class HeatmapCacheWarmer:
                     bucket_width_minutes=self._settings.heatmap_cache_warmup_bucket_width_minutes,
                     max_points=0,  # 0 = overview mode
                     is_overview=True,  # New flag
+                    metrics="both",
                 )
             )
 
@@ -141,6 +150,7 @@ class HeatmapCacheWarmer:
                                     time_range=target.time_range,
                                     transport_modes=target.transport_modes,
                                     bucket_width_minutes=target.bucket_width_minutes,
+                                    metrics=target.metrics,
                                 )
                                 await self._cache.set_json(
                                     target.cache_key,

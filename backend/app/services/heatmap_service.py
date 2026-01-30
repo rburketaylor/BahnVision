@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import and_, func, select, text, Numeric
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _SLOW_HEATMAP_DB_QUERY_LOG_MS = 1000
 
+HeatmapOverviewMetric = Literal["cancellations", "delays", "both"]
+
 # Time range preset mappings (in hours)
 TIME_RANGE_HOURS: dict[str, int] = {
     "live": 1,
@@ -64,6 +66,43 @@ _DAILY_SUMMARY_THRESHOLD_DAYS = 3
 # Spatial stratification for heatmap coverage
 # Grid cell size in degrees (~0.1° ≈ 10km at Germany's latitude)
 GRID_CELL_SIZE = 0.1
+
+
+def _overview_intensity_expr(
+    total_departures_expr,
+    cancelled_count_expr,
+    delayed_count_expr,
+    metrics: HeatmapOverviewMetric,
+):
+    if metrics == "delays":
+        return func.least(
+            (delayed_count_expr / func.nullif(total_departures_expr, 0)) * 5.0,
+            1.0,
+        ).label("intensity")
+    if metrics == "cancellations":
+        return func.least(
+            (cancelled_count_expr / func.nullif(total_departures_expr, 0)) * 10.0,
+            1.0,
+        ).label("intensity")
+    return func.least(
+        (cancelled_count_expr + delayed_count_expr)
+        / func.nullif(total_departures_expr, 0)
+        * 4.0,
+        1.0,
+    ).label("intensity")
+
+
+def _overview_having_clause(
+    cancelled_count_expr,
+    delayed_count_expr,
+    metrics: HeatmapOverviewMetric,
+):
+    if metrics == "delays":
+        return delayed_count_expr > 0
+    if metrics == "cancellations":
+        return cancelled_count_expr > 0
+    return (cancelled_count_expr > 0) | (delayed_count_expr > 0)
+
 
 # Transport type name mapping for display
 TRANSPORT_TYPE_NAMES: dict[str, str] = {
@@ -355,6 +394,7 @@ class HeatmapService:
         time_range: TimeRangePreset | None = None,
         transport_modes: str | None = None,
         bucket_width_minutes: int = DEFAULT_BUCKET_WIDTH_MINUTES,
+        metrics: HeatmapOverviewMetric = "both",
     ) -> HeatmapOverviewResponse:
         """Generate lightweight heatmap overview showing ALL impacted stations.
 
@@ -387,6 +427,7 @@ class HeatmapService:
             from_time=from_time,
             to_time=to_time,
             bucket_width_minutes=bucket_width_minutes,
+            metrics=metrics,
         )
 
         summary = await self._calculate_network_summary_from_db(
@@ -936,6 +977,7 @@ class HeatmapService:
         to_time: datetime,
         *,
         bucket_width_minutes: int,
+        metrics: HeatmapOverviewMetric,
     ) -> list[HeatmapPointLight]:
         """Query ALL impacted stations with minimal fields.
 
@@ -956,7 +998,7 @@ class HeatmapService:
         # Use daily summaries for large time ranges
         if (to_time - from_time).days >= _DAILY_SUMMARY_THRESHOLD_DAYS:
             return await self._get_all_impacted_stations_light_daily(
-                route_type_filter, from_time, to_time
+                route_type_filter, from_time, to_time, metrics=metrics
             )
 
         total_departures_expr = func.coalesce(
@@ -969,14 +1011,9 @@ class HeatmapService:
             func.sum(RealtimeStationStats.delayed_count), 0
         )
 
-        # Intensity = (cancelled + delayed) / total, saturated at 25%
-        # This gives a 0-1 value for heatmap weight
-        intensity_expr = func.least(
-            (cancelled_count_expr + delayed_count_expr)
-            / func.nullif(total_departures_expr, 0)
-            * 4.0,
-            1.0,
-        ).label("intensity")
+        intensity_expr = _overview_intensity_expr(
+            total_departures_expr, cancelled_count_expr, delayed_count_expr, metrics
+        )
 
         stmt = (
             select(
@@ -1005,8 +1042,7 @@ class HeatmapService:
             GTFSStop.stop_lat,
             GTFSStop.stop_lon,
         ).having(
-            # Only include stations with at least 1 cancellation OR delay
-            (cancelled_count_expr > 0) | (delayed_count_expr > 0)
+            _overview_having_clause(cancelled_count_expr, delayed_count_expr, metrics)
         )
 
         result = await self._session.execute(stmt)
@@ -1031,6 +1067,8 @@ class HeatmapService:
         route_type_filter: list[int] | None,
         from_time: datetime,
         to_time: datetime,
+        *,
+        metrics: HeatmapOverviewMetric,
     ) -> list[HeatmapPointLight]:
         """Query ALL impacted stations from daily summaries with minimal fields.
 
@@ -1059,13 +1097,9 @@ class HeatmapService:
             func.sum(RealtimeStationStatsDaily.delayed_count), 0
         )
 
-        # Intensity = (cancelled + delayed) / total, saturated at 25%
-        intensity_expr = func.least(
-            (cancelled_count_expr + delayed_count_expr)
-            / func.nullif(total_departures_expr, 0)
-            * 4.0,
-            1.0,
-        ).label("intensity")
+        intensity_expr = _overview_intensity_expr(
+            total_departures_expr, cancelled_count_expr, delayed_count_expr, metrics
+        )
 
         stmt = (
             select(
@@ -1088,8 +1122,7 @@ class HeatmapService:
             GTFSStop.stop_lat,
             GTFSStop.stop_lon,
         ).having(
-            # Only include stations with at least 1 cancellation OR delay
-            (cancelled_count_expr > 0) | (delayed_count_expr > 0)
+            _overview_having_clause(cancelled_count_expr, delayed_count_expr, metrics)
         )
 
         result = await self._session.execute(stmt)

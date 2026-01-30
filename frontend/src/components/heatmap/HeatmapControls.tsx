@@ -75,10 +75,6 @@ export function HeatmapControls({
     onTransportModesChange(TRANSPORT_MODES.map(m => m.value))
   }
 
-  const clearAllModes = () => {
-    onTransportModesChange([])
-  }
-
   const toggleMetric = (metric: keyof HeatmapEnabledMetrics) => {
     // Don't allow both to be disabled
     const newEnabled = { ...enabledMetrics, [metric]: !enabledMetrics[metric] }
@@ -199,14 +195,6 @@ export function HeatmapControls({
               className="text-small text-brand hover:text-primary/80 disabled:opacity-50 font-medium"
             >
               All
-            </button>
-            <span className="text-muted">|</span>
-            <button
-              onClick={clearAllModes}
-              disabled={isLoading}
-              className="text-small text-brand hover:text-primary/80 disabled:opacity-50 font-medium"
-            >
-              None
             </button>
           </div>
         </div>
