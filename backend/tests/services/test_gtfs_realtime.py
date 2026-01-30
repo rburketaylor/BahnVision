@@ -309,22 +309,23 @@ class TestServiceAlerts:
         await gtfs_service._store_alerts(alerts)
 
         # Verify batch writes are used (Issue 6: GTFS-RT Batch Writes)
-        # Should call mset_json twice: once for alerts, once for route indexes
-        assert mock_cache_service.mset_json.call_count == 2
+        # Should call mset_json once: combined alerts and route indexes
+        assert mock_cache_service.mset_json.call_count == 1
 
         # Check that individual set_json is NOT called
         assert mock_cache_service.set_json.call_count == 0
 
-        # Verify the first batch call contains the alerts
-        first_call_items = mock_cache_service.mset_json.call_args_list[0][0][0]
-        assert "service_alert:alert1" in first_call_items
-        assert "service_alert:alert2" in first_call_items
+        # Verify the batch call contains both alerts and route indexes
+        batch_items = mock_cache_service.mset_json.call_args[0][0]
 
-        # Verify the second batch call contains the route indexes
-        second_call_items = mock_cache_service.mset_json.call_args_list[1][0][0]
-        assert "service_alerts:route:route1" in second_call_items
-        assert "service_alerts:route:route2" in second_call_items
-        assert "service_alerts:route:route3" in second_call_items
+        # Alerts
+        assert "service_alert:alert1" in batch_items
+        assert "service_alert:alert2" in batch_items
+
+        # Route indexes
+        assert "service_alerts:route:route1" in batch_items
+        assert "service_alerts:route:route2" in batch_items
+        assert "service_alerts:route:route3" in batch_items
 
     @pytest.mark.asyncio
     async def test_get_alerts_for_route(self, gtfs_service, mock_cache_service):
