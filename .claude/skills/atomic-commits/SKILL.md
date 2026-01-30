@@ -31,6 +31,13 @@ Analyze the changes and group them into logical atomic commits. Each commit shou
 - Follow Conventional Commits format: `<type>: <description>`
 - Have a detailed body explaining the what and why
 
+**Grouping guidance:**
+
+- Group by **feature**, not by file. If changes across multiple files implement a single feature, commit them together.
+- A "feature" typically includes: backend implementation, frontend wiring, and any related type/model changes.
+- Only split when changes are truly independent (e.g., a feature vs. its test updates vs. unrelated docs).
+- Avoid over-granular commits that split a single coherent change just because it touches many files.
+
 Common commit types:
 
 - `feat:` - New feature
