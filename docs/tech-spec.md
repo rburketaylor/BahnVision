@@ -47,6 +47,10 @@ Primary flows:
 | `GET /health`                | Lightweight uptime/version probe.                          | Non-cached; returns `200` with version + uptime.                                                                               |
 | `GET /metrics`               | Prometheus metrics exported via `app.api.metrics`.         | N/A                                                                                                                            |
 
+Notes:
+
+- `GET /heatmap/overview` supports a `metrics` query param (`cancellations`, `delays`, `both`) to control overview intensity.
+
 ### Frontend Surface (React 19 + Vite)
 
 - **Pages:** Landing dashboard (departures + quick search), station search results, heatmap, observability/devtools gates.
