@@ -118,6 +118,16 @@ class GTFSScheduleService:
             if not stop:
                 raise StopNotFoundError(f"Stop {stop_id} not found in GTFS feed")
 
+        # Resolve stop IDs (including children)
+        # This replaces the inefficient OR join in the main query
+        stop_ids = {stop_id}
+
+        # Get children stops (platforms) if this is a parent station
+        children_stmt = select(GTFSStop.stop_id).where(GTFSStop.parent_station == stop_id)
+        result = await self.session.execute(children_stmt)
+        children = result.scalars().all()
+        stop_ids.update(children)
+
         # Determine which service_ids are active today
         today = from_time.date()
         weekday = today.strftime("%A").lower()  # 'monday', 'tuesday', etc.
@@ -161,7 +171,7 @@ class GTFSScheduleService:
             .outerjoin(c, t.service_id == c.service_id)
             .outerjoin(cd, and_(t.service_id == cd.service_id, cd.date == today))
             .where(
-                or_(st.stop_id == stop_id, s.parent_station == stop_id),
+                st.stop_id.in_(stop_ids),
                 st.departure_time >= from_interval,
                 or_(
                     # Calendar-based service with possible exceptions
