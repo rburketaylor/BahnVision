@@ -241,9 +241,9 @@ class TestGTFSScheduleService:
     @pytest.mark.asyncio
     async def test_get_stop_departures_stop_not_found(self, service, mock_session):
         """Test that StopNotFoundError is raised for unknown stops."""
-        # Mock _get_stop to return None
+        # Mock stops query to return empty list
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_result.all = MagicMock(return_value=[])
         mock_session.execute = AsyncMock(return_value=mock_result)
 
         with pytest.raises(StopNotFoundError, match="not found"):
@@ -469,6 +469,7 @@ class TestGetStopDepartures:
         route_long_name: str = "S-Bahn S1",
         route_type: int = 2,
         route_color: str = "00BFFF",
+        stop_id: str = "de:09162:6",
         stop_name: str = "Marienplatz",
         arrival_time: timedelta = None,
     ):
@@ -481,7 +482,9 @@ class TestGetStopDepartures:
         row.route_long_name = route_long_name
         row.route_type = route_type
         row.route_color = route_color
-        row.stop_name = stop_name
+        row.stop_id = stop_id
+        # row.stop_name is NOT returned by the query anymore, but needed for map check
+        # row.stop_name = stop_name
         row.trip_id = trip_id
         row.route_id = route_id
         # Add _mapping for dict conversion
@@ -493,7 +496,7 @@ class TestGetStopDepartures:
             "route_long_name": route_long_name,
             "route_type": route_type,
             "route_color": route_color,
-            "stop_name": stop_name,
+            "stop_id": stop_id,
             "trip_id": trip_id,
             "route_id": route_id,
         }
@@ -523,13 +526,12 @@ class TestGetStopDepartures:
             ),
         ]
 
-        # First call: check if stop exists (returns stop)
-        # Second call: get departures (returns departure rows)
+        # First call: get stop IDs and names
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
-        # Create an iterator for departure rows
+        # Second call: get departures (returns departure rows)
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
 
@@ -548,6 +550,7 @@ class TestGetStopDepartures:
         assert departures[0].departure_time == datetime(
             2025, 12, 8, 8, 30, tzinfo=timezone.utc
         )
+        assert departures[0].stop_name == "Marienplatz"
         assert departures[1].departure_time == datetime(
             2025, 12, 8, 8, 40, tzinfo=timezone.utc
         )
@@ -559,7 +562,7 @@ class TestGetStopDepartures:
         """Ensure SQL supports feeds without calendar.txt (calendar_dates-only)."""
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
@@ -586,7 +589,7 @@ class TestGetStopDepartures:
         mock_stop = self._mock_stop_exists(mock_session, stop_id="parent_station_id")
         mock_stop.location_type = 1  # station
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
@@ -598,10 +601,15 @@ class TestGetStopDepartures:
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)  # Monday
         await service.get_stop_departures("parent_station_id", query_time, limit=10)
 
-        query_obj = mock_session.execute.call_args_list[1][0][0]
-        sql = str(query_obj)
-        # SQLAlchemy ORM uses different parameter naming like :parent_station_1
-        assert "s.parent_station =" in sql
+        # First query is for stops
+        query_obj_stops = mock_session.execute.call_args_list[0][0][0]
+        sql_stops = str(query_obj_stops)
+        assert "gtfs_stops.parent_station =" in sql_stops
+
+        # Second query is for departures, which now uses IN clause
+        query_obj_deps = mock_session.execute.call_args_list[1][0][0]
+        sql_deps = str(query_obj_deps)
+        assert "st.stop_id IN" in sql_deps
 
     @pytest.mark.asyncio
     async def test_get_stop_departures_overnight_service(self, service, mock_session):
@@ -618,7 +626,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
@@ -644,7 +652,7 @@ class TestGetStopDepartures:
         """Test when there are no departures for the requested time."""
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         # Return empty departures
         mock_departure_result = MagicMock()
@@ -692,7 +700,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
@@ -727,7 +735,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
@@ -760,7 +768,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
@@ -790,7 +798,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
@@ -823,7 +831,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
@@ -859,7 +867,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         # Only return 5 rows to simulate limit
         mock_departure_result = MagicMock()
@@ -904,7 +912,7 @@ class TestGetStopDepartures:
 
             mock_stop = self._mock_stop_exists(mock_session)
             mock_stop_result = MagicMock()
-            mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+            mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
             mock_departure_result = MagicMock()
             mock_departure_result.__iter__ = MagicMock(
@@ -941,7 +949,7 @@ class TestGetStopDepartures:
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()
-        mock_stop_result.scalar_one_or_none = MagicMock(return_value=mock_stop)
+        mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
