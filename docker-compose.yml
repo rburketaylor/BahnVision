@@ -80,7 +80,7 @@ services:
       - "6379:6379"
 
   daily-aggregation:
-    image: alpine:3.23.2
+    image: alpine:3.23.3
     command: >
       sh -c "
       echo '0 2 * * * wget -q -O- http://backend:8000/api/v1/heatmap/aggregate-daily --post-data='' >/dev/null 2>&1' | crontab -
