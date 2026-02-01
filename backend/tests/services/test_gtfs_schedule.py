@@ -53,6 +53,19 @@ class TestIntervalToDatetime:
         expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
         assert result == expected
 
+    def test_interval_to_datetime_with_service_midnight(self):
+        """Test conversion with pre-calculated service_midnight."""
+        service_date = date(2025, 12, 8)
+        service_midnight = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
+        interval = timedelta(hours=8, minutes=30)
+
+        result = interval_to_datetime(
+            service_date, interval, service_midnight=service_midnight
+        )
+
+        expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
+        assert result == expected
+
     def test_interval_to_datetime_over_24h(self):
         """Test conversion of times > 24 hours (overnight service)."""
         service_date = date(2025, 12, 8)
