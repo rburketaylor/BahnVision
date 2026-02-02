@@ -13,7 +13,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Set
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
 from types import SimpleNamespace
 
