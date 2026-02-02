@@ -105,6 +105,7 @@ FastAPI app.main
 - **API Service Layer:** `httpClient.ts` handles base URL (`VITE_API_BASE_URL`), timeout, and headers; `endpoints/transitApi.ts` wraps backend routes for health, stops, departures, heatmap, and metrics.
 - **State Management:** Query keys align with backend cache semantics (station, transport, pagination). Stale-while-refetch keeps UI responsive during data delays.
 - **Routing & Pages:** Current pages include `/` (heatmap landing), `/search`, `/station/:stationId`, and `/monitoring`. Map overlays are implemented via MapLibre.
+- **Heatmap basemap styles:** MapLibre GL style URLs (not raster tile URLs) configured via `VITE_HEATMAP_BASEMAP_STYLE_LIGHT` and `VITE_HEATMAP_BASEMAP_STYLE_DARK`. Defaults use CARTO positron/dark-matter styles (no API key required).
 - **Testing:** Vitest + RTL for components/hooks; MSW mocks backend endpoints. Playwright E2E tests validate key flows.
 
 ## 9. Data & Schema Highlights
