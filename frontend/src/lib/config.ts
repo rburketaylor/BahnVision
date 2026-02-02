@@ -9,6 +9,8 @@ interface Config {
   enableDebugLogs: boolean
   mapTileUrl: string
   mapAttribution: string
+  heatmapBasemapStyleLight: string
+  heatmapBasemapStyleDark: string
   environment: 'development' | 'production' | 'test'
 }
 
@@ -21,6 +23,12 @@ export const config: Config = {
   mapAttribution:
     import.meta.env.VITE_MAP_ATTRIBUTION ||
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  heatmapBasemapStyleLight:
+    import.meta.env.VITE_HEATMAP_BASEMAP_STYLE_LIGHT ||
+    'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  heatmapBasemapStyleDark:
+    import.meta.env.VITE_HEATMAP_BASEMAP_STYLE_DARK ||
+    'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
   environment: (import.meta.env.MODE as Config['environment']) || 'development',
 }
 

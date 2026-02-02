@@ -22,6 +22,8 @@ describe('config', () => {
       expect(config).toHaveProperty('enableDebugLogs')
       expect(config).toHaveProperty('mapTileUrl')
       expect(config).toHaveProperty('mapAttribution')
+      expect(config).toHaveProperty('heatmapBasemapStyleLight')
+      expect(config).toHaveProperty('heatmapBasemapStyleDark')
       expect(config).toHaveProperty('environment')
     })
   })
@@ -81,6 +83,28 @@ describe('config', () => {
 
     it('contains OpenStreetMap attribution', () => {
       expect(config.mapAttribution).toContain('OpenStreetMap')
+    })
+  })
+
+  describe('heatmapBasemapStyleLight', () => {
+    it('is a string', () => {
+      expect(typeof config.heatmapBasemapStyleLight).toBe('string')
+    })
+
+    it('looks like a style URL', () => {
+      expect(config.heatmapBasemapStyleLight).toMatch(/https?:\/\//)
+      expect(config.heatmapBasemapStyleLight).toMatch(/\.json($|\\?)/)
+    })
+  })
+
+  describe('heatmapBasemapStyleDark', () => {
+    it('is a string', () => {
+      expect(typeof config.heatmapBasemapStyleDark).toBe('string')
+    })
+
+    it('looks like a style URL', () => {
+      expect(config.heatmapBasemapStyleDark).toMatch(/https?:\/\//)
+      expect(config.heatmapBasemapStyleDark).toMatch(/\.json($|\\?)/)
     })
   })
 

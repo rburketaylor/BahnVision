@@ -30,6 +30,7 @@ import {
   LIGHT_HEATMAP_CONFIG,
 } from '../../types/heatmap'
 import { useTheme } from '../../contexts/ThemeContext'
+import { config } from '../../lib/config'
 import {
   BVV_POINT_COLOR,
   BVV_CLUSTER_COLOR,
@@ -94,16 +95,12 @@ class HeatmapErrorBoundary extends React.Component<
   }
 }
 
-// Basemap styles (no API key required)
-const LIGHT_MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
-const DARK_MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-
 const MAP_VIEW_STORAGE_KEY = 'bahnvision-heatmap-view-v1'
 
 type HeatmapResolvedTheme = 'light' | 'dark'
 
 function getBasemapStyleForTheme(theme: HeatmapResolvedTheme): string {
-  return theme === 'dark' ? DARK_MAP_STYLE : LIGHT_MAP_STYLE
+  return theme === 'dark' ? config.heatmapBasemapStyleDark : config.heatmapBasemapStyleLight
 }
 
 function getHeatmapConfigForTheme(theme: HeatmapResolvedTheme) {
@@ -463,6 +460,8 @@ export function MapLibreHeatmap({
   const saveViewTimerRef = useRef<number | null>(null)
   const pendingFocusRef = useRef<HeatmapMapFocusRequest | null>(null)
   const lastAppliedFocusRequestIdRef = useRef<number | null>(null)
+  const transitionStartTsRef = useRef<number | null>(null)
+  const transitionClearTimerRef = useRef<number | null>(null)
 
   const [isStyleTransitioning, setIsStyleTransitioning] = useState(false)
   const [mapKey, setMapKey] = useState(() => Date.now())
@@ -479,6 +478,32 @@ export function MapLibreHeatmap({
   useEffect(() => {
     resolvedThemeRef.current = resolvedTheme
   }, [resolvedTheme])
+
+  const clearStyleTransition = useCallback(() => {
+    const minVisibleMs = 200
+    const startedAt = transitionStartTsRef.current
+    if (!startedAt) {
+      setIsStyleTransitioning(false)
+      return
+    }
+
+    const elapsed = Date.now() - startedAt
+    if (elapsed >= minVisibleMs) {
+      transitionStartTsRef.current = null
+      setIsStyleTransitioning(false)
+      return
+    }
+
+    if (transitionClearTimerRef.current) {
+      window.clearTimeout(transitionClearTimerRef.current)
+    }
+
+    transitionClearTimerRef.current = window.setTimeout(() => {
+      transitionStartTsRef.current = null
+      transitionClearTimerRef.current = null
+      setIsStyleTransitioning(false)
+    }, minVisibleMs - elapsed)
+  }, [])
 
   // Memoize GeoJSON conversion to avoid recalculating on every render
   const geoJsonData = useMemo((): GeoJSONResult => {
@@ -780,6 +805,12 @@ export function MapLibreHeatmap({
     if (!mapContainerRef.current) return
 
     setIsMapLoaded(false)
+    transitionStartTsRef.current = Date.now()
+    setIsStyleTransitioning(true)
+    if (transitionClearTimerRef.current) {
+      window.clearTimeout(transitionClearTimerRef.current)
+      transitionClearTimerRef.current = null
+    }
 
     // Clean up existing map before creating a new one (e.g., on theme change)
     if (mapRef.current) {
@@ -816,13 +847,14 @@ export function MapLibreHeatmap({
     // Setup layers when style loads (fires on initial load and after setStyle)
     map.on('style.load', () => {
       ensureLayers(map, currentTheme)
-      setIsStyleTransitioning(false)
+      clearStyleTransition()
     })
 
     map.on('load', () => {
       ensureLayers(map, currentTheme)
       scheduleZoomCallback()
       setIsMapLoaded(true)
+      clearStyleTransition()
       if (pendingFocusRef.current) {
         applyFocusRequest(pendingFocusRef.current)
         pendingFocusRef.current = null
@@ -934,6 +966,10 @@ export function MapLibreHeatmap({
     map.on('mouseleave', 'coverage-skeleton-layer', () => (map.getCanvas().style.cursor = ''))
 
     return () => {
+      if (transitionClearTimerRef.current) {
+        window.clearTimeout(transitionClearTimerRef.current)
+        transitionClearTimerRef.current = null
+      }
       if (zoomDebounceTimerRef.current) window.clearTimeout(zoomDebounceTimerRef.current)
       if (saveViewTimerRef.current) window.clearTimeout(saveViewTimerRef.current)
       popupRef.current?.remove()
@@ -949,6 +985,7 @@ export function MapLibreHeatmap({
     ensureLayers,
     onStationDetailRequested,
     applyFocusRequest,
+    clearStyleTransition,
   ])
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
@@ -1109,11 +1146,8 @@ export function MapLibreHeatmap({
         setMapKey(Date.now())
       }}
     >
-      <div
-        className="relative w-full h-full rounded-lg overflow-hidden border border-border"
-        key={mapKey}
-      >
-        <div ref={mapContainerRef} className="absolute inset-0 z-0" />
+      <div className="relative w-full h-full rounded-lg overflow-hidden border border-border">
+        <div ref={mapContainerRef} className="absolute inset-0 z-0" key={mapKey} />
 
         {/* Map UI helpers */}
         <div className="absolute right-4 top-16 z-[950] flex items-center gap-2">
