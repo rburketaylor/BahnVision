@@ -96,6 +96,7 @@ Run `./scripts/setup-dev.sh` to bootstrap the dev environment (downloads Node.js
 
 - **Verify before claiming**: Before stating that something "is used" or "applies" to this project, check the actual codebase. Use grep/search tools to confirm patterns exist.
 - **Cite sources**: When referencing existing code patterns, cite the specific file(s) where they appear (e.g., "as seen in `backend/app/services/cache_service.py`").
+- **Turn mistakes into rules**: If you notice you made a mistake (especially repeating the same type of mistake), re-check `AGENTS.md` and update it with a new or clarified rule that prevents that mistake in future runs.
 - **Distinguish facts from recommendations**: Clearly differentiate between:
   - **Current state**: What actually exists in the codebase today (verified by inspection)
   - **Recommendations**: Best practices or suggestions that are not yet implemented
