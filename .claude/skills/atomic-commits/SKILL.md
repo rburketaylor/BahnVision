@@ -106,6 +106,21 @@ Create commits one at a time, staging only the files for each commit:
 ```bash
 # For each planned commit:
 git add <files-for-this-commit>
+
+# CRITICAL: Verify what will actually be committed before committing
+git diff --cached
+```
+
+**Review the staged diff carefully:**
+
+- Does it contain ONLY the changes described in this commit?
+- Are there unrelated changes bundled in? (especially if a file has multiple logical changes)
+- If wrong changes are staged, use `git reset` and re-stage more carefully
+- For files with multiple independent changes, consider using `git add -p` to stage specific hunks
+
+Only AFTER verifying the staged diff matches the planned commit:
+
+```bash
 git commit -F - <<'EOF'
 <type>: <brief description>
 
@@ -116,6 +131,7 @@ EOF
 
 **IMPORTANT:**
 
+- Always verify with `git diff --cached` BEFORE committing
 - Always use HEREDOC syntax for commit messages to ensure proper formatting
 - Each commit must be created separately (never batch multiple logical commits)
 - Do NOT use `git commit --amend` - always create new commits
@@ -165,6 +181,7 @@ All tests passed. Commits are ready locally (not pushed).
 
 ## Important Notes
 
+- **NEVER commit without verifying** - Always run `git diff --cached` after staging and BEFORE committing to verify exactly what will be committed
 - **Never skip tests** - Always run the full test suite before committing
 - **Never push** - This skill only creates local commits
 - **Always use HEREDOC** for commit message formatting
