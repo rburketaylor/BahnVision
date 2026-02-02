@@ -516,7 +516,9 @@ class TestStopInfoSerialization:
                     trip_headsign="Destination",
                     stop_id="stop1",
                     stop_name="Test Stop",
-                    scheduled_departure=datetime(2025, 12, 8, 8, 30, tzinfo=timezone.utc),
+                    scheduled_departure=datetime(
+                        2025, 12, 8, 8, 30, tzinfo=timezone.utc
+                    ),
                 )
             ],
             alerts=[],
