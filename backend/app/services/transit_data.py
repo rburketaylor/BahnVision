@@ -190,25 +190,7 @@ class DepartureInfo:
 
         # Reconstruct ServiceAlert objects
         if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert is not None:
-            alerts = []
-            for alert_data in data["alerts"]:
-                # Copy alert data to avoid mutating nested structures
-                alert_data = alert_data.copy()
-                # Convert lists back to sets
-                if "affected_routes" in alert_data:
-                    alert_data["affected_routes"] = set(alert_data["affected_routes"])
-                if "affected_stops" in alert_data:
-                    alert_data["affected_stops"] = set(alert_data["affected_stops"])
-
-                # Convert ISO strings back to datetime
-                for alert_field in ["start_time", "end_time", "timestamp"]:
-                    if alert_data.get(alert_field):
-                        alert_data[alert_field] = datetime.fromisoformat(
-                            alert_data[alert_field]
-                        )
-
-                alerts.append(ServiceAlert(**alert_data))
-            data["alerts"] = alerts
+            data["alerts"] = [ServiceAlert.from_dict(a) for a in data["alerts"]]
         elif data.get("alerts") and not GTFS_REALTIME_AVAILABLE:
             # If realtime service is not available, we can't reconstruct ServiceAlert objects
             logger.warning(
@@ -236,6 +218,42 @@ class RouteInfo:
         if self.alerts is None:
             self.alerts = []
 
+    def to_dict(self) -> Dict:
+        """Convert to dictionary with JSON-serializable values."""
+        # Serialize alerts if present
+        alerts_data = []
+        if self.alerts:
+            for alert in self.alerts:
+                if isinstance(alert, dict):
+                    alerts_data.append(alert)
+                    continue
+                # ServiceAlert object
+                alerts_data.append(alert.to_dict())
+
+        return {
+            "route_id": self.route_id,
+            "route_short_name": self.route_short_name,
+            "route_long_name": self.route_long_name,
+            "route_type": self.route_type,
+            "route_color": self.route_color,
+            "route_text_color": self.route_text_color,
+            "active_trips": self.active_trips,
+            "alerts": alerts_data,
+        }
+
+    @staticmethod
+    def from_dict(data: Dict) -> "RouteInfo":
+        """Create from dictionary handling type conversions."""
+        data = data.copy()
+
+        # Reconstruct ServiceAlert objects
+        if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert is not None:
+            data["alerts"] = [ServiceAlert.from_dict(a) for a in data["alerts"]]
+        elif data.get("alerts") and not GTFS_REALTIME_AVAILABLE:
+            data["alerts"] = []
+
+        return RouteInfo(**data)
+
 
 @dataclass
 class StopInfo:
@@ -255,6 +273,59 @@ class StopInfo:
             self.upcoming_departures = []
         if self.alerts is None:
             self.alerts = []
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary with JSON-serializable values."""
+        # Serialize alerts if present
+        alerts_data = []
+        if self.alerts:
+            for alert in self.alerts:
+                if isinstance(alert, dict):
+                    alerts_data.append(alert)
+                    continue
+                alerts_data.append(alert.to_dict())
+
+        return {
+            "stop_id": self.stop_id,
+            "stop_name": self.stop_name,
+            "stop_lat": self.stop_lat,
+            "stop_lon": self.stop_lon,
+            "zone_id": self.zone_id,
+            "wheelchair_boarding": self.wheelchair_boarding,
+            "upcoming_departures": [d.to_dict() for d in self.upcoming_departures]
+            if self.upcoming_departures
+            else [],
+            "alerts": alerts_data,
+        }
+
+    @staticmethod
+    def from_dict(data: Dict) -> "StopInfo":
+        """Create from dictionary handling type conversions."""
+        data = data.copy()
+
+        if data.get("upcoming_departures"):
+            data["upcoming_departures"] = [
+                DepartureInfo.from_dict(d) for d in data["upcoming_departures"]
+            ]
+
+        # Reconstruct ServiceAlert objects
+        if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert is not None:
+            alerts = []
+            for alert_data in data["alerts"]:
+                alert_data = alert_data.copy()
+                if "affected_routes" in alert_data:
+                    alert_data["affected_routes"] = set(alert_data["affected_routes"])
+                if "affected_stops" in alert_data:
+                    alert_data["affected_stops"] = set(alert_data["affected_stops"])
+                for field in ["start_time", "end_time", "timestamp"]:
+                    if alert_data.get(field):
+                        alert_data[field] = datetime.fromisoformat(alert_data[field])
+                alerts.append(ServiceAlert(**alert_data))
+            data["alerts"] = alerts
+        elif data.get("alerts") and not GTFS_REALTIME_AVAILABLE:
+            data["alerts"] = []
+
+        return StopInfo(**data)
 
 
 class TransitDataService:
@@ -379,7 +450,7 @@ class TransitDataService:
             cache_key = f"route:{route_id}:{include_real_time}"
             cached_result = await self.cache.get_json(cache_key)
             if cached_result:
-                return RouteInfo(**cached_result)
+                return RouteInfo.from_dict(cached_result)
 
             # Get route from database
             stmt = select(GTFSRoute).where(GTFSRoute.route_id == route_id)
@@ -407,7 +478,7 @@ class TransitDataService:
             # Cache the result
             await self.cache.set_json(
                 cache_key,
-                asdict(route_info),
+                route_info.to_dict(),
                 ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds,
             )
 
@@ -425,7 +496,7 @@ class TransitDataService:
             cache_key = f"stop:{stop_id}:{include_departures}"
             cached_result = await self.cache.get_json(cache_key)
             if cached_result:
-                return StopInfo(**cached_result)
+                return StopInfo.from_dict(cached_result)
 
             # Get stop from database
             stmt = select(GTFSStop).where(GTFSStop.stop_id == stop_id)
@@ -453,7 +524,7 @@ class TransitDataService:
             # Cache the result
             await self.cache.set_json(
                 cache_key,
-                asdict(stop_info),
+                stop_info.to_dict(),
                 ttl_seconds=self.settings.gtfs_stop_cache_ttl_seconds,
             )
 
@@ -474,7 +545,7 @@ class TransitDataService:
             try:
                 cached_data = await self.cache.get_json(cache_key)
                 if cached_data:
-                    return [StopInfo(**s) for s in cached_data]
+                    return [StopInfo.from_dict(s) for s in cached_data]
             except Exception as cache_error:
                 logger.warning(f"Failed to read stop search from cache: {cache_error}")
 
@@ -495,7 +566,7 @@ class TransitDataService:
 
             # Cache the result
             try:
-                serialized = [asdict(s) for s in stop_infos]
+                serialized = [s.to_dict() for s in stop_infos]
                 await self.cache.set_json(
                     cache_key,
                     serialized,
@@ -598,17 +669,17 @@ class TransitDataService:
             for rid, route in db_routes.items():
                 try:
                     # Match RouteInfo-like structure for cache
-                    route_info_dict = {
-                        "route_id": str(route.route_id),
-                        "route_short_name": str(route.route_short_name or ""),
-                        "route_long_name": str(route.route_long_name or ""),
-                        "route_type": int(route.route_type),
-                        "route_color": str(route.route_color or ""),
-                        "route_text_color": "",
-                    }
+                    route_info_obj = RouteInfo(
+                        route_id=str(route.route_id),
+                        route_short_name=str(route.route_short_name or ""),
+                        route_long_name=str(route.route_long_name or ""),
+                        route_type=int(route.route_type),
+                        route_color=str(route.route_color or ""),
+                        route_text_color="",
+                    )
                     await self.cache.set_json(
                         f"route:{rid}:False",
-                        route_info_dict,
+                        route_info_obj.to_dict(),
                         ttl_seconds=self.settings.gtfs_schedule_cache_ttl_seconds,
                     )
                 except Exception:

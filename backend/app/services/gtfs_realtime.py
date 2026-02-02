@@ -137,6 +137,24 @@ class ServiceAlert:
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
 
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "ServiceAlert":
+        """Create from dictionary handling type conversions."""
+        data = data.copy()
+
+        # Convert lists back to sets
+        if "affected_routes" in data:
+            data["affected_routes"] = set(data["affected_routes"])
+        if "affected_stops" in data:
+            data["affected_stops"] = set(data["affected_stops"])
+
+        # Convert ISO strings back to datetime
+        for field in ["start_time", "end_time", "timestamp"]:
+            if data.get(field):
+                data[field] = datetime.fromisoformat(data[field])
+
+        return ServiceAlert(**data)
+
 
 class GtfsRealtimeService:
     """Service for processing GTFS-RT data streams"""
@@ -760,10 +778,7 @@ class GtfsRealtimeService:
             alerts = []
             for data in alerts_data.values():
                 if data:
-                    # Convert lists back to sets for the ServiceAlert constructor
-                    data["affected_routes"] = set(data["affected_routes"])
-                    data["affected_stops"] = set(data["affected_stops"])
-                    alerts.append(ServiceAlert(**data))
+                    alerts.append(ServiceAlert.from_dict(data))
 
             return alerts
 
