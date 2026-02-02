@@ -15,11 +15,12 @@ Gather information about the current state:
 
 ```bash
 git status
-
 git diff
 git diff --staged
-
 git log --oneline -10
+
+# Clear staging area to ensure clean slate for atomic commits
+git reset
 ```
 
 ### Step 2: Plan Atomic Commits
@@ -93,9 +94,12 @@ If `pre-commit run --all-files` fails:
 1. Fix the issues
 2. Re-run `pre-commit run --all-files` (not individual checks)
 3. Repeat until all checks pass
-4. Only then proceed to create commits
+4. **CRITICAL: Do NOT proceed to create commits until all checks pass**
+5. Only then proceed to Step 6
 
 ### Step 6: Create Commits
+
+**GUARD: Only proceed here after ALL pre-commit checks have passed.**
 
 Create commits one at a time, staging only the files for each commit:
 
