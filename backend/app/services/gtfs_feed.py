@@ -4,7 +4,7 @@ import tempfile
 import zipfile
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional, cast
 
 import httpx
 import polars as pl
@@ -570,8 +570,9 @@ class GTFSFeedImporter:
             "drop_off_type": pl.Int8,
         }
 
+        read_csv_batched = pl.read_csv_batched
         try:
-            return pl.read_csv_batched(
+            return read_csv_batched(
                 source,
                 batch_size=batch_size,
                 null_values=[""],
@@ -579,7 +580,8 @@ class GTFSFeedImporter:
                 schema_overrides=schema,
             )
         except TypeError:
-            return pl.read_csv_batched(
+            legacy_read_csv = cast(Callable[..., Any], read_csv_batched)
+            return legacy_read_csv(
                 source,
                 batch_size=batch_size,
                 null_values=[""],

@@ -14,7 +14,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import httpx
 from sqlalchemy import delete, select, text
@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     from app.services.cache import CacheService
 
 # Import GTFS-RT bindings with fallback
+FeedMessage: type[Any] | None
+
 try:
     from google.transit import gtfs_realtime_pb2
 

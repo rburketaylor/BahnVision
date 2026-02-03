@@ -4,7 +4,8 @@ Stops endpoints for Transit API.
 Provides stop search and information using GTFS data.
 """
 
-from typing import Annotated
+from dataclasses import dataclass
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,16 @@ from app.services.transit_data import TransitDataService
 router = APIRouter()
 
 # Cache names for metrics
+
+
+@dataclass
+class _StopLikeAdapter:
+    stop_id: Any
+    stop_name: Any
+    stop_lat: Any
+    stop_lon: Any
+    zone_id: Any = None
+    wheelchair_boarding: Any = 0
 
 
 async def _get_station_stats_from_live_snapshot(
@@ -251,7 +262,16 @@ async def get_nearby_stops(
 
     # Convert to response models (exclude zone and wheelchair for nearby)
     results = [
-        gtfs_stop_to_transit_stop(stop, include_zone=False, include_wheelchair=False)
+        gtfs_stop_to_transit_stop(
+            _StopLikeAdapter(
+                stop_id=stop.stop_id,
+                stop_name=stop.stop_name,
+                stop_lat=stop.stop_lat,
+                stop_lon=stop.stop_lon,
+            ),
+            include_zone=False,
+            include_wheelchair=False,
+        )
         for stop in stops
     ]
 

@@ -20,6 +20,8 @@ from app.core.config import get_settings
 from app.services.cache import CacheService
 
 # Import GTFS-RT bindings with fallback
+FeedMessage: type[Any] | None
+
 try:
     from google.transit import gtfs_realtime_pb2
 

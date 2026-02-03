@@ -4,7 +4,7 @@ This module provides a centralized rate limiter that can be imported by
 endpoint routers to apply consistent rate limiting across the API.
 """
 
-from typing import cast
+from typing import Callable, cast
 from urllib.parse import urlparse
 
 from slowapi import Limiter
@@ -12,9 +12,8 @@ from slowapi.util import get_remote_address
 
 from app.core.config import get_settings
 
-# Type alias for default limits - using cast to satisfy mypy variance requirements
-# slowapi expects list[str | Callable[..., str]] but we only use strings
-LimitsType = list[str]
+# Type alias for default limits - slowapi expects list[str | Callable[..., str]]
+LimitsType = list[str | Callable[..., str]]
 
 # Create a module-level limiter instance that will be initialized on first import.
 # The limiter uses the client's IP address as the rate limit key.
@@ -42,32 +41,42 @@ def get_limiter() -> Limiter:
 
         if settings.rate_limit_enabled:
             try:
-                limiter_kwargs: dict[str, object] = {
-                    "key_func": get_remote_address,
-                    "storage_uri": settings.valkey_url,
-                    "default_limits": cast(list, default_limits),
-                }
-
                 # Only pass redis/valkey-specific connection options to redis backends.
                 parsed = urlparse(settings.valkey_url)
+                storage_options: dict[str, str] | None = None
                 if parsed.scheme in {"valkey", "redis", "rediss"}:
-                    limiter_kwargs["storage_options"] = {
-                        "socket_connect_timeout": settings.valkey_socket_connect_timeout_seconds,
-                        "socket_timeout": settings.valkey_socket_timeout_seconds,
-                    }
+                    storage_options = cast(
+                        dict[str, str],
+                        {
+                            "socket_connect_timeout": settings.valkey_socket_connect_timeout_seconds,
+                            "socket_timeout": settings.valkey_socket_timeout_seconds,
+                        },
+                    )
 
-                _limiter = Limiter(**limiter_kwargs)
+                if storage_options is None:
+                    _limiter = Limiter(
+                        key_func=get_remote_address,
+                        storage_uri=settings.valkey_url,
+                        default_limits=default_limits,
+                    )
+                else:
+                    _limiter = Limiter(
+                        key_func=get_remote_address,
+                        storage_uri=settings.valkey_url,
+                        default_limits=default_limits,
+                        storage_options=storage_options,
+                    )
             except Exception:
                 # Fallback to in-memory if Valkey connection fails
                 _limiter = Limiter(
                     key_func=get_remote_address,
-                    default_limits=cast(list, default_limits),
+                    default_limits=default_limits,
                 )
         else:
             # Create a disabled limiter (no-op)
             _limiter = Limiter(
                 key_func=get_remote_address,
-                default_limits=cast(list, default_limits),
+                default_limits=default_limits,
                 enabled=False,
             )
 

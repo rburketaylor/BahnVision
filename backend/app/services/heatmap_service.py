@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from sqlalchemy import and_, func, select, text, Numeric
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -621,22 +621,27 @@ class HeatmapService:
                 by_route_type = daily_row.by_route_type or {}
 
                 # Convert route_type keys to transport type names
-                per_station = breakdown_by_station.setdefault(stop_id, {})
-                for route_type_str, stats in by_route_type.items():
+                per_station = breakdown_by_station.get(stop_id)
+                if per_station is None:
+                    per_station = {}
+                    breakdown_by_station[stop_id] = per_station
+
+                for route_type_str, route_stats in by_route_type.items():
                     # The JSONB stores transport type names directly
                     transport_type = route_type_str
                     existing = per_station.get(transport_type)
                     if existing is None:
                         per_station[transport_type] = TransportStats(
-                            total=stats.get("trips", 0),
-                            cancelled=stats.get("cancelled", 0),
-                            delayed=stats.get("delayed", 0),
+                            total=route_stats.get("trips", 0),
+                            cancelled=route_stats.get("cancelled", 0),
+                            delayed=route_stats.get("delayed", 0),
                         )
                     else:
                         per_station[transport_type] = TransportStats(
-                            total=existing.total + stats.get("trips", 0),
-                            cancelled=existing.cancelled + stats.get("cancelled", 0),
-                            delayed=existing.delayed + stats.get("delayed", 0),
+                            total=existing.total + route_stats.get("trips", 0),
+                            cancelled=existing.cancelled
+                            + route_stats.get("cancelled", 0),
+                            delayed=existing.delayed + route_stats.get("delayed", 0),
                         )
 
             # Convert to HeatmapDataPoint
@@ -651,11 +656,15 @@ class HeatmapService:
                 delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
 
                 # Apply route_type filter to by_transport if specified
-                by_transport = breakdown_by_station.get(stop_id, {})
+                by_transport: dict[str, TransportStats] = cast(
+                    dict[str, TransportStats],
+                    breakdown_by_station.get(stop_id, {}),
+                )
                 if route_type_filter:
                     # Filter to only requested transport types
                     filtered_transport: dict[str, TransportStats] = {}
                     for transport_type, stats in by_transport.items():
+                        stats = cast(TransportStats, stats)
                         # Get route types for this transport type
                         transport_route_types = TRANSPORT_TO_ROUTE_TYPES.get(
                             transport_type, []
