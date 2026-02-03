@@ -18,22 +18,22 @@ Run `./scripts/setup-dev.sh` to bootstrap the dev environment (downloads Node.js
 
 ### Environment Activation
 
-**Automatic (recommended)**: Install direnv (`sudo apt install direnv` or `brew install direnv`), add `eval "$(direnv hook bash)"` (or zsh) to your shell config, restart your shell, and run `direnv allow` in the project root. The dev environment will now load automatically on `cd` into the project.
+**Automatic (recommended)**: Install direnv (`sudo apt install direnv` or `brew install direnv`), add `eval "$(direnv hook bash)"` (or `eval "$(direnv hook zsh)"` for zsh) to your shell config, restart your shell, and run `direnv allow` in the project root. The dev environment will now load automatically on `cd` into the project.
 
 **Manual fallback**: If direnv is not configured, activate the environment with `source .dev-env` before running any commands below.
 
 ### Development Commands (assume environment is activated)
 
-- Backend local dev: `uvicorn app.main:app --reload --app-dir backend`
+- Backend local dev (from repo root): `uvicorn app.main:app --reload --app-dir backend`
 - Frontend local dev: `cd frontend && npm run dev` (Vite at `:5173`)
 - Docker stack: `docker compose up --build` (starts cache warmup, backend on `:8000`, frontend on `:3000`)
 
 ### Testing
 
 - Backend tests: `pytest backend/tests`
-- Frontend tests: `npm run test -- --run` (Vitest in single-run mode; avoid watch mode which hangs)
-- Frontend coverage: `npm run test:coverage`
-- Frontend E2E: `npm run test:e2e` (Playwright)
+- Frontend tests: `cd frontend && npm run test -- --run` (Vitest in single-run mode; avoid watch mode which hangs)
+- Frontend coverage: `cd frontend && npm run test:coverage`
+- Frontend E2E: `cd frontend && npm run test:e2e` (Playwright)
 - Quality checks: `python scripts/check_test_quality.py [dir]` (included in CI)
 - Secrets detection: `pre-commit run detect-secrets --all-files` (uses `.secrets.baseline`)
 
@@ -43,7 +43,7 @@ Run `./scripts/setup-dev.sh` to bootstrap the dev environment (downloads Node.js
 - Frontend typecheck: `cd frontend && npm run type-check`
 - Frontend mutation testing: `cd frontend && npm run stryker`
 - Backend lint + format: `pre-commit run --all-files`
-- Backend typecheck: `mypy backend/app`
+- Backend typecheck: `mypy --config-file backend/mypy.ini backend/app`
 
 ### Dependency Auditing
 
@@ -55,22 +55,22 @@ Run `./scripts/setup-dev.sh` to bootstrap the dev environment (downloads Node.js
 - Python: PEP 8, 4-space indent, snake_case modules; prefer typed signatures and Pydantic models; keep services stateless and cache logic centralized.
 - TypeScript/React: idiomatic React 19 with hooks; prefer typed props and TanStack Query for data fetching; Tailwind utility classes.
 - Use existing patterns for caching (single-flight locks, stale reads) and metrics; avoid new dependencies without discussion.
-- Pre-commit hooks enforce black formatting and ruff linting; install with `pre-commit install` after setting up the backend virtualenv.
+- Pre-commit hooks enforce Ruff formatting and linting; install with `pre-commit install` after setting up the backend virtualenv.
 
 ## Testing Guidelines
 
 - Mirror code structure in tests; add regression tests for bugs and unit/integration for new features.
 - Backend: use FastAPI TestClient, Fake Valkey/GTFS doubles for deterministic tests.
-- Backend test markers: `pytest backend/tests -m "not integration"` for fast unit tests; `pytest backend/tests -m integration` for service-backed tests.
+- Backend test markers: `pytest backend/tests -m "not integration"` for fast unit tests; `pytest backend/tests -m integration` for service-backed tests (skips if services are unavailable).
 - Frontend: RTL + MSW for API mocking; keep tests colocated under `src`; name test files `*.test.ts[x]`.
 - Playwright: Prefer built-in user-facing locators (getByRole, getByLabelText, getByPlaceholderText) over CSS selectors for more resilient, accessible tests. Use automatic waiting; avoid hard timeouts.
 - Run targeted tests before PRs; aim for coverage via `npm run test:coverage` when touching frontend logic.
 
 ## Commit & Pull Request Guidelines
 
-- **Before committing, ensure docker compose is up-to-date**: Run `docker compose up --build -d` to rebuild and start all services with the latest code. Some backend tests require Valkey and other services to be running.
+- **Before committing, ensure docker compose is up-to-date**: Run `docker compose up --build -d` to rebuild and start all services with the latest code. Some backend tests are skipped unless Valkey/Postgres are running.
 - **Pre-commit hooks run tests automatically**: When you commit changes to backend Python files, pytest runs automatically. When you commit frontend TypeScript/TSX files, vitest runs automatically. This catches test failures before they reach CI. If you need to run tests manually beforehand: `pytest backend/tests` for backend, `cd frontend && npm run test -- --run` for frontend.
-- **Environment must be active before committing**: With direnv, the environment loads automatically. Without it, run `source .dev-env` before `git commit` to ensure pre-commit hooks have access to the required tools (black, ruff).
+- **Environment must be active before committing**: With direnv, the environment loads automatically. Without it, run `source .dev-env` before `git commit` to ensure pre-commit hooks have access to the required tools (ruff, mypy, pytest, etc.).
 - **Never skip pre-commit hooks**: Do not use `--no-verify` or similar flags. Pre-commit hooks must run on every commit, even if they report "Skipped" for files not matching their patterns.
 - Follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, etc.); keep subjects concise.
 - PRs should describe scope, testing performed, and any manual steps; link issues and add screenshots or sample responses for UI/API changes.
