@@ -5,7 +5,7 @@ Tests schedule queries, stop search, and nearby stops functionality.
 """
 
 import pytest
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.gtfs_schedule import (
