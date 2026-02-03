@@ -1,0 +1,3 @@
+from typing import Any
+
+def get_remote_address(*args: Any, **kwargs: Any) -> str: ...

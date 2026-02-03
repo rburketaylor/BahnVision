@@ -11,7 +11,10 @@ repos:
     hooks:
       - id: pip-audit
         name: pip-audit (Python dependency vulnerabilities)
-        entry: bash -c 'source backend/.venv/bin/activate && pip-audit'
+        # TODO: remove ignore once protobuf fix is available.
+        entry: >-
+          bash -c 'source backend/.venv/bin/activate && pip-audit
+          --ignore-vuln CVE-2026-0994'
         language: system
         files: ^backend/(requirements.*\.txt|pyproject\.toml)$
         pass_filenames: false
@@ -42,10 +45,24 @@ repos:
     hooks:
       - id: mypy
         files: ^backend/app/
-        args: [--ignore-missing-imports, --no-error-summary]
+        args: [--config-file=backend/mypy.ini]
         additional_dependencies:
           - pydantic
           - fastapi
+          - httpx==0.28.1
+          - opentelemetry-api==1.39.1
+          - opentelemetry-exporter-otlp==1.39.1
+          - opentelemetry-instrumentation-fastapi==0.60b1
+          - opentelemetry-instrumentation-httpx==0.60b1
+          - opentelemetry-propagator-b3==1.39.1
+          - opentelemetry-sdk==1.39.1
+          - polars>=1.36.1
+          - prometheus-client==0.24.1
+          - pydantic-settings==2.12.0
+          - SQLAlchemy==2.0.46
+          - slowapi==0.1.9
+          - uvicorn==0.40.0
+          - valkey==6.1.1
 
   # === TypeScript/React (Frontend) ===
   - repo: local
