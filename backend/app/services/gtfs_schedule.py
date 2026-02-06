@@ -296,9 +296,7 @@ def time_to_interval(dt: datetime) -> timedelta:
     return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second)
 
 
-def interval_to_datetime(
-    base_datetime: datetime, interval_value
-) -> Optional[datetime]:
+def interval_to_datetime(base_datetime: datetime, interval_value) -> Optional[datetime]:
     """Convert PostgreSQL interval to a concrete UTC datetime on the service date.
 
     Handles GTFS times that extend beyond 24h by adding the full timedelta to
