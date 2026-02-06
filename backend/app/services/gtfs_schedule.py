@@ -191,11 +191,14 @@ class GTFSScheduleService:
 
         result = await self.session.execute(query)
 
+        # Optimization: Pre-calculate midnight timestamp to avoid repeating it for every row
+        service_midnight = datetime.combine(today, time(0, 0), tzinfo=timezone.utc)
+
         departures = []
         for row in result:
-            departure_dt = interval_to_datetime(today, row.departure_time)
+            departure_dt = interval_to_datetime(service_midnight, row.departure_time)
             arrival_dt = (
-                interval_to_datetime(today, row.arrival_time)
+                interval_to_datetime(service_midnight, row.arrival_time)
                 if row.arrival_time is not None
                 else None
             )
@@ -293,11 +296,17 @@ def time_to_interval(dt: datetime) -> timedelta:
     return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second)
 
 
-def interval_to_datetime(service_date: date, interval_value) -> Optional[datetime]:
+def interval_to_datetime(
+    base_datetime: datetime, interval_value
+) -> Optional[datetime]:
     """Convert PostgreSQL interval to a concrete UTC datetime on the service date.
 
     Handles GTFS times that extend beyond 24h by adding the full timedelta to
     the service day midnight instead of wrapping to a time-of-day.
+
+    Args:
+        base_datetime: The starting datetime (usually midnight UTC of the service date).
+        interval_value: The interval to add (timedelta or string).
     """
     if interval_value is None:
         return None
@@ -329,10 +338,7 @@ def interval_to_datetime(service_date: date, interval_value) -> Optional[datetim
             logger.warning("Unknown interval type: %s", type(interval_value))
             return None
 
-        service_midnight = datetime.combine(
-            service_date, time(0, 0), tzinfo=timezone.utc
-        )
-        return service_midnight + delta
+        return base_datetime + delta
 
     except (ValueError, AttributeError) as exc:
         logger.warning("Invalid interval format: %s, error: %s", interval_value, exc)

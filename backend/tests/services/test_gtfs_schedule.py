@@ -5,7 +5,7 @@ Tests schedule queries, stop search, and nearby stops functionality.
 """
 
 import pytest
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.gtfs_schedule import (
@@ -47,8 +47,9 @@ class TestIntervalToDatetime:
     def test_interval_to_datetime_with_timedelta(self):
         """Test conversion from timedelta."""
         service_date = date(2025, 12, 8)
+        base_datetime = datetime.combine(service_date, time(0, 0), tzinfo=timezone.utc)
         interval = timedelta(hours=8, minutes=30)
-        result = interval_to_datetime(service_date, interval)
+        result = interval_to_datetime(base_datetime, interval)
 
         expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
         assert result == expected
@@ -56,8 +57,9 @@ class TestIntervalToDatetime:
     def test_interval_to_datetime_over_24h(self):
         """Test conversion of times > 24 hours (overnight service)."""
         service_date = date(2025, 12, 8)
+        base_datetime = datetime.combine(service_date, time(0, 0), tzinfo=timezone.utc)
         interval = timedelta(hours=25, minutes=30)  # 1:30 AM next day
-        result = interval_to_datetime(service_date, interval)
+        result = interval_to_datetime(base_datetime, interval)
 
         # Should be 2025-12-09 01:30:00
         expected = datetime(2025, 12, 9, 1, 30, 0, tzinfo=timezone.utc)
@@ -66,15 +68,17 @@ class TestIntervalToDatetime:
     def test_interval_to_datetime_string_format(self):
         """Test conversion from string interval format."""
         service_date = date(2025, 12, 8)
+        base_datetime = datetime.combine(service_date, time(0, 0), tzinfo=timezone.utc)
         interval_str = "8 hours 30 minutes 0 seconds"
-        result = interval_to_datetime(service_date, interval_str)
+        result = interval_to_datetime(base_datetime, interval_str)
 
         expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
         assert result == expected
 
     def test_interval_to_datetime_none(self):
         """Test that None returns None."""
-        result = interval_to_datetime(date(2025, 12, 8), None)
+        base_datetime = datetime(2025, 12, 8, 0, 0, tzinfo=timezone.utc)
+        result = interval_to_datetime(base_datetime, None)
         assert result is None
 
     def test_interval_to_datetime_invalid_format(self):
@@ -83,7 +87,8 @@ class TestIntervalToDatetime:
         The parser doesn't raise for unrecognized strings, it just
         returns midnight (0:0:0 delta) on the service date.
         """
-        result = interval_to_datetime(date(2025, 12, 8), "invalid")
+        base_datetime = datetime(2025, 12, 8, 0, 0, tzinfo=timezone.utc)
+        result = interval_to_datetime(base_datetime, "invalid")
         # Parser returns midnight (00:00:00) for strings without hours/minutes/seconds
         expected = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
         assert result == expected
@@ -91,15 +96,17 @@ class TestIntervalToDatetime:
     def test_interval_to_datetime_string_with_seconds(self):
         """Test conversion from string interval format including seconds."""
         service_date = date(2025, 12, 8)
+        base_datetime = datetime.combine(service_date, time(0, 0), tzinfo=timezone.utc)
         interval_str = "8 hours 30 minutes 45 seconds"
-        result = interval_to_datetime(service_date, interval_str)
+        result = interval_to_datetime(base_datetime, interval_str)
 
         expected = datetime(2025, 12, 8, 8, 30, 45, tzinfo=timezone.utc)
         assert result == expected
 
     def test_interval_to_datetime_unknown_type(self):
         """Test that unknown interval types return None and log a warning."""
-        result = interval_to_datetime(date(2025, 12, 8), 12345)  # int is not supported
+        base_datetime = datetime(2025, 12, 8, 0, 0, tzinfo=timezone.utc)
+        result = interval_to_datetime(base_datetime, 12345)  # int is not supported
         assert result is None
 
     def test_interval_to_datetime_value_error(self):
@@ -110,7 +117,8 @@ class TestIntervalToDatetime:
             def __str__(self):
                 raise ValueError("Bad interval")
 
-        result = interval_to_datetime(date(2025, 12, 8), BadInterval())
+        base_datetime = datetime(2025, 12, 8, 0, 0, tzinfo=timezone.utc)
+        result = interval_to_datetime(base_datetime, BadInterval())
         # Should return None due to exception handling
         assert result is None
 
