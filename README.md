@@ -13,6 +13,25 @@ docker compose up --build
 - **API**: http://localhost:8000/docs
 - **Frontend**: http://localhost:3000
 
+### Docker + Observability (Prometheus + Grafana)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up --build -d
+```
+
+- **Grafana**: http://localhost:3001
+- **Prometheus**: http://localhost:9090
+- **cAdvisor metrics**: http://localhost:8081/metrics
+
+Configure Grafana login and Prometheus retention in `.env`:
+
+```bash
+PROMETHEUS_RETENTION_TIME=7d
+PROMETHEUS_RETENTION_SIZE=5GB
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=admin
+```
+
 ### Local Development
 
 **Quick Setup (Recommended):**
