@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router'
-import { StationSearch } from '../components/StationSearch'
+import { StationSearch } from '../components/features/station/StationSearch'
 import type { TransitStop } from '../types/gtfs'
 
 export function MainPage() {

@@ -4,9 +4,9 @@
  */
 
 import { useState } from 'react'
-import OverviewTab from '../components/monitoring/OverviewTab'
-import IngestionTab from '../components/monitoring/IngestionTab'
-import PerformanceTab from '../components/monitoring/PerformanceTab'
+import OverviewTab from '../components/features/monitoring/OverviewTab'
+import IngestionTab from '../components/features/monitoring/IngestionTab'
+import PerformanceTab from '../components/features/monitoring/PerformanceTab'
 
 type TabId = 'overview' | 'ingestion' | 'performance'
 

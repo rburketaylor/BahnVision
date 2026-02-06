@@ -16,7 +16,7 @@ vi.mock('../../../hooks/useDepartures', () => ({
   useDepartures: vi.fn(),
 }))
 
-vi.mock('../../../components/DeparturesBoard', () => ({
+vi.mock('../../../components/features/station/DeparturesBoard', () => ({
   DeparturesBoard: () => <div data-testid="departures-board" />,
 }))
 

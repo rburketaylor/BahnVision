@@ -21,7 +21,7 @@ vi.mock('../../../hooks/useStationStats', () => ({
 
 let lastMapProps: { overlay?: ReactNode; focusRequest?: unknown } | null = null
 
-vi.mock('../../../components/heatmap/MapLibreHeatmap', () => ({
+vi.mock('../../../components/features/heatmap/MapLibreHeatmap', () => ({
   MapLibreHeatmap: (props: { overlay?: ReactNode; focusRequest?: unknown }) => {
     lastMapProps = props
     return <div data-testid="mock-heatmap">{props.overlay}</div>
@@ -37,9 +37,9 @@ const mockStop: TransitStop = {
   wheelchair_boarding: 0,
 }
 
-vi.mock('../../../components/heatmap', async () => {
-  const actual = await vi.importActual<typeof import('../../../components/heatmap')>(
-    '../../../components/heatmap'
+vi.mock('../../../components/features/heatmap', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/features/heatmap')>(
+    '../../../components/features/heatmap'
   )
   return {
     ...actual,

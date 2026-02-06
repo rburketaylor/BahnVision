@@ -4,7 +4,7 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import { ThemeProvider } from './contexts/ThemeContext'
-import Layout from './components/Layout'
+import AppLayout from './components/layout/AppLayout'
 import { MainPage } from './pages/MainPage'
 import { StationPage } from './pages/StationPage'
 import MonitoringPage from './pages/MonitoringPage'
@@ -15,7 +15,7 @@ export default function App() {
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
-          <Route element={<Layout />}>
+          <Route element={<AppLayout />}>
             {/* Heatmap is the new landing page */}
             <Route path="/" element={<HeatmapPage />} />
             <Route path="/heatmap" element={<Navigate to="/" replace />} />

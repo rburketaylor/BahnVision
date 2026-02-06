@@ -12,7 +12,7 @@ import {
   HeatmapOverlayPanel,
   HeatmapStats,
   HeatmapSearchOverlay,
-} from '../components/heatmap'
+} from '../components/features/heatmap'
 import type { TransportType } from '../types/api'
 import type { TransitStop } from '../types/gtfs'
 import type {
@@ -21,11 +21,13 @@ import type {
   HeatmapOverviewMetric,
 } from '../types/heatmap'
 import { HEATMAP_METRIC_LABELS, DEFAULT_ENABLED_METRICS } from '../types/heatmap'
-import type { HeatmapMapFocusRequest } from '../components/heatmap/MapLibreHeatmap'
+import type { HeatmapMapFocusRequest } from '../components/features/heatmap/MapLibreHeatmap'
 
 // Lazy load the map component to reduce initial bundle size (maplibre-gl is ~1MB)
 const CancellationHeatmap = lazy(() =>
-  import('../components/heatmap/MapLibreHeatmap').then(m => ({ default: m.MapLibreHeatmap }))
+  import('../components/features/heatmap/MapLibreHeatmap').then(m => ({
+    default: m.MapLibreHeatmap,
+  }))
 )
 
 const CONTROLS_OPEN_STORAGE_KEY = 'bahnvision-heatmap-controls-open-v1'

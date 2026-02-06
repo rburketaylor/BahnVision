@@ -12,7 +12,7 @@ import { useEffect, useMemo } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router'
 import { useDepartures } from '../hooks/useDepartures'
 import { useStationStats, useStationTrends } from '../hooks/useStationStats'
-import { DeparturesBoard } from '../components/DeparturesBoard'
+import { DeparturesBoard } from '../components/features/station/DeparturesBoard'
 import type { StationStatsTimeRange, TrendGranularity } from '../types/gtfs'
 
 type StationTab = 'overview' | 'trends' | 'schedule'
