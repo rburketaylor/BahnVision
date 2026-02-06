@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { HeatmapSearchOverlay } from '../../components/heatmap/HeatmapSearchOverlay'
 import type { TransitStop } from '../../types/gtfs'
 
-vi.mock('../../components/StationSearch', () => ({
+vi.mock('../../components/features/station/StationSearch', () => ({
   StationSearch: ({
     onSelect,
     autoFocus,
