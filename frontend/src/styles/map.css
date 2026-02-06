@@ -1,0 +1,204 @@
+/* MapLibre GL CSS fixes - ensure map container has proper dimensions */
+.maplibregl-map {
+  width: 100% !important;
+  height: 100% !important;
+  background: #ffffff;
+}
+
+html.dark .maplibregl-map {
+  background: #0b0f14;
+}
+
+/* MapLibre popup: theme + close button visibility */
+.maplibregl-popup-content {
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.18),
+    0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+html.dark .maplibregl-popup-content {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border-color: #2c2c2c;
+}
+
+html:not(.dark) .maplibregl-popup-content {
+  background-color: #ffffff;
+  color: #111827;
+  border-color: #e5e7eb;
+}
+
+.maplibregl-popup-close-button {
+  top: 6px;
+  right: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 22px;
+  line-height: 32px;
+  text-align: center;
+}
+
+html.dark .maplibregl-popup-close-button {
+  color: #e0e0e0;
+}
+
+html:not(.dark) .maplibregl-popup-close-button {
+  color: #111827;
+}
+
+html.dark .maplibregl-popup-close-button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+html:not(.dark) .maplibregl-popup-close-button:hover {
+  background-color: rgba(17, 24, 39, 0.06);
+}
+
+.maplibregl-popup-close-button:focus-visible {
+  outline: 2px solid #0065ae;
+  outline-offset: 2px;
+}
+
+/* Popup tip (triangle) should match popup background */
+html.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+html.dark .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+html.dark .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: #1e1e1e;
+}
+
+html.dark .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+html.dark .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+html.dark .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: #1e1e1e;
+}
+
+html.dark .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #1e1e1e;
+}
+
+html.dark .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #1e1e1e;
+}
+
+html:not(.dark) .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+html:not(.dark) .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+html:not(.dark) .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: #ffffff;
+}
+
+html:not(.dark) .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+html:not(.dark) .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+html:not(.dark) .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: #ffffff;
+}
+
+html:not(.dark) .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #ffffff;
+}
+
+html:not(.dark) .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #ffffff;
+}
+
+/* Popup content layout (injected via MapLibre setHTML) */
+.bv-map-popup {
+  min-width: 200px;
+  max-width: 280px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.bv-map-popup__title {
+  margin: 0 0 8px;
+  padding-right: 44px;
+  /* reserve space for the close button without shifting all content */
+  font-weight: 600;
+  font-size: 14px;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.bv-map-popup__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.bv-map-popup__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  align-items: center;
+}
+
+.bv-map-popup__label {
+  color: #6b7280;
+  flex-shrink: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+html.dark .bv-map-popup__label {
+  color: rgba(224, 224, 224, 0.72);
+}
+
+.bv-map-popup__label--active {
+  font-weight: 600;
+}
+
+.bv-map-popup__value {
+  font-weight: 600;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.bv-map-popup__link {
+  display: block;
+  margin-top: 12px;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #0065ae;
+  border-radius: 8px;
+  text-decoration: none;
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bv-map-popup__link:hover {
+  background-color: #0054a0;
+  transform: translateY(-1px);
+}
+
+.bv-map-popup__link:active {
+  transform: translateY(0);
+}
+
+html.dark .bv-map-popup__link {
+  background-color: #1d4ed8;
+}
+
+html.dark .bv-map-popup__link:hover {
+  background-color: #1e40af;
+}
+
+.bv-station-popup-container {
+  min-width: 240px;
+  min-height: 140px;
+  position: relative;
+}
