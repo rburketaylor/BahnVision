@@ -4,6 +4,8 @@
  */
 
 import { type ReactNode } from 'react'
+import { cn } from '@/lib/utils'
+import { Card as UiCard } from '../ui/card'
 
 export type CardAccent = 'blue' | 'green' | 'red' | 'orange' | 'none'
 
@@ -40,13 +42,17 @@ export function Card({
   padding = 'compact',
   noHover = false,
 }: CardProps) {
-  const hoverClass = noHover ? '' : 'card-base'
-
   return (
-    <div
-      className={`card-base ${accentClasses[accent]} ${paddingClasses[padding]} ${hoverClass} ${className}`.trim()}
+    <UiCard
+      className={cn(
+        'card-base',
+        accentClasses[accent],
+        paddingClasses[padding],
+        noHover && '[&:hover]:translate-y-0 [&:hover]:shadow-none',
+        className
+      )}
     >
       {children}
-    </div>
+    </UiCard>
   )
 }

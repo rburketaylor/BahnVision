@@ -3,7 +3,8 @@
  * A button component for refresh actions with loading state
  */
 
-import { Spinner } from './Spinner'
+import { cn } from '@/lib/utils'
+import { RefreshButton as UiRefreshButton } from '../ui/refresh-button'
 
 interface RefreshButtonProps {
   onClick: () => void
@@ -23,19 +24,15 @@ export function RefreshButton({
   className = '',
 }: RefreshButtonProps) {
   return (
-    <button
+    <UiRefreshButton
       onClick={onClick}
-      disabled={disabled || loading}
-      className={`px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2 ${className}`}
+      disabled={disabled}
+      loading={loading}
+      loadingText={loadingText}
+      icon={icon}
+      className={cn('rounded-lg', className)}
     >
-      {loading ? (
-        <>
-          <Spinner />
-          {loadingText}
-        </>
-      ) : (
-        <>{icon} Refresh</>
-      )}
-    </button>
+      {icon} Refresh
+    </UiRefreshButton>
   )
 }

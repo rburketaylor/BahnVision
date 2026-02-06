@@ -4,6 +4,8 @@
  */
 
 import { type ReactNode } from 'react'
+import { cn } from '@/lib/utils'
+import { Badge as UiBadge } from '../ui/badge'
 
 export type BadgeVariant =
   | 'ubahn'
@@ -86,11 +88,18 @@ export function Badge({
     : `${colors.bg} ${colors.text}`
 
   return (
-    <span
-      className={`inline-flex items-center justify-center font-medium btn-bvv ${shapeClass} ${sizeClass} ${baseClasses} ${className}`.trim()}
+    <UiBadge
+      variant="secondary"
+      className={cn(
+        'inline-flex items-center justify-center font-medium btn-bvv border-0',
+        shapeClass,
+        sizeClass,
+        baseClasses,
+        className
+      )}
     >
       {children}
-    </span>
+    </UiBadge>
   )
 }
 

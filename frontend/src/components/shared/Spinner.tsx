@@ -1,16 +1,6 @@
 /**
  * Spinner
- * A loading spinner component for indicating async operations
+ * Compatibility wrapper around the shared ui spinner.
  */
 
-interface SpinnerProps {
-  className?: string
-}
-
-export function Spinner({ className = '' }: SpinnerProps) {
-  return (
-    <span
-      className={`h-4 w-4 animate-spin rounded-full border border-current border-t-transparent ${className}`}
-    />
-  )
-}
+export { Spinner } from '../ui/spinner'
