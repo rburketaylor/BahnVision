@@ -1,0 +1,63 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-7d}"
+      - "--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-5GB}"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    restart: unless-stopped
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.18.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-bahnvision}:${POSTGRES_PASSWORD:-bahnvision}@postgres:5432/${POSTGRES_DB:-bahnvision}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.74.0
+    environment:
+      REDIS_ADDR: redis://valkey:6379
+    depends_on:
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
