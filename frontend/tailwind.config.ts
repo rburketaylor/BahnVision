@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import tailwindcssAnimate from 'tailwindcss-animate'
 
 export default {
   darkMode: 'class',
@@ -6,63 +7,67 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Transit brand colors (BVV-style)
+        border: 'hsl(var(--border) / <alpha-value>)',
+        input: 'hsl(var(--input) / <alpha-value>)',
+        ring: 'hsl(var(--ring) / <alpha-value>)',
+        background: 'hsl(var(--background) / <alpha-value>)',
+        foreground: 'hsl(var(--foreground) / <alpha-value>)',
         primary: {
-          DEFAULT: '#0065AE', // U-Bahn blue
+          DEFAULT: 'hsl(var(--primary) / <alpha-value>)',
+          foreground: 'hsl(var(--primary-foreground) / <alpha-value>)',
           dark: '#004677',
           light: '#4C9ACF',
         },
-        ubahn: '#0065AE', // U-Bahn blue
-        sbahn: '#00AB4E', // S-Bahn green
-        tram: '#D60F26', // Tram red
-        bus: '#00558C', // Bus dark blue
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary) / <alpha-value>)',
+          foreground: 'hsl(var(--secondary-foreground) / <alpha-value>)',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
+          foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
+          foreground: 'hsl(var(--muted-foreground) / <alpha-value>)',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent) / <alpha-value>)',
+          foreground: 'hsl(var(--accent-foreground) / <alpha-value>)',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover) / <alpha-value>)',
+          foreground: 'hsl(var(--popover-foreground) / <alpha-value>)',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card) / <alpha-value>)',
+          foreground: 'hsl(var(--card-foreground) / <alpha-value>)',
+        },
+
+        // Transit brand colors
+        ubahn: '#0065AE',
+        sbahn: '#00AB4E',
+        tram: '#D60F26',
+        bus: '#00558C',
 
         // Status colors
         status: {
-          critical: '#D60F26', // Tram red
-          warning: '#F59E0B', // Amber
-          healthy: '#00AB4E', // S-Bahn green
-          neutral: '#6b7280', // Slate gray
+          critical: '#D60F26',
+          warning: '#F59E0B',
+          healthy: '#00AB4E',
+          neutral: '#6b7280',
         },
 
         // Surface layers
         surface: {
-          1: '#0a0a0a', // Lowest layer (map container)
-          2: '#121212', // Mid layer (floating panels)
-          3: '#1E1E1E', // Highest layer (popups, dropdowns)
+          1: '#0a0a0a',
+          2: '#121212',
+          3: '#1E1E1E',
         },
-
-        // Dark theme palette
-        background: '#121212',
-        foreground: '#E0E0E0',
-        card: '#1E1E1E',
-        'card-foreground': '#E0E0E0',
-        border: '#2C2C2C',
-        input: '#2C2C2C',
-
-        // Light theme palette (for consistency)
-        light: {
-          background: '#ffffff',
-          foreground: '#111827',
-          card: '#ffffff',
-          'card-foreground': '#111827',
-          border: '#e5e7eb',
-          input: '#ffffff',
-        },
-
-        // Additional utility colors
-        muted: {
-          DEFAULT: '#6b7280',
-          foreground: '#374151',
-        },
-        secondary: {
-          DEFAULT: '#6b7280',
-          foreground: '#ffffff',
-        },
-        accent: {
-          DEFAULT: '#0065AE',
-          foreground: '#ffffff',
-        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       fontSize: {
         display: ['28px', { lineHeight: '1.2', fontWeight: '700' }],
@@ -95,5 +100,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 } satisfies Config
