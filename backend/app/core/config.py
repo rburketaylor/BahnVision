@@ -7,6 +7,7 @@ All settings have sensible defaults for local development.
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -316,11 +317,24 @@ class Settings(BaseSettings):
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: Any) -> list[str]:
-        """Parse comma-separated CORS origins, rejecting wildcard '*'."""
+        """Parse comma-separated or JSON-array CORS origins, rejecting wildcard '*'."""
         if isinstance(value, str):
             if not value:
                 return []
-            parsed = [item.strip() for item in value.split(",") if item.strip()]
+            raw = value.strip()
+            if raw.startswith("["):
+                try:
+                    loaded = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "Invalid JSON for CORS_ALLOW_ORIGINS. "
+                        "Use a JSON array or comma-separated list."
+                    ) from exc
+                parsed = [
+                    str(item).strip() for item in (loaded or []) if str(item).strip()
+                ]
+            else:
+                parsed = [item.strip() for item in value.split(",") if item.strip()]
         else:
             parsed = list(value) if value is not None else []
 
