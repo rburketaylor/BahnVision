@@ -37,6 +37,12 @@ def upgrade() -> None:
         raise NotImplementedError(
             "This migration only supports PostgreSQL due to NULLS NOT DISTINCT requirement"
         )
+    server_version = getattr(conn.dialect, "server_version_info", None)
+    if not server_version or tuple(server_version) < (15, 0):
+        raise NotImplementedError(
+            "PostgreSQL 15+ is required for this migration "
+            "(UNIQUE NULLS NOT DISTINCT constraint)."
+        )
 
     op.execute(
         """

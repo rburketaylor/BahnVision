@@ -21,7 +21,7 @@ def upgrade() -> None:
     # Create gtfs_stops table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_stops (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_stops (
             stop_id VARCHAR(64) PRIMARY KEY,
             stop_name VARCHAR(255) NOT NULL,
             stop_lat NUMERIC(9, 6),
@@ -35,14 +35,16 @@ def upgrade() -> None:
         )
     """
     )
-    op.create_index(
-        op.f("ix_gtfs_stops_stop_name"), "gtfs_stops", ["stop_name"], unique=False
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_gtfs_stops_stop_name ON gtfs_stops (stop_name)
+        """
     )
 
     # Create gtfs_routes table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_routes (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_routes (
             route_id VARCHAR(64) PRIMARY KEY,
             agency_id VARCHAR(64),
             route_short_name VARCHAR(64),
@@ -58,7 +60,7 @@ def upgrade() -> None:
     # Create gtfs_trips table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_trips (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_trips (
             trip_id VARCHAR(64) PRIMARY KEY,
             route_id VARCHAR(64) NOT NULL REFERENCES gtfs_routes(route_id),
             service_id VARCHAR(64) NOT NULL,
@@ -69,14 +71,16 @@ def upgrade() -> None:
         )
     """
     )
-    op.create_index(
-        op.f("ix_gtfs_trips_service_id"), "gtfs_trips", ["service_id"], unique=False
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_gtfs_trips_service_id ON gtfs_trips (service_id)
+        """
     )
 
     # Create gtfs_stop_times table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_stop_times (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_stop_times (
             id SERIAL PRIMARY KEY,
             trip_id VARCHAR(64) NOT NULL,
             stop_id VARCHAR(64) NOT NULL,
@@ -91,17 +95,21 @@ def upgrade() -> None:
         )
     """
     )
-    op.create_index(
-        "idx_gtfs_stop_times_stop", "gtfs_stop_times", ["stop_id"], unique=False
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop ON gtfs_stop_times (stop_id)
+        """
     )
-    op.create_index(
-        "idx_gtfs_stop_times_trip", "gtfs_stop_times", ["trip_id"], unique=False
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip ON gtfs_stop_times (trip_id)
+        """
     )
 
     # Create gtfs_calendar table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_calendar (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_calendar (
             service_id VARCHAR(64) PRIMARY KEY,
             monday BOOLEAN NOT NULL,
             tuesday BOOLEAN NOT NULL,
@@ -116,17 +124,17 @@ def upgrade() -> None:
         )
     """
     )
-    op.create_index(
-        "idx_gtfs_calendar_active",
-        "gtfs_calendar",
-        ["start_date", "end_date"],
-        unique=False,
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gtfs_calendar_active
+        ON gtfs_calendar (start_date, end_date)
+        """
     )
 
     # Create gtfs_calendar_dates table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_calendar_dates (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_calendar_dates (
             service_id VARCHAR(64) NOT NULL,
             date DATE NOT NULL,
             exception_type SMALLINT NOT NULL,
@@ -135,17 +143,17 @@ def upgrade() -> None:
         )
     """
     )
-    op.create_index(
-        "idx_gtfs_calendar_dates_lookup",
-        "gtfs_calendar_dates",
-        ["date", "service_id"],
-        unique=False,
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gtfs_calendar_dates_lookup
+        ON gtfs_calendar_dates (date, service_id)
+        """
     )
 
     # Create gtfs_feed_info table (UNLOGGED for faster bulk imports - data is rebuildable)
     op.execute(
         """
-        CREATE UNLOGGED TABLE gtfs_feed_info (
+        CREATE UNLOGGED TABLE IF NOT EXISTS gtfs_feed_info (
             feed_id VARCHAR(32) PRIMARY KEY,
             feed_url VARCHAR(512),
             downloaded_at TIMESTAMP NOT NULL,
@@ -159,14 +167,17 @@ def upgrade() -> None:
     )
 
     # Performance indexes
-    op.create_index(
-        "idx_gtfs_stop_times_departure_lookup",
-        "gtfs_stop_times",
-        ["stop_id", "departure_time"],
-        unique=False,
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup
+        ON gtfs_stop_times (stop_id, departure_time)
+        """
     )
-    op.create_index(
-        "idx_gtfs_stops_location", "gtfs_stops", ["stop_lat", "stop_lon"], unique=False
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gtfs_stops_location
+        ON gtfs_stops (stop_lat, stop_lon)
+        """
     )
 
 

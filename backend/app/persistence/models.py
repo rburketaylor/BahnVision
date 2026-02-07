@@ -61,6 +61,9 @@ class ExternalStatus(str, enum.Enum):
 
 
 class IngestionSource(str, enum.Enum):
+    # Legacy values retained for backward-compatible ORM deserialization.
+    MVG_DEPARTURES = "MVG_DEPARTURES"
+    MVG_STATIONS = "MVG_STATIONS"
     TRANSIT_DEPARTURES = "TRANSIT_DEPARTURES"
     TRANSIT_STATIONS = "TRANSIT_STATIONS"
     WEATHER = "WEATHER"
@@ -549,6 +552,7 @@ class RealtimeStationStats(Base):
             "bucket_width_minutes",
             "route_type",
             name="uq_realtime_stats_unique",
+            postgresql_nulls_not_distinct=True,
         ),
     )
 
