@@ -273,7 +273,11 @@ describe('StationPage', () => {
     })
 
     const lastDeparturesCall = mockUseDepartures.mock.calls.at(-1)
-    expect(lastDeparturesCall?.[0]).toMatchObject({ stop_id: 'de:09162:1', limit: 20 })
+    expect(lastDeparturesCall?.[0]).toMatchObject({
+      stop_id: 'de:09162:1',
+      limit: 20,
+      from_time: '2025-01-01T01:00:00.000Z',
+    })
     expect(lastDeparturesCall?.[0]).not.toHaveProperty('offset_minutes')
     expect(lastDeparturesCall?.[1]).toMatchObject({ enabled: true, live: false })
   })

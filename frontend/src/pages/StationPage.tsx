@@ -115,11 +115,18 @@ export function StationPage() {
 
   // Fetch departures (only when on schedule tab)
   const departuresParams = useMemo(() => {
-    const baseParams: { stop_id: string; limit: number; offset_minutes?: number } = {
+    const baseParams: {
+      stop_id: string
+      limit: number
+      offset_minutes?: number
+      from_time?: string
+    } = {
       stop_id: stationId!,
       limit: paginationState.pageSize,
     }
-    if (!paginationState.fromTime) {
+    if (paginationState.fromTime) {
+      baseParams.from_time = paginationState.fromTime
+    } else {
       baseParams.offset_minutes = paginationState.pageIndex * paginationState.pageStepMinutes
     }
     return baseParams

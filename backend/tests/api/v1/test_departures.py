@@ -144,6 +144,7 @@ class FakeTransitDataService:
         stop_id: str,
         limit: int = 10,
         offset_minutes: int = 0,
+        from_time: datetime | None = None,
         include_real_time: bool = True,
     ):
         return self.departures
@@ -217,6 +218,16 @@ class TestDeparturesEndpoint:
 
         response = client.get(
             "/api/v1/transit/departures?stop_id=de:09162:6&offset_minutes=30"
+        )
+
+        assert response.status_code == 200
+
+    def test_get_departures_with_from_time(self, departures_client):
+        """Test departures with absolute from_time parameter."""
+        client, _ = departures_client
+
+        response = client.get(
+            "/api/v1/transit/departures?stop_id=de:09162:6&from_time=2025-01-01T12:00:00Z"
         )
 
         assert response.status_code == 200

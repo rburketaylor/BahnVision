@@ -4,6 +4,7 @@ Departures endpoint for Transit API.
 Provides real-time departure information using GTFS static + real-time data.
 """
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -91,6 +92,15 @@ async def get_departures(
             description="Walking time or delay in minutes to offset the schedule.",
         ),
     ] = 0,
+    from_time: Annotated[
+        datetime | None,
+        Query(
+            description=(
+                "Absolute UTC/ISO start time for the departures window. "
+                "When provided, this takes precedence over offset_minutes."
+            ),
+        ),
+    ] = None,
     include_realtime: Annotated[
         bool,
         Query(
@@ -110,6 +120,7 @@ async def get_departures(
         stop_id=stop_id,
         limit=limit,
         offset_minutes=offset_minutes,
+        from_time=from_time,
         include_real_time=include_realtime,
     )
 

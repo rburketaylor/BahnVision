@@ -29,7 +29,7 @@ BahnVision delivers live and near-real-time German public transit insights. A Fa
 
 Primary flows:
 
-1. Station search → select station → view departures (with filters for transport type, limit, offset).
+1. Station search → select station → view departures (with filters for transport type, limit, offset, or absolute `from_time`).
 2. Heatmap visualization of cancellation rates and transit activity.
 3. Health/metrics monitoring via `/api/v1/health` and `/metrics`.
 4. GTFS feed scheduler hydrates station catalog before the API serves traffic.
@@ -38,14 +38,14 @@ Primary flows:
 
 ### Backend APIs (FastAPI, `/api/v1`)
 
-| Endpoint                     | Description                                                | Cache TTL / Strategy                                                                                                           |
-| ---------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /transit/stops/search`  | Autocomplete stops by free-text query.                     | Configurable TTL (`TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
-| `GET /transit/departures`    | Live departures for a stop with optional limit and offset. | TTL (`TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store.                           |
-| `GET /heatmap/cancellations` | Heatmap activity data for visualization.                   | TTL-based caching with stale fallback.                                                                                         |
-| `GET /heatmap/overview`      | Lightweight heatmap overview for initial render.           | TTL-based caching with stale fallback.                                                                                         |
-| `GET /health`                | Lightweight uptime/version probe.                          | Non-cached; returns `200` with version + uptime.                                                                               |
-| `GET /metrics`               | Prometheus metrics exported via `app.api.metrics`.         | N/A                                                                                                                            |
+| Endpoint                     | Description                                                             | Cache TTL / Strategy                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /transit/stops/search`  | Autocomplete stops by free-text query.                                  | Configurable TTL (`TRANSIT_STATION_SEARCH_CACHE_TTL_SECONDS`) + stale TTL; single-flight lock avoids duplicate upstream calls. |
+| `GET /transit/departures`    | Live departures for a stop with optional limit, offset, or `from_time`. | TTL (`TRANSIT_DEPARTURES_CACHE_TTL_SECONDS`) + stale fallback + circuit breaker to in-process store.                           |
+| `GET /heatmap/cancellations` | Heatmap activity data for visualization.                                | TTL-based caching with stale fallback.                                                                                         |
+| `GET /heatmap/overview`      | Lightweight heatmap overview for initial render.                        | TTL-based caching with stale fallback.                                                                                         |
+| `GET /health`                | Lightweight uptime/version probe.                                       | Non-cached; returns `200` with version + uptime.                                                                               |
+| `GET /metrics`               | Prometheus metrics exported via `app.api.metrics`.                      | N/A                                                                                                                            |
 
 Notes:
 

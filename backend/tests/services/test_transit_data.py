@@ -194,6 +194,25 @@ class TestDepartureInfoSerialization:
 
         assert result.schedule_relationship == ScheduleRelationship.SKIPPED
 
+    def test_from_dict_supports_canceled_relationship(self):
+        """Test that CANCELED schedule relationship maps correctly."""
+        data = {
+            "trip_id": "trip1",
+            "route_id": "route1",
+            "route_short_name": "S1",
+            "route_long_name": "Test Route",
+            "trip_headsign": "Destination",
+            "stop_id": "stop1",
+            "stop_name": "Test Stop",
+            "scheduled_departure": "2025-12-08T08:30:00+00:00",
+            "schedule_relationship": "CANCELED",
+            "alerts": [],
+        }
+
+        result = DepartureInfo.from_dict(data)
+
+        assert result.schedule_relationship == ScheduleRelationship.CANCELED
+
     def test_from_dict_does_not_mutate_input(self):
         """Test that from_dict does not modify the input dictionary."""
         data = {
@@ -504,6 +523,7 @@ class TestScheduleRelationship:
         assert ScheduleRelationship.SKIPPED.value == "SKIPPED"
         assert ScheduleRelationship.NO_DATA.value == "NO_DATA"
         assert ScheduleRelationship.UNSCHEDULED.value == "UNSCHEDULED"
+        assert ScheduleRelationship.CANCELED.value == "CANCELED"
 
     def test_schedule_relationship_membership(self):
         """Test that values can be used for comparison."""
@@ -662,6 +682,7 @@ class FakeGtfsSchedule:
             MockStop("stop1", "Marienplatz", 48.137, 11.577),
             MockStop("stop2", "Hauptbahnhof", 48.140, 11.558),
         ]
+        self.last_requested_time = None
         self.departures = [
             MockScheduledDeparture(
                 trip_id="trip1",
@@ -680,6 +701,7 @@ class FakeGtfsSchedule:
     async def get_departures_for_stop(
         self, stop_id: str, scheduled_time, limit: int, validate_existence: bool = True
     ):
+        self.last_requested_time = scheduled_time
         return self.departures[:limit]
 
     async def search_stops(self, query: str, limit: int = 10):
@@ -903,6 +925,18 @@ class TestTransitDataServiceMethods:
         assert result[0].stop_name == "Marienplatz"
 
     @pytest.mark.asyncio
+    async def test_get_departures_for_stop_respects_from_time(self, transit_service):
+        """Test get_departures_for_stop forwards explicit from_time."""
+        requested_from_time = datetime(2025, 12, 8, 9, 15, tzinfo=timezone.utc)
+        await transit_service.get_departures_for_stop(
+            "stop1",
+            limit=10,
+            from_time=requested_from_time,
+            include_real_time=False,
+        )
+        assert transit_service.gtfs_schedule.last_requested_time == requested_from_time
+
+    @pytest.mark.asyncio
     async def test_get_departures_for_stop_empty_when_no_departures(
         self, transit_service
     ):
@@ -923,6 +957,29 @@ class TestTransitDataServiceMethods:
         result = await transit_service.get_departures_for_stop("stop1", limit=10)
 
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_stop_info_handles_null_coordinates(self):
+        """Stops with NULL lat/lon should not fail stop-info lookup."""
+        cache = FakeCacheService()
+        schedule = FakeGtfsSchedule()
+        realtime = FakeGtfsRealtime()
+        db = FakeDbSession(
+            stops=[MockStop("stop_null", "No Coords", None, None)],
+        )
+
+        with patch("app.services.transit_data.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                gtfs_rt_enabled=True,
+                gtfs_schedule_cache_ttl_seconds=300,
+                gtfs_stop_cache_ttl_seconds=600,
+            )
+            service = TransitDataService(cache, schedule, realtime, db)
+
+        stop_info = await service.get_stop_info("stop_null")
+        assert stop_info is not None
+        assert stop_info.stop_lat == 0.0
+        assert stop_info.stop_lon == 0.0
 
     @pytest.mark.asyncio
     async def test_refresh_real_time_data_success(self, transit_service):
@@ -985,7 +1042,7 @@ class TestTransitDataServiceMethods:
         ]
 
         # Cache key without time bucket (Issue 5 fix: removed time bucket for stale-while-revalidate)
-        cache_key = "departures:stop1:10:0:False"
+        cache_key = "departures:stop1:10:0:none:False"
 
         # Pre-populate the cache
         await transit_service.cache.set_json(cache_key, cached_departures)
@@ -1010,7 +1067,7 @@ class TestTransitDataServiceMethods:
         assert len(result) == 2
 
         # Cache key without time bucket (Issue 5 fix: removed time bucket for stale-while-revalidate)
-        cache_key = "departures:stop1:10:0:False"
+        cache_key = "departures:stop1:10:0:none:False"
 
         cached = await transit_service.cache.get_json(cache_key)
         assert cached is not None

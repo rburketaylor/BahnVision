@@ -465,3 +465,7 @@ class TestDataModels:
 
         assert alert.timestamp is not None
         assert before <= alert.timestamp <= after
+
+    def test_map_schedule_relationship_includes_canceled(self, gtfs_service):
+        """Schedule relationship mapping should include CANCELED."""
+        assert gtfs_service._map_schedule_relationship(4) == "CANCELED"

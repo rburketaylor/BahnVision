@@ -328,11 +328,18 @@ class GtfsRealtimeService:
                         )
                     )
 
-            # Store in cache - parallelize independent storage operations
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(self._store_trip_updates(trip_updates))
-                tg.create_task(self._store_vehicle_positions(vehicle_positions))
-                tg.create_task(self._store_alerts(alerts))
+            # Store in cache. Cache write failures are isolated from feed parsing
+            # so transient cache issues do not mark feed fetches as failed.
+            await asyncio.gather(
+                self._store_with_error_isolation(
+                    "trip updates", self._store_trip_updates(trip_updates)
+                ),
+                self._store_with_error_isolation(
+                    "vehicle positions",
+                    self._store_vehicle_positions(vehicle_positions),
+                ),
+                self._store_with_error_isolation("alerts", self._store_alerts(alerts)),
+            )
 
             self._record_success()
 
@@ -618,9 +625,22 @@ class GtfsRealtimeService:
             ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
         )
 
+    async def _store_with_error_isolation(self, label: str, operation) -> None:
+        """Run a cache-store operation and isolate any failures."""
+        try:
+            await operation
+        except Exception as exc:
+            logger.warning("Failed to store GTFS-RT %s in cache: %s", label, exc)
+
     def _map_schedule_relationship(self, relationship) -> str:
         """Map GTFS-RT schedule relationship to string"""
-        mapping = {0: "SCHEDULED", 1: "SKIPPED", 2: "NO_DATA", 3: "UNSCHEDULED"}
+        mapping = {
+            0: "SCHEDULED",
+            1: "SKIPPED",
+            2: "NO_DATA",
+            3: "UNSCHEDULED",
+            4: "CANCELED",
+        }
         return mapping.get(relationship, "SCHEDULED")
 
     def _map_cause(self, cause) -> str:

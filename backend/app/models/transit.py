@@ -74,7 +74,9 @@ class TransitDeparture(BaseModel):
     )
     schedule_relationship: str = Field(
         "SCHEDULED",
-        description="Schedule status: SCHEDULED, SKIPPED, NO_DATA, UNSCHEDULED",
+        description=(
+            "Schedule status: SCHEDULED, SKIPPED, NO_DATA, UNSCHEDULED, CANCELED"
+        ),
     )
     vehicle_id: str | None = Field(None, description="Vehicle identifier if available")
     alerts: list[str] = Field(default_factory=list, description="Active service alerts")
