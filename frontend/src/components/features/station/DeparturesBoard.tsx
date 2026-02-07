@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Clock3, TrainFront } from 'lucide-react'
 import type { TransitDeparture } from '../../../types/gtfs'
 import { formatTime } from '../../../utils/time'
 
@@ -14,22 +15,25 @@ interface TimeFormatToggleProps {
 
 function TimeFormatToggle({ use24Hour, onToggle }: TimeFormatToggleProps) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Time Format:</span>
-      <div className="relative inline-flex h-7 w-[4.5rem] items-center rounded-md bg-gray-200 dark:bg-gray-600 transition-colors">
-        <button
-          onClick={() => onToggle(!use24Hour)}
-          className="relative inline-flex h-7 w-[4.5rem] items-center rounded-md bg-transparent transition-colors"
-        >
-          <span
-            className={`inline-block h-5 w-[2.25rem] transform rounded-sm bg-white shadow-md transition-transform flex items-center justify-center text-sm font-sans font-semibold ${
-              use24Hour ? 'translate-x-1' : 'translate-x-8'
-            }`}
-          >
-            {use24Hour ? '24' : '12'}
-          </span>
-        </button>
-      </div>
+    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-elevated p-1">
+      <button
+        type="button"
+        className={`btn-bvv rounded-sm px-2.5 py-1 text-small font-semibold ${
+          use24Hour ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+        }`}
+        onClick={() => onToggle(true)}
+      >
+        24
+      </button>
+      <button
+        type="button"
+        className={`btn-bvv rounded-sm px-2.5 py-1 text-small font-semibold ${
+          !use24Hour ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+        }`}
+        onClick={() => onToggle(false)}
+      >
+        12
+      </button>
     </div>
   )
 }
@@ -40,7 +44,6 @@ export function DeparturesBoard({
 }: DeparturesBoardProps) {
   const [use24Hour, setUse24Hour] = useState(initialUse24Hour)
 
-  // Sort departures by effective departure time (realtime if available, otherwise scheduled)
   const sortedDepartures = useMemo(
     () =>
       [...departures].sort((a, b) => {
@@ -55,26 +58,34 @@ export function DeparturesBoard({
 
   if (sortedDepartures.length === 0) {
     return (
-      <div className="text-center py-12">
-        <div className="text-6xl mb-4">🚦</div>
-        <div className="text-gray-500 text-lg font-medium">No departures found</div>
-        <div className="text-gray-400 text-sm mt-1">Try adjusting your filters or time range</div>
+      <div className="rounded-md border border-border bg-surface-elevated p-8 text-center">
+        <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+          <TrainFront className="h-5 w-5" />
+        </div>
+        <div className="text-h3 text-foreground">No departures found</div>
+        <div className="mt-1 text-small text-muted-foreground">
+          Try adjusting your filters or time range
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      {/* Header with time format toggle */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-h2 text-foreground">
           {sortedDepartures.length} departure{sortedDepartures.length !== 1 ? 's' : ''}
         </h2>
-        <TimeFormatToggle use24Hour={use24Hour} onToggle={setUse24Hour} />
+        <div className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 text-small text-muted-foreground">
+            <Clock3 className="h-4 w-4" />
+            Time format
+          </span>
+          <TimeFormatToggle use24Hour={use24Hour} onToggle={setUse24Hour} />
+        </div>
       </div>
 
-      {/* Departures list with better spacing */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {sortedDepartures.map((departure, index) => {
           const time = formatTime(
             departure.realtime_departure || departure.scheduled_departure,
@@ -85,70 +96,48 @@ export function DeparturesBoard({
             : 0
           const isDelayed = delayMinutes > 0
           const isCancelled = departure.schedule_relationship === 'SKIPPED'
-          // Map GTFS route types to display names
           const transportType = departure.route_short_name || 'Transit'
 
           return (
-            <div key={index} className="group">
-              <div
-                className={`
-                  flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 border
-                  ${
-                    isCancelled
-                      ? 'bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800/60 hover:bg-red-50/60 dark:hover:bg-red-900/30'
-                      : isDelayed
-                        ? 'bg-yellow-50/40 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800/60 hover:bg-yellow-50/60 dark:hover:bg-yellow-900/30'
-                        : 'bg-card border-border hover:border-primary/30 hover:shadow-sm'
-                  }
-                `}
-              >
-                {/* Transport line and type */}
-                <div className="flex items-center gap-3 min-w-[5rem]">
-                  <div
-                    className={`
-                    px-3 py-1.5 rounded-lg text-sm font-bold text-center min-w-[3rem]
-                    bg-primary text-white
-                  `}
-                  >
-                    {departure.route_short_name || '?'}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
-                    {transportType}
-                  </div>
+            <div
+              key={index}
+              className={`rounded-md border px-4 py-3 transition-colors ${
+                isCancelled
+                  ? 'border-red-500/35 bg-red-500/8'
+                  : isDelayed
+                    ? 'border-amber-500/35 bg-amber-500/8'
+                    : 'border-border bg-card hover:border-primary/25'
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex min-w-[4.25rem] items-center justify-center rounded-sm bg-primary px-2 py-1 text-small font-semibold text-primary-foreground">
+                  {departure.route_short_name || '?'}
                 </div>
 
-                {/* Time */}
-                <div className="text-xl font-mono font-semibold text-foreground min-w-[5rem]">
-                  {time}
-                </div>
+                <div className="min-w-[4.5rem] text-h3 tabular-nums text-foreground">{time}</div>
 
-                {/* Destination */}
-                <div className="flex-1 text-base font-medium text-foreground">
+                <div className="min-w-[9rem] flex-1 text-body font-semibold text-foreground">
                   {departure.headsign}
                 </div>
 
-                {/* Status info */}
-                <div className="flex items-center gap-3">
+                <div className="text-small text-muted-foreground">{transportType}</div>
+
+                <div>
                   {isCancelled ? (
-                    <span className="px-3 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm font-medium">
+                    <span className="inline-flex rounded-sm border border-red-500/35 bg-red-500/12 px-2 py-1 text-small font-semibold text-red-600 dark:text-red-300">
                       Cancelled
                     </span>
                   ) : isDelayed ? (
-                    <span className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 rounded-lg text-sm font-medium">
+                    <span className="inline-flex rounded-sm border border-amber-500/35 bg-amber-500/12 px-2 py-1 text-small font-semibold text-amber-700 dark:text-amber-300">
                       +{delayMinutes}m delay
                     </span>
                   ) : (
-                    <span className="px-3 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg text-sm font-medium">
+                    <span className="inline-flex rounded-sm border border-emerald-500/35 bg-emerald-500/12 px-2 py-1 text-small font-semibold text-emerald-700 dark:text-emerald-300">
                       On time
                     </span>
                   )}
                 </div>
               </div>
-
-              {/* Separator */}
-              {index < sortedDepartures.length - 1 && (
-                <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent my-4" />
-              )}
             </div>
           )
         })}

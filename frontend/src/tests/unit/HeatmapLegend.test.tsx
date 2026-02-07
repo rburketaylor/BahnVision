@@ -51,7 +51,7 @@ describe('HeatmapLegend', () => {
   })
 
   it('renders cancellation-only title and supports hover highlighting', () => {
-    const { container } = render(
+    render(
       <ThemeProvider defaultTheme="light">
         <HeatmapLegend enabledMetrics={{ cancellations: true, delays: false }} />
       </ThemeProvider>
@@ -62,9 +62,9 @@ describe('HeatmapLegend', () => {
     expect(firstItem).toBeTruthy()
 
     fireEvent.mouseEnter(firstItem!)
-    expect(container.querySelector('.bg-muted\\/50')).toBeInTheDocument()
+    expect(firstItem).toHaveClass('bg-surface-elevated')
 
     fireEvent.mouseLeave(firstItem!)
-    expect(container.querySelector('.bg-muted\\/50')).not.toBeInTheDocument()
+    expect(firstItem).not.toHaveClass('bg-surface-elevated')
   })
 })

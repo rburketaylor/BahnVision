@@ -1,111 +1,116 @@
 /**
- * Main layout component with navigation
+ * Main layout shell with responsive navigation.
  */
 
-import { useState } from 'react'
-import { Link, Outlet, useLocation } from 'react-router'
+import { useEffect, useState, type ComponentType } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router'
+import { Activity, Map, Menu, Search, X } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
+
+interface NavItem {
+  path: string
+  label: string
+  icon: ComponentType<{ className?: string }>
+}
+
+const navItems: NavItem[] = [
+  { path: '/', label: 'Map', icon: Map },
+  { path: '/search', label: 'Stations', icon: Search },
+  { path: '/monitoring', label: 'Monitoring', icon: Activity },
+]
+
+function NavEntry({
+  item,
+  mobile = false,
+  onClick,
+}: {
+  item: NavItem
+  mobile?: boolean
+  onClick?: () => void
+}) {
+  const Icon = item.icon
+
+  return (
+    <NavLink
+      to={item.path}
+      onClick={onClick}
+      className={({ isActive }) =>
+        [
+          'btn-bvv inline-flex items-center gap-2 border text-small font-semibold uppercase tracking-[0.05em]',
+          mobile ? 'w-full px-3 py-2.5 rounded-md' : 'px-3 py-2 rounded-md',
+          isActive
+            ? 'border-primary/40 bg-primary/12 text-primary shadow-surface-1'
+            : 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-elevated hover:text-foreground',
+        ].join(' ')
+      }
+      end={item.path === '/'}
+    >
+      <Icon className="h-4 w-4" />
+      {item.label}
+    </NavLink>
+  )
+}
 
 export default function AppLayout() {
   const location = useLocation()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
-  const navItems = [
-    { path: '/', label: 'Map' },
-    { path: '/search', label: 'Stations' },
-    { path: '/monitoring', label: 'Monitoring' },
-  ]
-
-  // Full-bleed mode for heatmap pages (no padding)
   const isFullBleed = location.pathname === '/' || location.pathname === '/heatmap'
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false)
+  }, [location.pathname])
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <nav className="bg-card shadow-sm border-b border-border relative z-[2000]">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo and desktop navigation */}
-            <div className="flex items-center space-x-8">
-              <Link to="/" className="text-xl font-bold text-primary">
+      <header className="sticky top-0 z-[2000] border-b border-border/80 bg-background/90 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-[116rem] items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-8">
+            <Link to="/" className="inline-flex items-center gap-2">
+              <span className="font-display text-[1.2rem] font-semibold uppercase tracking-[0.16em] text-foreground">
                 BahnVision
-              </Link>
-              <div className="hidden md:flex space-x-4">
-                {navItems.map(item => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      location.pathname === item.path
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-gray-400 hover:text-primary hover:bg-gray-700'
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            </div>
+              </span>
+            </Link>
 
-            {/* Theme toggle and mobile menu button */}
-            <div className="flex items-center space-x-4">
-              <ThemeToggle />
-
-              {/* Mobile menu button */}
-              <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="md:hidden p-2 rounded-md text-gray-400 hover:text-primary hover:bg-gray-700 transition-colors"
-                aria-label="Toggle navigation menu"
-              >
-                {isMobileMenuOpen ? (
-                  // Close icon
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                ) : (
-                  // Hamburger icon
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
+            <nav className="hidden items-center gap-2 md:flex" aria-label="Primary navigation">
+              {navItems.map(item => (
+                <NavEntry key={item.path} item={item} />
+              ))}
+            </nav>
           </div>
 
-          {/* Mobile navigation menu */}
-          {isMobileMenuOpen && (
-            <div className="md:hidden pb-4">
-              <div className="flex flex-col space-y-2">
-                {navItems.map(item => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      location.pathname === item.path
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-gray-400 hover:text-primary hover:bg-gray-700'
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              onClick={() => setIsMobileMenuOpen(open => !open)}
+              className="btn-bvv inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface-elevated text-muted-foreground hover:border-interactive/40 hover:bg-surface-muted hover:text-foreground md:hidden"
+              aria-label="Toggle navigation menu"
+              type="button"
+            >
+              {isMobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
-      </nav>
 
-      <main className={isFullBleed ? '' : 'px-4 sm:px-6 lg:px-8 py-8'}>
+        {isMobileMenuOpen && (
+          <div className="animate-panel-enter border-t border-border/70 bg-surface/95 px-4 py-3 md:hidden sm:px-6">
+            <nav className="flex flex-col gap-2" aria-label="Mobile navigation">
+              {navItems.map(item => (
+                <NavEntry
+                  key={item.path}
+                  item={item}
+                  mobile
+                  onClick={() => setIsMobileMenuOpen(false)}
+                />
+              ))}
+            </nav>
+          </div>
+        )}
+      </header>
+
+      <main
+        className={isFullBleed ? '' : 'mx-auto w-full max-w-[116rem] px-4 py-8 sm:px-6 lg:px-8'}
+      >
         <Outlet />
       </main>
     </div>

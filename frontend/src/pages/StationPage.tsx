@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router'
+import { Activity, BarChart3, ChevronLeft, PauseCircle, RadioTower } from 'lucide-react'
 import { useDepartures } from '../hooks/useDepartures'
 import { useStationStats, useStationTrends } from '../hooks/useStationStats'
 import { DeparturesBoard } from '../components/features/station/DeparturesBoard'
@@ -55,15 +56,15 @@ function formatPercent(rate: number): string {
 
 function getPerformanceColor(score: number | null): string {
   if (score === null) return 'text-foreground'
-  if (score >= 90) return 'text-green-600 dark:text-green-400'
-  if (score >= 70) return 'text-yellow-600 dark:text-yellow-400'
-  return 'text-red-600 dark:text-red-400'
+  if (score >= 90) return 'text-status-healthy'
+  if (score >= 70) return 'text-status-warning'
+  return 'text-status-critical'
 }
 
 function getCancellationColor(rate: number): string {
-  if (rate <= 0.02) return 'text-green-600 dark:text-green-400'
-  if (rate <= 0.05) return 'text-yellow-600 dark:text-yellow-400'
-  return 'text-red-600 dark:text-red-400'
+  if (rate <= 0.02) return 'text-status-healthy'
+  if (rate <= 0.05) return 'text-status-warning'
+  return 'text-status-critical'
 }
 
 export function StationPage() {
@@ -221,65 +222,66 @@ export function StationPage() {
   const stationName = stats?.station_name || stop?.name || `Station ${stationId}`
 
   return (
-    <div className="max-w-6xl mx-auto">
-      {/* Header with station info and back link */}
-      <header className="mb-6">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <header className="rounded-lg border border-border bg-card p-5 shadow-surface-1">
         <Link
           to="/"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
+          className="mb-4 inline-flex items-center gap-1.5 text-small text-muted-foreground transition-colors hover:text-foreground"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
+          <ChevronLeft className="h-4 w-4" />
           Back to Map
         </Link>
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{stationName}</h1>
+            <p className="text-tiny text-muted-foreground">Station Command</p>
+            <h1 className="text-h1 text-foreground">{stationName}</h1>
             {stationId && (
-              <p className="text-sm text-muted-foreground mt-1">Stop ID: {stationId}</p>
+              <p className="mt-1 text-small text-muted-foreground">Stop ID: {stationId}</p>
             )}
           </div>
+
           {activeTab === 'schedule' && (
             <div
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-small font-semibold uppercase tracking-[0.04em] ${
                 paginationState.live
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                  ? 'border-status-healthy/30 bg-status-healthy/12 text-status-healthy'
+                  : 'border-status-neutral/30 bg-surface-elevated text-muted-foreground'
               }`}
             >
-              {paginationState.live ? '🟢 Live' : '⏸️ Manual'}
+              {paginationState.live ? (
+                <RadioTower className="h-4 w-4 animate-status-pulse" />
+              ) : (
+                <PauseCircle className="h-4 w-4" />
+              )}
+              {paginationState.live ? 'Live' : 'Manual'}
             </div>
           )}
         </div>
-      </header>
 
-      {/* Tabs */}
-      <div className="border-b border-border mb-6">
-        <nav className="flex gap-4" aria-label="Station tabs">
-          {(Object.keys(TAB_LABELS) as StationTab[]).map(tab => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-              }`}
-              aria-selected={activeTab === tab}
-            >
-              {TAB_LABELS[tab]}
-            </button>
-          ))}
-        </nav>
-      </div>
+        <div className="mt-5 border-t border-border pt-4">
+          <nav className="flex flex-wrap gap-2" aria-label="Station tabs">
+            {(Object.keys(TAB_LABELS) as StationTab[]).map(tab => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`btn-bvv inline-flex items-center gap-2 rounded-md border px-3 py-2 text-small font-semibold uppercase tracking-[0.05em] transition-colors ${
+                  activeTab === tab
+                    ? 'border-primary/40 bg-primary/12 text-primary'
+                    : 'border-border bg-surface text-muted-foreground hover:bg-surface-elevated hover:text-foreground'
+                }`}
+                aria-selected={activeTab === tab}
+              >
+                {tab === 'overview' && <Activity className="h-4 w-4" />}
+                {tab === 'trends' && <BarChart3 className="h-4 w-4" />}
+                {tab === 'schedule' && <RadioTower className="h-4 w-4" />}
+                {TAB_LABELS[tab]}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
 
       {/* Tab Content */}
       <div className="space-y-6">
@@ -289,14 +291,14 @@ export function StationPage() {
             {statsLoading && (
               <div className="flex items-center justify-center py-8">
                 <div className="flex items-center gap-2">
-                  <span className="h-5 w-5 animate-spin rounded-full border border-gray-300 border-t-primary"></span>
+                  <span className="h-5 w-5 animate-spin rounded-full border border-border border-t-primary"></span>
                   <span className="text-muted-foreground">Loading statistics...</span>
                 </div>
               </div>
             )}
 
             {statsError && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4">
                 <p className="text-sm text-destructive">
                   Failed to load statistics: {statsError.message}
                 </p>
@@ -339,8 +341,8 @@ export function StationPage() {
                 {/* Network comparison */}
                 {(stats.network_avg_cancellation_rate !== null ||
                   stats.network_avg_delay_rate !== null) && (
-                  <div className="rounded-lg border border-border bg-card p-4">
-                    <h3 className="text-sm font-semibold text-foreground mb-3">
+                  <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+                    <h3 className="mb-3 text-small font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                       Network Comparison
                     </h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
@@ -366,19 +368,19 @@ export function StationPage() {
 
                 {/* Transport breakdown */}
                 {stats.by_transport.length > 0 && (
-                  <div className="rounded-lg border border-border bg-card p-4">
-                    <h3 className="text-sm font-semibold text-foreground mb-3">
+                  <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+                    <h3 className="mb-3 text-small font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                       By Transport Type
                     </h3>
                     <div className="space-y-2">
                       {stats.by_transport.map(t => (
                         <div
                           key={t.transport_type}
-                          className="flex items-center justify-between text-sm"
+                          className="flex items-center justify-between border-b border-border/60 py-2 text-sm last:border-b-0"
                         >
                           <span className="text-muted-foreground">{t.display_name}</span>
                           <div className="flex gap-4">
-                            <span>{t.total_departures} deps</span>
+                            <span className="tabular-nums">{t.total_departures} deps</span>
                             <span className={getCancellationColor(t.cancellation_rate)}>
                               {formatPercent(t.cancellation_rate)} cancel
                             </span>
@@ -392,7 +394,7 @@ export function StationPage() {
             )}
 
             {!stats && !statsLoading && !statsError && (
-              <div className="rounded-lg border border-border bg-card p-6">
+              <div className="rounded-md border border-border bg-card p-6">
                 <p className="text-muted-foreground">No statistics available for this station.</p>
               </div>
             )}
@@ -405,14 +407,14 @@ export function StationPage() {
             {trendsLoading && (
               <div className="flex items-center justify-center py-8">
                 <div className="flex items-center gap-2">
-                  <span className="h-5 w-5 animate-spin rounded-full border border-gray-300 border-t-primary"></span>
+                  <span className="h-5 w-5 animate-spin rounded-full border border-border border-t-primary"></span>
                   <span className="text-muted-foreground">Loading trends...</span>
                 </div>
               </div>
             )}
 
             {trendsError && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4">
                 <p className="text-sm text-destructive">
                   Failed to load trends: {trendsError.message}
                 </p>
@@ -451,15 +453,15 @@ export function StationPage() {
 
                 {/* Trend data table */}
                 {trends.data_points.length > 0 ? (
-                  <div className="rounded-lg border border-border bg-card overflow-hidden">
-                    <div className="p-4 border-b border-border">
-                      <h3 className="text-sm font-semibold text-foreground">
+                  <div className="overflow-hidden rounded-md border border-border bg-card shadow-surface-1">
+                    <div className="border-b border-border p-4">
+                      <h3 className="text-small font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                         {trends.granularity === 'hourly' ? 'Hourly' : 'Daily'} Breakdown
                       </h3>
                     </div>
                     <div className="max-h-96 overflow-auto">
                       <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-muted">
+                        <thead className="sticky top-0 bg-surface-muted/90 backdrop-blur">
                           <tr>
                             <th className="px-4 py-2 text-left font-medium">Time</th>
                             <th className="px-4 py-2 text-right font-medium">Departures</th>
@@ -469,21 +471,23 @@ export function StationPage() {
                         </thead>
                         <tbody>
                           {trends.data_points.map((point, idx) => (
-                            <tr key={idx} className="border-t border-border/50">
+                            <tr key={idx} className="border-t border-border/60">
                               <td className="px-4 py-2 text-muted-foreground">
                                 {new Date(point.timestamp).toLocaleString(undefined, {
                                   dateStyle: trends.granularity === 'daily' ? 'short' : undefined,
                                   timeStyle: trends.granularity === 'hourly' ? 'short' : undefined,
                                 })}
                               </td>
-                              <td className="px-4 py-2 text-right">{point.total_departures}</td>
+                              <td className="px-4 py-2 text-right tabular-nums">
+                                {point.total_departures}
+                              </td>
                               <td
-                                className={`px-4 py-2 text-right ${getCancellationColor(point.cancellation_rate)}`}
+                                className={`px-4 py-2 text-right tabular-nums ${getCancellationColor(point.cancellation_rate)}`}
                               >
                                 {formatPercent(point.cancellation_rate)}
                               </td>
                               <td
-                                className={`px-4 py-2 text-right ${getCancellationColor(point.delay_rate)}`}
+                                className={`px-4 py-2 text-right tabular-nums ${getCancellationColor(point.delay_rate)}`}
                               >
                                 {formatPercent(point.delay_rate)}
                               </td>
@@ -494,7 +498,7 @@ export function StationPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-border bg-card p-6">
+                  <div className="rounded-md border border-border bg-card p-6">
                     <p className="text-muted-foreground text-center">
                       No trend data available for this time range.
                     </p>
@@ -504,7 +508,7 @@ export function StationPage() {
             )}
 
             {!trends && !trendsLoading && !trendsError && (
-              <div className="rounded-lg border border-border bg-card p-6">
+              <div className="rounded-md border border-border bg-card p-6">
                 <p className="text-muted-foreground">No trend data available for this station.</p>
               </div>
             )}
@@ -515,24 +519,24 @@ export function StationPage() {
         {activeTab === 'schedule' && (
           <div className="space-y-6">
             {/* Pagination Controls */}
-            <div className="rounded-lg border border-border bg-card p-4 shadow-md">
+            <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
                 {/* Page Navigation */}
                 <div className="flex gap-2 col-span-2 sm:col-span-1">
                   <button
                     onClick={goToPreviousPage}
                     disabled={!canGoPrevious}
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`btn-bvv flex-1 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
                       canGoPrevious
                         ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                        : 'bg-muted text-muted-foreground cursor-not-allowed'
+                        : 'bg-surface-elevated text-muted-foreground cursor-not-allowed'
                     }`}
                   >
                     ← Prev
                   </button>
                   <button
                     onClick={goToNextPage}
-                    className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                    className="btn-bvv flex-1 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                   >
                     Next →
                   </button>
@@ -540,13 +544,13 @@ export function StationPage() {
 
                 {/* Page Size Selector */}
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">Results</label>
+                  <label className="mb-1 block text-tiny text-muted-foreground">Results</label>
                   <select
                     value={paginationState.pageSize}
                     onChange={e =>
                       updatePaginationState({ pageSize: parseInt(e.target.value, 10) })
                     }
-                    className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+                    className="w-full rounded-md border border-input bg-input px-2.5 py-2 text-sm text-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>
@@ -557,13 +561,13 @@ export function StationPage() {
 
                 {/* Step Selector */}
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">Step</label>
+                  <label className="mb-1 block text-tiny text-muted-foreground">Step</label>
                   <select
                     value={paginationState.pageStepMinutes}
                     onChange={e =>
                       updatePaginationState({ pageStepMinutes: parseInt(e.target.value, 10) })
                     }
-                    className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+                    className="w-full rounded-md border border-input bg-input px-2.5 py-2 text-sm text-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     <option value={15}>15m</option>
                     <option value={30}>30m</option>
@@ -573,7 +577,7 @@ export function StationPage() {
 
                 {/* Time Picker */}
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">Time</label>
+                  <label className="mb-1 block text-tiny text-muted-foreground">Time</label>
                   <input
                     type="datetime-local"
                     value={toDateTimeLocalValue(paginationState.fromTime)}
@@ -586,7 +590,7 @@ export function StationPage() {
                         goToNow()
                       }
                     }}
-                    className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-input text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+                    className="w-full rounded-md border border-input bg-input px-2.5 py-2 text-sm text-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
 
@@ -594,9 +598,9 @@ export function StationPage() {
                 <div>
                   <button
                     onClick={goToNow}
-                    className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`btn-bvv w-full rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
                       paginationState.live
-                        ? 'bg-green-600 text-white'
+                        ? 'bg-status-healthy text-white'
                         : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                     }`}
                   >
@@ -607,18 +611,18 @@ export function StationPage() {
             </div>
 
             {/* Departures Board */}
-            <section className="rounded-lg border border-border bg-card p-4 sm:p-6 shadow-lg">
+            <section className="rounded-md border border-border bg-card p-4 shadow-surface-1 sm:p-6">
               {departuresLoading && (
                 <div className="flex items-center justify-center py-8">
                   <div className="flex items-center gap-2">
-                    <span className="h-5 w-5 animate-spin rounded-full border border-gray-300 border-t-primary"></span>
+                    <span className="h-5 w-5 animate-spin rounded-full border border-border border-t-primary"></span>
                     <span className="text-muted-foreground">Loading departures...</span>
                   </div>
                 </div>
               )}
               {departuresError && (
                 <div className="text-center py-8">
-                  <p className="text-red-500">
+                  <p className="text-status-critical">
                     Error fetching departures: {departuresError.message}
                   </p>
                 </div>
@@ -645,10 +649,10 @@ function StatCard({
   valueColor?: string
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-sm text-muted-foreground">{title}</p>
-      <p className={`text-2xl font-bold mt-1 ${valueColor}`}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+    <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+      <p className="text-tiny text-muted-foreground">{title}</p>
+      <p className={`mt-1 text-h1 tabular-nums ${valueColor}`}>{value}</p>
+      <p className="mt-1 text-small text-muted-foreground">{subtitle}</p>
     </div>
   )
 }

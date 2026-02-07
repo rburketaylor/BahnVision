@@ -12,6 +12,7 @@ import {
   type KeyboardEvent,
   type ChangeEvent,
 } from 'react'
+import { Loader2, Search, X } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useStationSearch } from '../../../hooks/useStationSearch'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
@@ -66,11 +67,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
       {parts.map((part, index) => (
         <span
           key={index}
-          className={
-            part.isMatch
-              ? 'font-semibold bg-yellow-200 text-yellow-900 dark:bg-yellow-800 dark:text-yellow-100 px-1 rounded'
-              : ''
-          }
+          className={part.isMatch ? 'rounded-sm bg-primary/18 px-1 font-semibold text-primary' : ''}
         >
           {part.text}
         </span>
@@ -287,7 +284,7 @@ export function StationSearch({
           onKeyDown={handleKeyDown}
           onFocus={handleFocus}
           placeholder={placeholder}
-          className="w-full pl-10 pr-12 py-3 text-base border border-border rounded-lg bg-input text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors"
+          className="w-full rounded-md border border-input bg-input py-2.5 pl-10 pr-12 text-body text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background transition-[border-color,box-shadow]"
           autoComplete="off"
           autoCapitalize="off"
           autoFocus={autoFocus}
@@ -305,19 +302,7 @@ export function StationSearch({
 
         {/* Search icon */}
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <svg
-            className="h-5 w-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search className="h-4 w-4 text-muted-foreground" />
         </div>
 
         {/* Clear button */}
@@ -325,17 +310,10 @@ export function StationSearch({
           <button
             type="button"
             onClick={handleClear}
-            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground transition-colors hover:text-foreground"
             aria-label="Clear search"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <X className="h-4 w-4" />
           </button>
         )}
       </div>
@@ -344,7 +322,7 @@ export function StationSearch({
       {isDropdownVisible && (
         <div
           id={listboxId}
-          className="absolute z-50 w-full mt-2 bg-card border border-border rounded-lg shadow-lg max-h-96 overflow-hidden"
+          className="absolute z-50 mt-2 max-h-96 w-full overflow-hidden rounded-md border border-border bg-card shadow-surface-2"
           role="listbox"
         >
           {/* Recent searches header */}
@@ -353,7 +331,7 @@ export function StationSearch({
               <span className="text-sm font-medium text-foreground">Recent Searches</span>
               <button
                 onClick={handleClearRecentSearches}
-                className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                className="text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
                 Clear all
               </button>
@@ -364,8 +342,8 @@ export function StationSearch({
           {isInitialLoading && (
             <div className="px-4 py-8 text-center">
               <div className="flex items-center justify-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border border-gray-300 border-t-primary"></span>
-                <span className="text-sm text-gray-500">Searching stations...</span>
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Searching stations...</span>
               </div>
             </div>
           )}
@@ -374,14 +352,14 @@ export function StationSearch({
           {hasBeenLoadingTooLong && (
             <div className="px-4 py-6 text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
-                <span className="h-4 w-4 animate-spin rounded-full border border-gray-300 border-t-yellow-500"></span>
-                <span className="text-sm text-yellow-600">
+                <Loader2 className="h-4 w-4 animate-spin text-status-warning" />
+                <span className="text-sm text-status-warning">
                   This is taking longer than expected...
                 </span>
               </div>
               <button
                 onClick={handleCancelSearch}
-                className="text-xs text-gray-500 hover:text-gray-700 underline"
+                className="text-xs text-muted-foreground underline hover:text-foreground"
               >
                 Cancel search
               </button>
@@ -391,12 +369,12 @@ export function StationSearch({
           {/* Error state */}
           {showError && (
             <div className="px-4 py-6 text-center">
-              <div className="text-red-500 text-sm font-medium mb-2">
+              <div className="mb-2 text-sm font-medium text-status-critical">
                 {apiError?.message || 'An error occurred'}
               </div>
               <button
                 onClick={handleRetry}
-                className="text-xs text-primary hover:text-primary/80 underline"
+                className="text-xs text-primary underline hover:text-primary/80"
               >
                 Try again
               </button>
@@ -406,18 +384,18 @@ export function StationSearch({
           {/* Timeout error */}
           {isTimeoutError && (
             <div className="px-4 py-6 text-center">
-              <div className="text-yellow-600 text-sm font-medium mb-2">
+              <div className="mb-2 text-sm font-medium text-status-warning">
                 Request timed out. The search took too long.
               </div>
               <button
                 onClick={handleRetry}
-                className="text-xs text-primary hover:text-primary/80 underline mr-4"
+                className="mr-4 text-xs text-primary underline hover:text-primary/80"
               >
                 Try again
               </button>
               <button
                 onClick={handleCancelSearch}
-                className="text-xs text-gray-500 hover:text-gray-700 underline"
+                className="text-xs text-muted-foreground underline hover:text-foreground"
               >
                 Cancel
               </button>
@@ -427,7 +405,7 @@ export function StationSearch({
           {/* No results */}
           {showNoResults && (
             <div
-              className="px-4 py-6 text-center text-gray-500 text-sm"
+              className="px-4 py-6 text-center text-sm text-muted-foreground"
               role="option"
               aria-disabled="true"
             >
@@ -451,7 +429,7 @@ export function StationSearch({
                   >
                     <button
                       className={`
-                        w-full px-4 py-3 text-left hover:bg-muted transition-colors
+                        w-full px-4 py-3 text-left transition-colors hover:bg-surface-elevated
                         ${isActive ? 'bg-muted' : ''}
                         ${isRecent ? 'border-l-2 border-primary bg-primary/5' : ''}
                       `}
@@ -467,11 +445,13 @@ export function StationSearch({
                             )}
                           </div>
                           {station.id !== station.name && (
-                            <div className="text-sm text-gray-500 truncate">ID: {station.id}</div>
+                            <div className="truncate text-sm text-muted-foreground">
+                              ID: {station.id}
+                            </div>
                           )}
                         </div>
                         {isRecent && (
-                          <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
+                          <span className="ml-2 flex-shrink-0 text-xs text-muted-foreground/80">
                             {formatRecentSearchTime((station as RecentSearch).timestamp)}
                           </span>
                         )}
@@ -486,7 +466,7 @@ export function StationSearch({
           {/* Search hint */}
           {isEnabled && !isInitialLoading && hasResults && (
             <div className="px-4 py-2 bg-muted border-t border-border">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Use ↑↓ to navigate, Enter to select, Escape to close
               </p>
             </div>

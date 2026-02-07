@@ -3,6 +3,15 @@
  * High-level system health summary
  */
 
+import {
+  Activity,
+  AlertTriangle,
+  Clock3,
+  Search,
+  Tag,
+  CheckCircle2,
+  Map as MapIcon,
+} from 'lucide-react'
 import { useHealth } from '../../../hooks/useHealth'
 import { ErrorCard } from '../../shared'
 
@@ -30,98 +39,85 @@ export default function OverviewTab() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Status Banner */}
+    <div className="space-y-5">
       <div
-        className={`p-6 rounded-lg border ${
+        className={`rounded-md border p-5 ${
           isHealthy
-            ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
-            : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
+            ? 'border-status-healthy/30 bg-status-healthy/10'
+            : 'border-status-critical/30 bg-status-critical/10'
         }`}
       >
-        <div className="flex items-center gap-4">
-          <span className="text-4xl">{isHealthy ? '🟢' : '🔴'}</span>
+        <div className="flex items-start gap-3">
+          {isHealthy ? (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-status-healthy" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-5 w-5 text-status-critical" />
+          )}
           <div>
-            <h2 className="text-2xl font-bold text-foreground">
-              {isLoading ? (
-                <span className="h-6 w-24 bg-gray-200 animate-pulse rounded inline-block" />
-              ) : isHealthy ? (
-                'All Systems Operational'
-              ) : (
-                'System Issues Detected'
-              )}
+            <h2 className="text-h2 text-foreground">
+              {isLoading
+                ? 'Loading status...'
+                : isHealthy
+                  ? 'All Systems Operational'
+                  : 'System Issues Detected'}
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            <p className="mt-1 text-small text-muted-foreground">
               {isHealthy
-                ? 'All services are running normally'
-                : 'Some services may be experiencing issues'}
+                ? 'All services are running normally.'
+                : 'Some backend services are currently degraded.'}
             </p>
           </div>
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-xl">⏱️</span>
-            <span className="text-sm font-medium text-gray-500">Uptime</span>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 stagger-enter">
+        <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+          <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+            <Clock3 className="h-4 w-4" />
+            <span className="text-tiny">Uptime</span>
           </div>
-          <p className="text-2xl font-bold text-foreground">
-            {isLoading ? (
-              <span className="h-6 w-20 bg-gray-200 animate-pulse rounded inline-block" />
-            ) : (
-              formatUptime(uptime)
-            )}
+          <p className="text-h2 tabular-nums text-foreground">
+            {isLoading ? '—' : formatUptime(uptime)}
           </p>
         </div>
 
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-xl">🏷️</span>
-            <span className="text-sm font-medium text-gray-500">Version</span>
+        <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+          <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+            <Tag className="h-4 w-4" />
+            <span className="text-tiny">Version</span>
           </div>
-          <p className="text-2xl font-bold text-foreground font-mono">
-            {isLoading ? (
-              <span className="h-6 w-16 bg-gray-200 animate-pulse rounded inline-block" />
-            ) : (
-              version
-            )}
-          </p>
+          <p className="text-h2 tabular-nums text-foreground">{isLoading ? '—' : version}</p>
         </div>
 
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-xl">📡</span>
-            <span className="text-sm font-medium text-gray-500">Status</span>
+        <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+          <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+            <Activity className="h-4 w-4" />
+            <span className="text-tiny">Status</span>
           </div>
-          <p className="text-2xl font-bold text-foreground">
-            {isLoading ? (
-              <span className="h-6 w-16 bg-gray-200 animate-pulse rounded inline-block" />
-            ) : (
-              <span className={isHealthy ? 'text-green-600' : 'text-red-600'}>
-                {isHealthy ? 'Healthy' : 'Issues'}
-              </span>
-            )}
+          <p className={`text-h2 ${isHealthy ? 'text-status-healthy' : 'text-status-critical'}`}>
+            {isLoading ? '—' : isHealthy ? 'Healthy' : 'Issues'}
           </p>
         </div>
       </div>
 
-      {/* Quick Links */}
-      <div className="bg-card rounded-lg border border-border p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
-        <div className="flex flex-wrap gap-3">
+      <div className="rounded-md border border-border bg-card p-5 shadow-surface-1">
+        <h3 className="mb-3 text-small font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+          Quick Actions
+        </h3>
+        <div className="flex flex-wrap gap-2">
           <a
             href="/heatmap"
-            className="px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"
+            className="btn-bvv inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/12 px-3 py-2 text-small font-semibold text-primary hover:bg-primary/18"
           >
-            🗺️ View Heatmap
+            <MapIcon className="h-4 w-4" />
+            View Heatmap
           </a>
           <a
             href="/search"
-            className="px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"
+            className="btn-bvv inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/12 px-3 py-2 text-small font-semibold text-primary hover:bg-primary/18"
           >
-            🔍 Search Stations
+            <Search className="h-4 w-4" />
+            Search Stations
           </a>
         </div>
       </div>

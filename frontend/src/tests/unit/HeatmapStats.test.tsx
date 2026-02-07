@@ -28,7 +28,7 @@ describe('HeatmapStats', () => {
 
     expect(screen.getByText('Statistics')).toBeInTheDocument()
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
-    expect(container.querySelectorAll('.bg-muted')).toHaveLength(5)
+    expect(container.querySelectorAll('.bg-surface-muted')).toHaveLength(5)
   })
 
   it('renders no data message when summary is null', () => {

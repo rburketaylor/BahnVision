@@ -1,10 +1,10 @@
 /**
  * Performance Tab
  * Prometheus metrics, cache performance, and response times
- * (Content migrated from original InsightsPage)
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { CheckCircle2, Clock3, Database, Gauge, Server, XCircle } from 'lucide-react'
 import { useHealth } from '../../../hooks/useHealth'
 import { useAutoRefresh } from '../../../hooks/useAutoRefresh'
 import { apiClient } from '../../../services/api'
@@ -70,7 +70,6 @@ export default function PerformanceTab() {
         }
       }
 
-      // Calculate cache hit rate from json cache events (used by transit endpoints)
       const hits = parsedMetrics.cacheEvents['json_hit'] || 0
       const misses = parsedMetrics.cacheEvents['json_miss'] || 0
       const total = hits + misses
@@ -86,188 +85,173 @@ export default function PerformanceTab() {
 
   useAutoRefresh({ callback: fetchMetrics, enabled: autoRefresh, runOnMount: true })
 
+  const cacheTargetMet = (metrics?.cacheHitRate || 0) >= 70
+  const responseTargetMet = (metrics?.avgResponseTime || 0) < 750
+
   return (
-    <div className="space-y-6">
-      {/* Controls */}
-      <div className="flex items-center justify-end gap-4">
+    <div className="space-y-5">
+      <div className="flex items-center justify-end gap-3">
         <button
           onClick={() => setAutoRefresh(!autoRefresh)}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+          className={`btn-bvv inline-flex items-center gap-2 rounded-md border px-3 py-2 text-small font-semibold uppercase tracking-[0.05em] ${
             autoRefresh
-              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+              ? 'border-status-healthy/35 bg-status-healthy/12 text-status-healthy'
+              : 'border-border bg-surface-elevated text-muted-foreground'
           }`}
         >
-          <span className={autoRefresh ? 'animate-pulse' : ''}>●</span>
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${autoRefresh ? 'bg-status-healthy animate-status-pulse' : 'bg-status-neutral'}`}
+          />
           {autoRefresh ? 'Auto-refreshing' : 'Manual refresh'}
         </button>
 
         <RefreshButton onClick={fetchMetrics} loading={metricsLoading} />
       </div>
 
-      {/* Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">💾</span>
-            <span className="text-sm font-medium text-gray-500">Cache Hit Rate</span>
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-foreground">
-              {metricsLoading ? '—' : (metrics?.cacheHitRate || 0).toFixed(1)}
-            </span>
-            <span className="text-sm text-gray-500">%</span>
-          </div>
-        </div>
-
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">📊</span>
-            <span className="text-sm font-medium text-gray-500">API Requests</span>
-          </div>
-          <span className="text-2xl font-bold text-foreground">
-            {metricsLoading ? '—' : (metrics?.totalRequests || 0).toLocaleString()}
-          </span>
-        </div>
-
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">⚡</span>
-            <span className="text-sm font-medium text-gray-500">Response Time</span>
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-foreground">
-              {metricsLoading ? '—' : (metrics?.avgResponseTime || 0).toFixed(0)}
-            </span>
-            <span className="text-sm text-gray-500">ms</span>
-          </div>
-        </div>
-
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">⏱️</span>
-            <span className="text-sm font-medium text-gray-500">Uptime</span>
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-foreground">
-              {healthLoading
-                ? '—'
-                : health?.data?.uptime_seconds
-                  ? Math.floor(health.data.uptime_seconds / 3600)
-                  : '0'}
-            </span>
-            <span className="text-sm text-gray-500">hours</span>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-enter">
+        <MetricCard
+          icon={<Database className="h-4 w-4" />}
+          label="Cache Hit Rate"
+          value={metricsLoading ? '—' : `${(metrics?.cacheHitRate || 0).toFixed(1)}%`}
+        />
+        <MetricCard
+          icon={<Server className="h-4 w-4" />}
+          label="API Requests"
+          value={metricsLoading ? '—' : (metrics?.totalRequests || 0).toLocaleString()}
+        />
+        <MetricCard
+          icon={<Gauge className="h-4 w-4" />}
+          label="Response Time"
+          value={metricsLoading ? '—' : `${(metrics?.avgResponseTime || 0).toFixed(0)} ms`}
+        />
+        <MetricCard
+          icon={<Clock3 className="h-4 w-4" />}
+          label="Uptime"
+          value={
+            healthLoading
+              ? '—'
+              : `${health?.data?.uptime_seconds ? Math.floor(health.data.uptime_seconds / 3600) : 0} hours`
+          }
+        />
       </div>
 
-      {/* Detailed Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Cache Performance */}
-        <div className="bg-card rounded-lg border border-border p-6">
-          <h2 className="text-xl font-semibold text-foreground mb-4">Cache Performance</h2>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div className="rounded-md border border-border bg-card p-5 shadow-surface-1">
+          <h2 className="mb-4 text-h2 text-foreground">Cache Performance</h2>
 
           {metricsLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-4 bg-gray-200 animate-pulse rounded" />
+                <div key={i} className="h-4 animate-pulse rounded bg-surface-muted" />
               ))}
             </div>
           ) : metrics ? (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Overall Hit Rate</span>
-                <span className="text-lg font-semibold text-foreground">
+              <div className="flex items-center justify-between">
+                <span className="text-small text-muted-foreground">Overall Hit Rate</span>
+                <span className="text-h2 tabular-nums text-foreground">
                   {metrics.cacheHitRate.toFixed(1)}%
                 </span>
               </div>
 
-              <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
+              <div className="h-2 w-full overflow-hidden rounded bg-surface-muted">
                 <div
-                  className={`h-2 rounded-full transition-all duration-500 ${
+                  className={`h-full transition-all duration-300 ${
                     metrics.cacheHitRate > 70
-                      ? 'bg-green-500'
+                      ? 'bg-status-healthy'
                       : metrics.cacheHitRate > 50
-                        ? 'bg-yellow-500'
-                        : 'bg-red-500'
+                        ? 'bg-status-warning'
+                        : 'bg-status-critical'
                   }`}
                   style={{ width: `${metrics.cacheHitRate}%` }}
                 />
               </div>
 
-              <div className="space-y-2 pt-4 border-t border-border">
-                <h4 className="text-sm font-medium text-foreground">Cache Events</h4>
+              <div className="space-y-2 border-t border-border pt-4">
+                <h4 className="text-tiny text-muted-foreground">Cache Events</h4>
                 {Object.entries(metrics.cacheEvents)
                   .slice(0, 6)
                   .map(([key, value]) => (
-                    <div key={key} className="flex justify-between text-sm">
-                      <span className="text-gray-500">{key.replace(/_/g, ' ')}</span>
-                      <span className="font-medium text-foreground">{value.toLocaleString()}</span>
+                    <div key={key} className="flex justify-between text-small">
+                      <span className="text-muted-foreground">{key.replace(/_/g, ' ')}</span>
+                      <span className="tabular-nums text-foreground">{value.toLocaleString()}</span>
                     </div>
                   ))}
               </div>
             </div>
           ) : metricsError ? (
-            <div className="text-center py-4 text-red-600">
-              <p className="text-sm">Failed to load metrics</p>
-              <p className="text-xs mt-1">{metricsError}</p>
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-small text-destructive">
+              <p>Failed to load metrics.</p>
+              <p className="mt-1 text-destructive/80">{metricsError}</p>
             </div>
           ) : (
-            <div className="text-center py-4 text-gray-500">
-              <p>No metrics available</p>
-            </div>
+            <p className="text-small text-muted-foreground">No metrics available.</p>
           )}
         </div>
 
-        {/* Performance Targets */}
-        <div className="bg-card rounded-lg border border-border p-6">
-          <h2 className="text-xl font-semibold text-foreground mb-4">Performance Targets</h2>
+        <div className="rounded-md border border-border bg-card p-5 shadow-surface-1">
+          <h2 className="mb-4 text-h2 text-foreground">Performance Targets</h2>
 
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">Cache Hit Rate Target</span>
-              <span className="text-green-600 font-medium">≥ 70%</span>
+            <div className="flex items-center justify-between text-small">
+              <span className="text-muted-foreground">Cache Hit Rate Target</span>
+              <span className="font-semibold text-status-healthy">≥ 70%</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">Response Time Target</span>
-              <span className="text-green-600 font-medium">&lt; 750ms</span>
+            <div className="flex items-center justify-between text-small">
+              <span className="text-muted-foreground">Response Time Target</span>
+              <span className="font-semibold text-status-healthy">&lt; 750ms</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">Error Rate Target</span>
-              <span className="text-green-600 font-medium">&lt; 5/min</span>
+            <div className="flex items-center justify-between text-small">
+              <span className="text-muted-foreground">Error Rate Target</span>
+              <span className="font-semibold text-status-healthy">&lt; 5/min</span>
             </div>
 
-            <div className="pt-4 border-t border-border">
-              <h4 className="text-sm font-medium text-foreground mb-3">Current Status</h4>
+            <div className="border-t border-border pt-4">
+              <h4 className="mb-2 text-tiny text-muted-foreground">Current Status</h4>
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${(metrics?.cacheHitRate || 0) >= 70 ? 'bg-green-500' : 'bg-red-500'}`}
-                  />
-                  <span className="text-sm text-gray-500">
-                    Cache: {(metrics?.cacheHitRate || 0) >= 70 ? 'Meeting target' : 'Below target'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${(metrics?.avgResponseTime || 0) < 750 ? 'bg-green-500' : 'bg-red-500'}`}
-                  />
-                  <span className="text-sm text-gray-500">
-                    Response:{' '}
-                    {(metrics?.avgResponseTime || 0) < 750 ? 'Meeting target' : 'Above target'}
-                  </span>
-                </div>
+                <StatusLine
+                  ok={cacheTargetMet}
+                  label={`Cache: ${cacheTargetMet ? 'Meeting target' : 'Below target'}`}
+                />
+                <StatusLine
+                  ok={responseTargetMet}
+                  label={`Response: ${responseTargetMet ? 'Meeting target' : 'Above target'}`}
+                />
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="text-center text-sm text-gray-500">
-        <p>Last updated: {new Date().toLocaleString()}</p>
-        {autoRefresh && <p className="mt-1">Auto-refreshing every 30 seconds</p>}
+      <div className="text-center text-small text-muted-foreground">
+        <p className="tabular-nums">Last updated: {new Date().toLocaleString()}</p>
+        {autoRefresh && <p className="mt-1">Auto-refreshing every 30 seconds.</p>}
       </div>
+    </div>
+  )
+}
+
+function MetricCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border bg-card p-4 shadow-surface-1">
+      <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-tiny">{label}</span>
+      </div>
+      <span className="text-h2 tabular-nums text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function StatusLine({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-small">
+      {ok ? (
+        <CheckCircle2 className="h-4 w-4 text-status-healthy" />
+      ) : (
+        <XCircle className="h-4 w-4 text-status-critical" />
+      )}
+      <span className="text-muted-foreground">{label}</span>
     </div>
   )
 }

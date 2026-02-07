@@ -3,7 +3,8 @@
  * GTFS data pipeline status (static feed + realtime harvester)
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { Database, Package, RadioTower } from 'lucide-react'
 import { apiClient } from '../../../services/api'
 import { useAutoRefresh } from '../../../hooks/useAutoRefresh'
 import type { IngestionStatus } from '../../../types/ingestion'
@@ -46,40 +47,37 @@ export default function IngestionTab() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Refresh Button */}
+    <div className="space-y-5">
       <div className="flex justify-end">
         <RefreshButton onClick={fetchStatus} loading={loading} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* GTFS Static Feed Card */}
-        <div className="bg-card rounded-lg border border-border p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-2xl">📦</span>
-            <h2 className="text-xl font-semibold text-foreground">GTFS Static Feed</h2>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div className="rounded-md border border-border bg-card p-5 shadow-surface-1">
+          <div className="mb-4 flex items-center gap-2">
+            <Package className="h-5 w-5 text-primary" />
+            <h2 className="text-h2 text-foreground">GTFS Static Feed</h2>
           </div>
 
           {loading && !status ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-4 bg-gray-200 animate-pulse rounded" />
+                <div key={i} className="h-4 animate-pulse rounded bg-surface-muted" />
               ))}
             </div>
           ) : status?.gtfs_feed ? (
             <div className="space-y-4">
-              {/* Status Indicator */}
-              <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-small">
                 <span
-                  className={`w-3 h-3 rounded-full ${
+                  className={`h-2.5 w-2.5 rounded-full ${
                     status.gtfs_feed.is_expired
-                      ? 'bg-red-500'
+                      ? 'bg-status-critical'
                       : status.gtfs_feed.feed_id
-                        ? 'bg-green-500'
-                        : 'bg-gray-400'
+                        ? 'bg-status-healthy animate-status-pulse'
+                        : 'bg-status-neutral'
                   }`}
                 />
-                <span className="text-sm font-medium text-foreground">
+                <span className="font-semibold text-foreground">
                   {status.gtfs_feed.is_expired
                     ? 'Feed Expired'
                     : status.gtfs_feed.feed_id
@@ -88,25 +86,26 @@ export default function IngestionTab() {
                 </span>
               </div>
 
-              {/* Feed Details */}
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Last Import</span>
-                  <span className="text-foreground font-medium">
+              <div className="space-y-2 text-small">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Last Import</span>
+                  <span className="text-foreground tabular-nums">
                     {formatDate(status.gtfs_feed.downloaded_at)}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Valid From</span>
-                  <span className="text-foreground">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Valid From</span>
+                  <span className="text-foreground tabular-nums">
                     {formatShortDate(status.gtfs_feed.feed_start_date)}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Valid Until</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Valid Until</span>
                   <span
                     className={
-                      status.gtfs_feed.is_expired ? 'text-red-600 font-medium' : 'text-foreground'
+                      status.gtfs_feed.is_expired
+                        ? 'text-status-critical tabular-nums'
+                        : 'text-foreground tabular-nums'
                     }
                   >
                     {formatShortDate(status.gtfs_feed.feed_end_date)}
@@ -114,125 +113,121 @@ export default function IngestionTab() {
                 </div>
               </div>
 
-              {/* Record Counts */}
-              <div className="pt-4 border-t border-border">
-                <h4 className="text-sm font-medium text-foreground mb-3">Record Counts</h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <div className="text-lg font-bold text-foreground">
-                      {status.gtfs_feed.stop_count.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500">Stops</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <div className="text-lg font-bold text-foreground">
-                      {status.gtfs_feed.route_count.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500">Routes</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <div className="text-lg font-bold text-foreground">
-                      {status.gtfs_feed.trip_count.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500">Trips</div>
-                  </div>
+              <div className="border-t border-border pt-4">
+                <h4 className="mb-3 text-tiny text-muted-foreground">Record Counts</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  <MetricTile
+                    icon={<Database className="h-3.5 w-3.5" />}
+                    label="Stops"
+                    value={status.gtfs_feed.stop_count}
+                  />
+                  <MetricTile
+                    icon={<Database className="h-3.5 w-3.5" />}
+                    label="Routes"
+                    value={status.gtfs_feed.route_count}
+                  />
+                  <MetricTile
+                    icon={<Database className="h-3.5 w-3.5" />}
+                    label="Trips"
+                    value={status.gtfs_feed.trip_count}
+                  />
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-gray-500">No feed data available</p>
+            <p className="text-small text-muted-foreground">No feed data available.</p>
           )}
         </div>
 
-        {/* GTFS-RT Harvester Card */}
-        <div className="bg-card rounded-lg border border-border p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-2xl">📡</span>
-            <h2 className="text-xl font-semibold text-foreground">Realtime Harvester</h2>
+        <div className="rounded-md border border-border bg-card p-5 shadow-surface-1">
+          <div className="mb-4 flex items-center gap-2">
+            <RadioTower className="h-5 w-5 text-primary" />
+            <h2 className="text-h2 text-foreground">Realtime Harvester</h2>
           </div>
 
           {loading && !status ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-4 bg-gray-200 animate-pulse rounded" />
+                <div key={i} className="h-4 animate-pulse rounded bg-surface-muted" />
               ))}
             </div>
           ) : status?.gtfs_rt_harvester ? (
             <div className="space-y-4">
-              {/* Status Indicator */}
-              <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-small">
                 <span
-                  className={`w-3 h-3 rounded-full ${
+                  className={`h-2.5 w-2.5 rounded-full ${
                     status.gtfs_rt_harvester.is_running
-                      ? 'bg-green-500 animate-pulse'
-                      : 'bg-gray-400'
+                      ? 'bg-status-healthy animate-status-pulse'
+                      : 'bg-status-neutral'
                   }`}
                 />
-                <span className="text-sm font-medium text-foreground">
+                <span className="font-semibold text-foreground">
                   {status.gtfs_rt_harvester.is_running ? 'Running' : 'Stopped'}
                 </span>
               </div>
 
-              {/* Harvester Details */}
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Last Harvest</span>
-                  <span className="text-foreground">
+              <div className="space-y-2 text-small">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Last Harvest</span>
+                  <span className="text-foreground tabular-nums">
                     {status.gtfs_rt_harvester.last_harvest_at
                       ? formatDate(status.gtfs_rt_harvester.last_harvest_at)
                       : 'Never'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Stations Updated (Last)</span>
-                  <span className="text-foreground font-medium">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Stations Updated (Last)</span>
+                  <span className="text-foreground tabular-nums">
                     {status.gtfs_rt_harvester.stations_updated_last_harvest.toLocaleString()}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Total Stats Records</span>
-                  <span className="text-foreground font-medium">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Total Stats Records</span>
+                  <span className="text-foreground tabular-nums">
                     {status.gtfs_rt_harvester.total_stats_records.toLocaleString()}
                   </span>
                 </div>
               </div>
 
-              {/* Visual Stats */}
-              <div className="pt-4 border-t border-border">
+              <div className="border-t border-border pt-4">
                 <div className="flex items-center gap-3">
-                  <div
-                    className={`flex-1 h-2 rounded-full ${
-                      status.gtfs_rt_harvester.is_running ? 'bg-green-100' : 'bg-gray-100'
-                    }`}
-                  >
+                  <div className="h-2 flex-1 overflow-hidden rounded bg-surface-muted">
                     <div
-                      className={`h-2 rounded-full transition-all ${
+                      className={`h-full transition-all duration-300 ${
                         status.gtfs_rt_harvester.is_running
-                          ? 'bg-green-500 animate-pulse'
-                          : 'bg-gray-400'
+                          ? 'w-full bg-status-healthy'
+                          : 'w-[8%] bg-status-neutral'
                       }`}
-                      style={{
-                        width: status.gtfs_rt_harvester.is_running ? '100%' : '0%',
-                      }}
                     />
                   </div>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-tiny text-muted-foreground">
                     {status.gtfs_rt_harvester.is_running ? 'Active' : 'Inactive'}
                   </span>
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-gray-500">No harvester data available</p>
+            <p className="text-small text-muted-foreground">No harvester data available.</p>
           )}
         </div>
       </div>
 
-      {/* Info Footer */}
-      <div className="text-center text-sm text-gray-500">
-        <p>Data refreshes automatically every 30 seconds</p>
-        <p className="mt-1">Last updated: {new Date().toLocaleTimeString()}</p>
+      <div className="text-center text-small text-muted-foreground">
+        <p>Data refreshes automatically every 30 seconds.</p>
+        <p className="mt-1 tabular-nums">Last updated: {new Date().toLocaleTimeString()}</p>
       </div>
+    </div>
+  )
+}
+
+function MetricTile({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-border bg-surface-elevated p-3 text-center">
+      <div className="mb-1 inline-flex items-center gap-1 text-muted-foreground">
+        {icon}
+        <span className="text-tiny">{label}</span>
+      </div>
+      <div className="text-h3 tabular-nums text-foreground">{value.toLocaleString()}</div>
     </div>
   )
 }

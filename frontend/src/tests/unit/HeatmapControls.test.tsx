@@ -128,6 +128,15 @@ describe('HeatmapControls', () => {
     expect(screen.getByText('Showing combined cancellation & delay intensity')).toBeInTheDocument()
   })
 
+  it('shows an active filter summary', () => {
+    render(<HeatmapControls {...defaultProps} />)
+
+    expect(screen.getByText('Active filters')).toBeInTheDocument()
+    expect(screen.getByText('Time: Last 24 hours')).toBeInTheDocument()
+    expect(screen.getByText('Metrics: Cancellations + Delays')).toBeInTheDocument()
+    expect(screen.getByText('Transport: All types')).toBeInTheDocument()
+  })
+
   it('prevents disabling both metrics', () => {
     const onEnabledMetricsChange = vi.fn()
     render(

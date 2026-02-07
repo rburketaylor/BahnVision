@@ -1,10 +1,10 @@
 /**
  * Heatmap Controls Component
  * Time range selector and transport mode filters for the heatmap
- * BVV-styled with circular badges, toggle switches, and pill selectors
  */
 
 import { useState, useEffect } from 'react'
+import { Check, Clock3, Filter, PauseCircle, RadioTower } from 'lucide-react'
 import type { TransportType } from '../../../types/api'
 import type { TimeRangePreset, HeatmapEnabledMetrics } from '../../../types/heatmap'
 import { TIME_RANGE_LABELS, HEATMAP_METRIC_LABELS } from '../../../types/heatmap'
@@ -23,12 +23,12 @@ interface HeatmapControlsProps {
   isLoading?: boolean
 }
 
-const TRANSPORT_MODES: { value: TransportType; label: string; color: string }[] = [
-  { value: 'UBAHN', label: 'U-Bahn', color: 'bg-ubahn' },
-  { value: 'SBAHN', label: 'S-Bahn', color: 'bg-sbahn' },
-  { value: 'TRAM', label: 'Tram', color: 'bg-tram' },
-  { value: 'BUS', label: 'Bus', color: 'bg-bus' },
-  { value: 'BAHN', label: 'Regional', color: 'bg-gray-600' },
+const TRANSPORT_MODES: { value: TransportType; label: string }[] = [
+  { value: 'UBAHN', label: 'U-Bahn' },
+  { value: 'SBAHN', label: 'S-Bahn' },
+  { value: 'TRAM', label: 'Tram' },
+  { value: 'BUS', label: 'Bus' },
+  { value: 'BAHN', label: 'Regional' },
 ]
 
 const TIME_RANGES: TimeRangePreset[] = ['live', '1h', '6h', '24h', '7d', '30d']
@@ -45,7 +45,6 @@ export function HeatmapControls({
   snapshotUpdatedAt,
   isLoading = false,
 }: HeatmapControlsProps) {
-  // Track current time for relative time display (updates every 30s)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -53,7 +52,6 @@ export function HeatmapControls({
     return () => clearInterval(interval)
   }, [])
 
-  // Format last updated time as relative time
   const formatLastUpdated = (isoTimestamp: string) => {
     const parsed = Date.parse(isoTimestamp)
     if (Number.isNaN(parsed)) return 'unknown'
@@ -76,61 +74,97 @@ export function HeatmapControls({
   }
 
   const toggleMetric = (metric: keyof HeatmapEnabledMetrics) => {
-    // Don't allow both to be disabled
     const newEnabled = { ...enabledMetrics, [metric]: !enabledMetrics[metric] }
     if (!newEnabled.cancellations && !newEnabled.delays) {
-      return // Keep at least one enabled
+      return
     }
     onEnabledMetricsChange(newEnabled)
   }
 
+  const activeMetricLabels = (
+    [
+      enabledMetrics.cancellations ? HEATMAP_METRIC_LABELS.cancellations : null,
+      enabledMetrics.delays ? HEATMAP_METRIC_LABELS.delays : null,
+    ] as const
+  ).filter((metric): metric is string => metric !== null)
+
+  const isTransportFiltered =
+    selectedTransportModes.length > 0 && selectedTransportModes.length < TRANSPORT_MODES.length
+  const activeTransportLabels = TRANSPORT_MODES.filter(mode =>
+    selectedTransportModes.includes(mode.value)
+  ).map(mode => mode.label)
+
+  const activeFilterChips = [
+    `Time: ${TIME_RANGE_LABELS[timeRange]}`,
+    `Metrics: ${activeMetricLabels.length > 0 ? activeMetricLabels.join(' + ') : 'None'}`,
+    isTransportFiltered ? `Transport: ${activeTransportLabels.join(', ')}` : 'Transport: All types',
+    ...(timeRange === 'live' ? [`Refresh: ${autoRefresh ? 'Auto' : 'Paused'}`] : []),
+  ]
+
   return (
-    <div className="bg-card rounded-lg border border-border p-4 space-y-4">
-      {/* Live Mode Toggle */}
+    <div
+      className="space-y-4 rounded-md border border-border p-4"
+      style={{ backgroundColor: 'hsl(var(--surface) / 0.9)' }}
+    >
       <div className="flex items-center justify-between">
         <h3 className="text-h3 text-foreground">Filters</h3>
         <button
           onClick={() => onAutoRefreshChange(!autoRefresh)}
           disabled={isLoading}
-          className={`btn-bvv flex items-center gap-2 px-3 py-1.5 rounded-full text-small font-medium transition-colors ${
+          className={`btn-bvv inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-small font-semibold uppercase tracking-[0.05em] ${
             autoRefresh
-              ? 'bg-status-healthy/20 text-status-healthy border border-status-healthy/40'
-              : 'bg-muted text-muted hover:bg-muted/80 border border-transparent'
-          } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              ? 'border-status-healthy/45 bg-status-healthy/12 text-status-healthy ring-1 ring-status-healthy/35'
+              : 'border-border bg-surface-elevated text-muted-foreground'
+          } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
           aria-pressed={autoRefresh}
           title={autoRefresh ? 'Auto-refresh enabled' : 'Click to enable auto-refresh'}
         >
-          <span
-            className={`w-2 h-2 rounded-full transition-all ${
-              autoRefresh ? 'bg-status-healthy animate-pulse' : 'bg-muted-foreground/30'
-            }`}
-          />
+          {autoRefresh ? (
+            <RadioTower className="h-3.5 w-3.5 animate-status-pulse" />
+          ) : (
+            <PauseCircle className="h-3.5 w-3.5" />
+          )}
           {autoRefresh ? 'Auto-refresh' : 'Paused'}
         </button>
       </div>
 
-      {/* Last Updated Info */}
       {timeRange === 'live' && snapshotUpdatedAt && (
-        <div className="text-small text-muted bg-muted/30 rounded-full px-3 py-1.5 text-center">
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-small text-muted-foreground">
+          <Clock3 className="h-3.5 w-3.5" />
           Snapshot updated {formatLastUpdated(snapshotUpdatedAt)}
           {autoRefresh && ' • Auto-refresh on'}
         </div>
       )}
 
-      {/* Time Range Selection - Pill shaped */}
+      <div className="rounded-md border border-primary/30 bg-primary/10 p-3">
+        <p className="text-tiny font-semibold uppercase tracking-[0.05em] text-primary">
+          Active filters
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {activeFilterChips.map(chip => (
+            <span
+              key={chip}
+              className="inline-flex items-center rounded-md border border-border bg-surface px-2 py-1 text-tiny font-semibold text-foreground"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-2">
-        <label className="text-small font-medium text-muted">Time Range</label>
-        <div className="flex flex-wrap gap-2">
+        <label className="text-tiny text-muted-foreground">Time Range</label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {TIME_RANGES.map(range => (
             <button
               key={range}
               onClick={() => onTimeRangeChange(range)}
               disabled={isLoading}
-              className={`btn-bvv px-3 py-1.5 rounded-full text-small font-medium transition-colors ${
+              className={`btn-bvv rounded-md border px-2.5 py-2 text-small font-semibold ${
                 timeRange === range
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted hover:bg-muted/80'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  ? 'border-primary/50 bg-primary/15 text-primary ring-1 ring-primary/35 shadow-sm'
+                  : 'border-border bg-surface text-muted-foreground hover:bg-surface-elevated hover:text-foreground'
+              } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
             >
               {TIME_RANGE_LABELS[range]}
             </button>
@@ -138,67 +172,68 @@ export function HeatmapControls({
         </div>
       </div>
 
-      {/* Metric Toggles */}
       <div className="space-y-2">
-        <label className="text-small font-medium text-muted">Show Metrics</label>
-        <div className="flex flex-wrap gap-3">
+        <label className="text-tiny text-muted-foreground">Show Metrics</label>
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => toggleMetric('cancellations')}
             disabled={isLoading}
-            className={`btn-bvv flex items-center gap-2 px-3 py-1.5 rounded-full text-small font-medium transition-colors ${
+            className={`btn-bvv inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-small font-semibold ${
               enabledMetrics.cancellations
-                ? 'bg-status-critical/20 text-status-critical border border-status-critical/40'
-                : 'bg-muted text-muted hover:bg-muted/80 border border-transparent'
-            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                ? 'border-status-critical/45 bg-status-critical/12 text-status-critical ring-1 ring-status-critical/35 shadow-sm'
+                : 'border-border bg-surface text-muted-foreground hover:bg-surface-elevated hover:text-foreground'
+            } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
             aria-pressed={enabledMetrics.cancellations}
           >
             <span
-              className={`w-3 h-3 rounded-full transition-colors ${
-                enabledMetrics.cancellations ? 'bg-status-critical' : 'bg-muted-foreground/30'
+              className={`h-2.5 w-2.5 rounded-full ${
+                enabledMetrics.cancellations ? 'bg-status-critical' : 'bg-status-neutral/50'
               }`}
             />
             {HEATMAP_METRIC_LABELS.cancellations}
+            {enabledMetrics.cancellations && <Check className="h-3.5 w-3.5" />}
           </button>
           <button
             onClick={() => toggleMetric('delays')}
             disabled={isLoading}
-            className={`btn-bvv flex items-center gap-2 px-3 py-1.5 rounded-full text-small font-medium transition-colors ${
+            className={`btn-bvv inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-small font-semibold ${
               enabledMetrics.delays
-                ? 'bg-status-warning/20 text-status-warning border border-status-warning/40'
-                : 'bg-muted text-muted hover:bg-muted/80 border border-transparent'
-            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                ? 'border-status-warning/45 bg-status-warning/12 text-status-warning ring-1 ring-status-warning/35 shadow-sm'
+                : 'border-border bg-surface text-muted-foreground hover:bg-surface-elevated hover:text-foreground'
+            } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
             aria-pressed={enabledMetrics.delays}
           >
             <span
-              className={`w-3 h-3 rounded-full transition-colors ${
-                enabledMetrics.delays ? 'bg-status-warning' : 'bg-muted-foreground/30'
+              className={`h-2.5 w-2.5 rounded-full ${
+                enabledMetrics.delays ? 'bg-status-warning' : 'bg-status-neutral/50'
               }`}
             />
             {HEATMAP_METRIC_LABELS.delays}
+            {enabledMetrics.delays && <Check className="h-3.5 w-3.5" />}
           </button>
         </div>
         {enabledMetrics.cancellations && enabledMetrics.delays && (
-          <p className="text-small text-muted italic">
+          <p className="text-small text-muted-foreground">
             Showing combined cancellation &amp; delay intensity
           </p>
         )}
       </div>
 
-      {/* Transport Mode Filters - Circular badges */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-small font-medium text-muted">Transport Types</label>
-          <div className="flex gap-2">
-            <button
-              onClick={selectAllModes}
-              disabled={isLoading}
-              className="text-small text-brand hover:text-primary/80 disabled:opacity-50 font-medium"
-            >
-              All
-            </button>
-          </div>
+          <label className="inline-flex items-center gap-1.5 text-tiny text-muted-foreground">
+            <Filter className="h-3.5 w-3.5" />
+            Transport Types
+          </label>
+          <button
+            onClick={selectAllModes}
+            disabled={isLoading}
+            className="btn-bvv text-small font-semibold text-primary hover:text-primary/80 disabled:opacity-50"
+          >
+            All
+          </button>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
           {TRANSPORT_MODES.map(mode => {
             const isSelected =
               selectedTransportModes.length === 0 || selectedTransportModes.includes(mode.value)
@@ -207,22 +242,23 @@ export function HeatmapControls({
                 key={mode.value}
                 onClick={() => toggleTransportMode(mode.value)}
                 disabled={isLoading}
-                className={`btn-bvv relative ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`btn-bvv inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 ${
+                  isSelected
+                    ? 'border-primary/50 bg-primary/15 text-foreground ring-1 ring-primary/35 shadow-sm'
+                    : 'border-border bg-surface text-muted-foreground hover:bg-surface-elevated'
+                } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
                 aria-label={`Toggle ${mode.label}`}
                 aria-pressed={isSelected}
               >
-                <div className={isSelected ? '' : 'opacity-40 hover:opacity-60 transition-opacity'}>
-                  <TransportBadge type={mode.value} />
-                </div>
-                {isSelected && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-status-healthy" />
-                )}
+                <TransportBadge type={mode.value} small />
+                <span className="text-small font-semibold">{mode.label}</span>
+                {isSelected && <Check className="h-3.5 w-3.5 text-primary/80" />}
               </button>
             )
           })}
         </div>
         {selectedTransportModes.length === 0 && (
-          <p className="text-small text-muted italic">Showing all transport types</p>
+          <p className="text-small text-muted-foreground">Showing all transport types</p>
         )}
       </div>
     </div>

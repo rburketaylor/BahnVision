@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState, lazy, Suspense, useCallback } from 'react'
+import { AlertTriangle, Info, Lightbulb } from 'lucide-react'
 import { useHeatmapOverview } from '../hooks/useHeatmapOverview'
 import { useStationStats } from '../hooks/useStationStats'
 import {
@@ -44,7 +45,7 @@ function isTypingTarget(target: EventTarget | null) {
 // Helper to generate title based on enabled metrics
 function getHeatmapTitle(enabledMetrics: HeatmapEnabledMetrics): string {
   if (enabledMetrics.cancellations && enabledMetrics.delays) {
-    return 'Combined Impact Heatmap'
+    return 'Impact Heatmap'
   }
   if (enabledMetrics.cancellations) {
     return `${HEATMAP_METRIC_LABELS.cancellations} Heatmap`
@@ -78,10 +79,10 @@ function toOverviewMetric(enabledMetrics: HeatmapEnabledMetrics): HeatmapOvervie
 // Loading skeleton for the map
 function MapLoadingSkeleton() {
   return (
-    <div className="w-full h-full flex items-center justify-center bg-muted/30 rounded-lg">
+    <div className="flex h-full w-full items-center justify-center rounded-md border border-border bg-surface/85">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-3" />
-        <p className="text-sm text-muted-foreground">Loading map...</p>
+        <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
+        <p className="text-small text-muted-foreground">Loading map...</p>
       </div>
     </div>
   )
@@ -211,57 +212,36 @@ export default function HeatmapPage() {
                 onRefresh={() => refetch()}
               >
                 {error && (
-                  <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3">
                     <div className="flex items-center gap-2 text-destructive">
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                      <span className="text-sm font-medium">Failed to load heatmap data</span>
+                      <AlertTriangle className="h-5 w-5" />
+                      <span className="text-small font-semibold">Failed to load heatmap data</span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-small text-muted-foreground">
                       {error instanceof Error ? error.message : 'An unexpected error occurred'}
                     </p>
                   </div>
                 )}
 
                 {!error && !isOverviewLoading && dataPoints.length === 0 && (
-                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
-                    <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                      <span className="text-sm font-medium">No data available yet</span>
+                  <div className="rounded-md border border-primary/30 bg-primary/10 p-3">
+                    <div className="flex items-center gap-2 text-primary">
+                      <Info className="h-5 w-5" />
+                      <span className="text-small font-semibold">No data available yet</span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-small text-muted-foreground">
                       Real-time transit data is being collected. Check back in a few minutes as the
                       system gathers delay and cancellation information from GTFS-RT feeds.
                     </p>
                   </div>
                 )}
 
-                <div className="bg-muted/40 rounded-lg border border-border/60 p-3">
-                  <h3 className="text-xs font-semibold text-foreground">Tips</h3>
-                  <ul className="mt-2 text-xs text-muted-foreground space-y-1">
+                <div className="rounded-md border border-border bg-surface-elevated p-3">
+                  <h3 className="inline-flex items-center gap-2 text-small font-semibold text-foreground">
+                    <Lightbulb className="h-4 w-4 text-primary" />
+                    Tips
+                  </h3>
+                  <ul className="mt-2 space-y-1 text-small text-muted-foreground">
                     <li>Click a station dot to see details.</li>
                     <li>Click a cluster to zoom in.</li>
                     <li>Use "Reset view" to return to Germany.</li>
@@ -289,12 +269,12 @@ export default function HeatmapPage() {
                   enabledMetrics={enabledMetrics}
                 />
 
-                <div className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-3">
+                <div className="rounded-md border border-border bg-surface-elevated p-3 text-tiny text-muted-foreground">
                   <p>
                     <strong>Data source:</strong> GTFS schedule data from{' '}
                     <a
                       href="https://gtfs.de"
-                      className="underline hover:text-foreground"
+                      className="underline decoration-dotted underline-offset-2 hover:text-foreground"
                       target="_blank"
                       rel="noopener noreferrer"
                     >

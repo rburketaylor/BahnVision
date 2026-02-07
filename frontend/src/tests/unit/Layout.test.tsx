@@ -44,7 +44,8 @@ describe('Layout', () => {
     expect(screen.getByText('Stations Content')).toBeInTheDocument()
 
     const stationsLink = screen.getByRole('link', { name: 'Stations' })
-    expect(stationsLink.className).toContain('bg-primary/10')
+    expect(stationsLink.className).toContain('bg-primary/12')
+    expect(stationsLink.className).toContain('text-primary')
 
     await user.click(screen.getByRole('link', { name: 'Map' }))
     expect(screen.getByText('Map Home')).toBeInTheDocument()

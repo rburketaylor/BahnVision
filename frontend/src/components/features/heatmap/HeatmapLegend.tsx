@@ -1,7 +1,6 @@
 /**
  * Heatmap Legend Component
- * Displays the color legend for cancellation/delay intensity
- * BVV-styled with gradient bar and improved visual hierarchy
+ * Displays color intensity legend for cancellation/delay impact.
  */
 
 import { useState } from 'react'
@@ -34,22 +33,11 @@ export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendP
     .map(([k, v]) => `${v} ${Math.round(k * 100)}%`)
     .join(', ')})`
 
-  // Determine legend items based on enabled metrics
   const getLegendItems = (): LegendItem[] => {
     const swatches =
       resolvedTheme === 'dark'
-        ? [
-            'rgba(255, 168, 0, 0.70)',
-            'rgba(255, 98, 0, 0.80)',
-            'rgba(255, 20, 60, 0.90)',
-            'rgba(190, 0, 60, 1.0)',
-          ]
-        : [
-            'rgba(34, 211, 238, 0.55)',
-            'rgba(59, 130, 246, 0.70)',
-            'rgba(99, 102, 241, 0.82)',
-            'rgba(139, 92, 246, 0.95)',
-          ]
+        ? ['#2dd4bf', '#0ea5e9', '#f59e0b', '#ef4444']
+        : ['#67e8f9', '#38bdf8', '#f59e0b', '#dc2626']
 
     if (enabledMetrics.cancellations && enabledMetrics.delays) {
       return [
@@ -77,7 +65,6 @@ export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendP
 
   const legendItems = getLegendItems()
 
-  // Determine legend title based on enabled metrics
   const getTitle = () => {
     if (enabledMetrics.cancellations && enabledMetrics.delays) {
       return 'Combined Intensity'
@@ -89,53 +76,43 @@ export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendP
   }
 
   return (
-    <div className={`bg-card rounded-lg border border-border p-4 ${className}`}>
-      <h3 className="text-h3 text-foreground mb-3">{getTitle()}</h3>
+    <div className={`rounded-md border border-border bg-card p-4 ${className}`}>
+      <h3 className="mb-3 text-h3 text-foreground">{getTitle()}</h3>
 
-      {/* Gradient bar with tick marks */}
       <div className="relative mb-2">
-        <div
-          className="h-5 w-full rounded-md shadow-inner"
-          style={{
-            background: gradientCss,
-          }}
-        />
-        {/* Tick marks */}
-        <div className="absolute top-0 left-0 w-full flex justify-between px-1 -mt-1">
-          <div className="w-px h-6 bg-border/50" />
-          <div className="w-px h-6 bg-border/50" />
-          <div className="w-px h-6 bg-border/50" />
-          <div className="w-px h-6 bg-border/50" />
+        <div className="h-4 w-full rounded-sm shadow-inner" style={{ background: gradientCss }} />
+        <div className="absolute -top-1 left-0 flex w-full justify-between px-1">
+          <div className="h-6 w-px bg-border/70" />
+          <div className="h-6 w-px bg-border/70" />
+          <div className="h-6 w-px bg-border/70" />
+          <div className="h-6 w-px bg-border/70" />
         </div>
       </div>
 
-      <div className="flex justify-between mb-4">
-        <span className="text-tiny text-muted">Low</span>
-        <span className="text-tiny text-muted">Medium</span>
-        <span className="text-tiny text-muted">High</span>
+      <div className="mb-4 flex justify-between">
+        <span className="text-tiny text-muted-foreground">Low</span>
+        <span className="text-tiny text-muted-foreground">Medium</span>
+        <span className="text-tiny text-muted-foreground">High</span>
       </div>
 
-      {/* Interactive legend items */}
-      <div className="space-y-2 stagger-animation">
+      <div className="space-y-2 stagger-enter">
         {legendItems.map((item, index) => (
           <div
             key={index}
-            className={`flex items-center gap-3 py-1.5 px-2 rounded-md transition-all cursor-default ${
-              hoveredIndex === index ? 'bg-muted/50 -translate-x-1' : ''
+            className={`flex cursor-default items-center gap-3 rounded-sm px-2 py-1.5 transition-all ${
+              hoveredIndex === index ? 'bg-surface-elevated' : ''
             }`}
             onMouseEnter={() => setHoveredIndex(index)}
             onMouseLeave={() => setHoveredIndex(null)}
           >
             <div
-              className="w-4 h-4 rounded-full shrink-0 shadow-sm"
+              className="h-3.5 w-3.5 shrink-0 rounded-sm"
               style={{ backgroundColor: item.color }}
             />
-            <div className="flex-1 min-w-0">
-              <span className="text-body text-muted block">{item.label}</span>
+            <div className="min-w-0 flex-1">
+              <span className="block text-body text-muted-foreground">{item.label}</span>
             </div>
-            <span className="text-small font-medium text-foreground tabular-nums">
-              {item.value}
-            </span>
+            <span className="text-small tabular-nums text-foreground">{item.value}</span>
           </div>
         ))}
       </div>
