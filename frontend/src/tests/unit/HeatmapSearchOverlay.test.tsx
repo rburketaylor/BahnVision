@@ -113,6 +113,17 @@ describe('HeatmapSearchOverlay', () => {
     expect(screen.getByText('Find Station')).toBeInTheDocument()
   })
 
+  it('does not toggle with modified Save shortcuts', async () => {
+    const user = userEvent.setup()
+    renderOverlay(<HeatmapSearchOverlay />)
+
+    expect(screen.getByRole('button', { name: 'Search stations (S)' })).toBeInTheDocument()
+
+    await user.keyboard('{Control>}s{/Control}')
+    expect(screen.getByRole('button', { name: 'Search stations (S)' })).toBeInTheDocument()
+    expect(screen.queryByText('Find Station')).not.toBeInTheDocument()
+  })
+
   it('hides details link when configured', async () => {
     const user = userEvent.setup()
     renderOverlay(<HeatmapSearchOverlay showDetailsLink={false} />)

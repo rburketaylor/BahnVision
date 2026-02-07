@@ -10,6 +10,8 @@ import { useAutoRefresh } from '../../../hooks/useAutoRefresh'
 import type { IngestionStatus } from '../../../types/ingestion'
 import { ErrorCard, RefreshButton } from '../../shared'
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
 export default function IngestionTab() {
   const [status, setStatus] = useState<IngestionStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -32,11 +34,17 @@ export default function IngestionTab() {
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A'
+    if (DATE_ONLY_PATTERN.test(dateStr)) {
+      return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC' })
+    }
     return new Date(dateStr).toLocaleString()
   }
 
   const formatShortDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A'
+    if (DATE_ONLY_PATTERN.test(dateStr)) {
+      return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC' })
+    }
     return new Date(dateStr).toLocaleDateString()
   }
 

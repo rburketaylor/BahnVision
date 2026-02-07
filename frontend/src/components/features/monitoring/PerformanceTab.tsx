@@ -39,6 +39,8 @@ export default function PerformanceTab() {
         errorRate: 0,
         cacheEvents: {},
       }
+      let responseTimeSumSeconds = 0
+      let responseTimeCount = 0
 
       const lines = metricsText.split('\n')
 
@@ -62,11 +64,12 @@ export default function PerformanceTab() {
           parsedMetrics.totalRequests += parseInt(value) || 0
         }
 
-        if (metric.includes('bahnvision_transit_request_seconds') && metric.includes('le="')) {
-          const duration = parseFloat(value) || 0
-          if (duration > 0) {
-            parsedMetrics.avgResponseTime = duration * 1000
-          }
+        if (metric.startsWith('bahnvision_transit_request_seconds_sum')) {
+          responseTimeSumSeconds += parseFloat(value) || 0
+        }
+
+        if (metric.startsWith('bahnvision_transit_request_seconds_count')) {
+          responseTimeCount += parseFloat(value) || 0
         }
       }
 
@@ -74,6 +77,8 @@ export default function PerformanceTab() {
       const misses = parsedMetrics.cacheEvents['json_miss'] || 0
       const total = hits + misses
       parsedMetrics.cacheHitRate = total > 0 ? (hits / total) * 100 : 0
+      parsedMetrics.avgResponseTime =
+        responseTimeCount > 0 ? (responseTimeSumSeconds / responseTimeCount) * 1000 : 0
 
       setMetrics(parsedMetrics)
     } catch (error) {

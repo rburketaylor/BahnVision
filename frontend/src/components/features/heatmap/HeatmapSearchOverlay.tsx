@@ -46,8 +46,10 @@ export function HeatmapSearchOverlay({
       }
 
       if (e.key === 's' || e.key === 'S') {
+        if (e.ctrlKey || e.metaKey || e.altKey) return
         const target = e.target as HTMLElement
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+          return
         e.preventDefault()
         setIsExpanded(prev => !prev)
       }

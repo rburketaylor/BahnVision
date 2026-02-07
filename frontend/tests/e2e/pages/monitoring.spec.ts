@@ -62,7 +62,9 @@ bahnvision_transit_requests_total{method="GET"} 1000
     await page.goto('/monitoring')
 
     await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
-    await expect(page.getByText(/Real-time system health/)).toBeVisible()
+    await expect(
+      page.getByText(/Real-time health, ingestion status, and performance metrics\./i)
+    ).toBeVisible()
   })
 
   test('displays tab navigation', async ({ page }) => {

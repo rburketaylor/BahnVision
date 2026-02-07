@@ -14,7 +14,7 @@ test.describe('Search Page', () => {
   test('displays search page with input', async ({ page }) => {
     await page.goto('/search')
 
-    await expect(page.getByRole('heading', { name: /bahnvision/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Command Search/i })).toBeVisible()
     await expect(page.getByRole('combobox', { name: /station search/i })).toBeVisible()
   })
 
@@ -117,8 +117,8 @@ test.describe('Search Page - Quick Links', () => {
   test('displays feature cards', async ({ page }) => {
     await page.goto('/search')
 
-    await expect(page.getByText(/real-time data/i)).toBeVisible()
-    await expect(page.getByText(/route planning/i)).toBeVisible()
-    await expect(page.getByText(/system insights/i)).toBeVisible()
+    await expect(page.getByText('Live Departures', { exact: true })).toBeVisible()
+    await expect(page.getByText('Trend Analysis', { exact: true })).toBeVisible()
+    await expect(page.getByText('Operations Visibility', { exact: true })).toBeVisible()
   })
 })
