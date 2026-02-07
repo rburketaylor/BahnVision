@@ -2,17 +2,17 @@ import logging
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, List, Optional
 
-from sqlalchemy import select, and_, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.gtfs import (
-    GTFSStop,
-    GTFSRoute,
-    GTFSStopTime,
-    GTFSTrip,
     GTFSCalendar,
     GTFSCalendarDate,
+    GTFSRoute,
+    GTFSStop,
+    GTFSStopTime,
+    GTFSTrip,
 )
 
 logger = logging.getLogger(__name__)

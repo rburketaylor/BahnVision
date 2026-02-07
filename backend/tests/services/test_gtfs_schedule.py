@@ -4,19 +4,19 @@ Unit tests for GTFSScheduleService.
 Tests schedule queries, stop search, and nearby stops functionality.
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from app.models.gtfs import GTFSCalendar
 from app.services.gtfs_schedule import (
     GTFSScheduleService,
     ScheduledDeparture,
     StopNotFoundError,
-    time_to_interval,
-    interval_to_datetime,
     _get_weekday_column,
+    interval_to_datetime,
+    time_to_interval,
 )
-from app.models.gtfs import GTFSCalendar
 
 
 class TestTimeToInterval:
