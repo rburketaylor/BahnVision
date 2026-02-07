@@ -4,7 +4,7 @@ Tests for the heatmap endpoint.
 
 from __future__ import annotations
 
-from app.models.heatmap import HeatmapResponse
+from app.models.heatmap import HeatmapOverviewResponse, HeatmapResponse
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
     heatmap_live_snapshot_cache_key,
@@ -191,6 +191,58 @@ def test_heatmap_live_transport_filter(api_client, fake_cache):
     validated = HeatmapResponse.model_validate(data)
     assert validated.summary.total_departures == 5
     assert validated.data_points[0].cancelled_count == 2
+
+
+def test_heatmap_overview_live_transport_filter(api_client, fake_cache):
+    """Test live heatmap overview endpoint filters by transport modes."""
+    cached_payload = {
+        "time_range": {
+            "from": "2025-01-15T00:00:00Z",
+            "to": "2025-01-15T00:05:00Z",
+        },
+        "last_updated_at": "2025-01-15T00:05:00Z",
+        "data_points": [
+            {
+                "station_id": "de:09162:6",
+                "station_name": "Marienplatz",
+                "latitude": 48.137,
+                "longitude": 11.575,
+                "total_departures": 12,
+                "cancelled_count": 2,
+                "cancellation_rate": 0.166,
+                "delayed_count": 1,
+                "delay_rate": 0.083,
+                "by_transport": {
+                    "UBAHN": {"total": 5, "cancelled": 2, "delayed": 0},
+                    "BUS": {"total": 7, "cancelled": 0, "delayed": 1},
+                },
+            }
+        ],
+        "summary": {
+            "total_stations": 1,
+            "total_departures": 12,
+            "total_cancellations": 2,
+            "overall_cancellation_rate": 0.166,
+            "total_delays": 1,
+            "overall_delay_rate": 0.083,
+            "most_affected_station": "Marienplatz",
+            "most_affected_line": "U-Bahn",
+        },
+    }
+
+    fake_cache.configure(
+        heatmap_live_snapshot_cache_key(),
+        CacheScenario(fresh_value=cached_payload),
+    )
+
+    response = api_client.get(
+        "/api/v1/heatmap/overview?time_range=live&transport_modes=UBAHN"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    validated = HeatmapOverviewResponse.model_validate(data)
+    assert validated.summary.total_departures == 5
+    assert validated.total_impacted_stations == 1
 
 
 def test_heatmap_cancellations_with_time_range(

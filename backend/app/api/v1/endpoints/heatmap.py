@@ -510,11 +510,14 @@ async def get_heatmap_overview(
         if cached_data:
             response.headers["X-Cache-Status"] = "hit"
             snapshot = HeatmapResponse.model_validate(cached_data)
-            points = _overview_points_from_snapshot(snapshot, metrics)
+            filtered_snapshot = _filter_live_snapshot(
+                snapshot, transport_modes, len(snapshot.data_points)
+            )
+            points = _overview_points_from_snapshot(filtered_snapshot, metrics)
             return HeatmapOverviewResponse(
-                time_range=snapshot.time_range,
+                time_range=filtered_snapshot.time_range,
                 points=points,
-                summary=snapshot.summary,
+                summary=filtered_snapshot.summary,
                 total_impacted_stations=len(points),
             )
 
@@ -522,11 +525,14 @@ async def get_heatmap_overview(
         if stale_data:
             response.headers["X-Cache-Status"] = "stale"
             snapshot = HeatmapResponse.model_validate(stale_data)
-            points = _overview_points_from_snapshot(snapshot, metrics)
+            filtered_snapshot = _filter_live_snapshot(
+                snapshot, transport_modes, len(snapshot.data_points)
+            )
+            points = _overview_points_from_snapshot(filtered_snapshot, metrics)
             return HeatmapOverviewResponse(
-                time_range=snapshot.time_range,
+                time_range=filtered_snapshot.time_range,
                 points=points,
-                summary=snapshot.summary,
+                summary=filtered_snapshot.summary,
                 total_impacted_stations=len(points),
             )
 
