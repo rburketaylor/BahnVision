@@ -1,6 +1,5 @@
 """Unit tests for cache primitives."""
 
-import time
 from unittest.mock import Mock
 
 from unittest.mock import patch
@@ -67,10 +66,12 @@ class TestCircuitBreaker:
         breaker.close()
         assert not breaker.is_open()
 
-    def test_recovery_timeout(self, breaker):
+    def test_recovery_timeout(self, breaker, monkeypatch):
+        now = 1000.0
+        monkeypatch.setattr("app.services.cache.time.monotonic", lambda: now)
         breaker.open()
         assert breaker.is_open()
-        time.sleep(0.15)
+        now += 0.15
         assert not breaker.is_open()
 
     def test_protect_returns_none_when_open(self, breaker):

@@ -92,7 +92,7 @@ repos:
         name: test quality check
         entry: python scripts/check_test_quality.py
         language: system
-        files: (backend/tests|frontend/src)/.*\.(py|test\.tsx?)$
+        files: (backend/tests|frontend/src)/.*\.(py|test\.tsx?|spec\.tsx?)$
         args: [backend/tests, frontend/src]
         pass_filenames: false
 

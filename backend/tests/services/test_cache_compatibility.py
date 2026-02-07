@@ -190,10 +190,15 @@ class TestCacheService:
         assert result2 == {"at": dt.isoformat()}
 
     @pytest.mark.asyncio
-    async def test_fallback_store_ttl_expiration(self, cache_service, fake_valkey):
+    async def test_fallback_store_ttl_expiration(
+        self, cache_service, fake_valkey, monkeypatch
+    ):
         """Test that fallback store properly handles TTL expiration."""
         test_key = "ttl_expire_test"
         test_value = {"expire": "test"}
+
+        now = 1000.0
+        monkeypatch.setattr("app.services.cache.time.monotonic", lambda: now)
 
         # Simulate Valkey failure to force fallback usage
         fake_valkey.should_fail = True
@@ -205,8 +210,8 @@ class TestCacheService:
         result = await cache_service.get_json(test_key)
         assert result == test_value
 
-        # Wait for expiration
-        await asyncio.sleep(1.1)
+        # Advance monotonic clock beyond TTL expiration.
+        now += 1.1
 
         # Should be expired now (note: fallback store cleanup happens on access)
         result = await cache_service.get_json(test_key)

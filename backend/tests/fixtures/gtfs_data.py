@@ -18,6 +18,9 @@ from app.models.gtfs import (
     GTFSFeedInfo,
 )
 
+DEFAULT_TEST_DATE = date(2025, 1, 1)
+DEFAULT_TEST_DATETIME = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+
 
 def create_test_gtfs_stop(
     stop_id: str = "de:09162:6",
@@ -120,9 +123,9 @@ def create_test_gtfs_calendar(
 ) -> GTFSCalendar:
     """Create a test GTFS calendar."""
     if start_date is None:
-        start_date = date.today()
+        start_date = DEFAULT_TEST_DATE
     if end_date is None:
-        end_date = date.today() + timedelta(days=365)
+        end_date = DEFAULT_TEST_DATE + timedelta(days=365)
 
     return GTFSCalendar(
         service_id=service_id,
@@ -147,7 +150,7 @@ def create_test_gtfs_calendar_date(
 ) -> GTFSCalendarDate:
     """Create a test GTFS calendar date exception."""
     if date_val is None:
-        date_val = date.today() + timedelta(days=1)
+        date_val = DEFAULT_TEST_DATE + timedelta(days=1)
 
     return GTFSCalendarDate(
         service_id=service_id,
@@ -169,11 +172,11 @@ def create_test_gtfs_feed_info(
 ) -> GTFSFeedInfo:
     """Create a test GTFS feed info."""
     if downloaded_at is None:
-        downloaded_at = datetime.now(timezone.utc)
+        downloaded_at = DEFAULT_TEST_DATETIME
     if feed_start_date is None:
-        feed_start_date = date.today()
+        feed_start_date = DEFAULT_TEST_DATE
     if feed_end_date is None:
-        feed_end_date = date.today() + timedelta(days=365)
+        feed_end_date = DEFAULT_TEST_DATE + timedelta(days=365)
 
     return GTFSFeedInfo(
         feed_id=feed_id,
