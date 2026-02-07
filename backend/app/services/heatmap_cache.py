@@ -27,6 +27,11 @@ def _normalize_transport_modes_part(transport_modes: str | None) -> str:
     return ",".join(sorted(set(parts)))
 
 
+def normalize_transport_modes_for_cache_key(transport_modes: str | None) -> str:
+    """Public wrapper for transport-mode cache key normalization."""
+    return _normalize_transport_modes_part(transport_modes)
+
+
 def heatmap_cancellations_cache_key(
     *,
     time_range: TimeRangePreset | None,
@@ -48,3 +53,16 @@ def heatmap_cancellations_cache_key(
 def heatmap_live_snapshot_cache_key() -> str:
     """Return the cache key for the live heatmap snapshot."""
     return "heatmap:live:snapshot:v1"
+
+
+def heatmap_overview_cache_key(
+    *,
+    time_range: TimeRangePreset | None,
+    transport_modes: str | None,
+    bucket_width_minutes: int,
+    metrics: str,
+) -> str:
+    """Build cache key for the lightweight heatmap overview endpoint."""
+    time_range_part = time_range or "default"
+    transport_part = _normalize_transport_modes_part(transport_modes)
+    return f"heatmap:overview:{time_range_part}:{transport_part}:{bucket_width_minutes}:{metrics}"

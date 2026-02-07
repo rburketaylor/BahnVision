@@ -104,6 +104,20 @@ def _overview_having_clause(
     return (cancelled_count_expr > 0) | (delayed_count_expr > 0)
 
 
+def _transport_types_for_route_filter(
+    route_type_filter: list[int] | None,
+) -> set[str] | None:
+    """Resolve transport type names from a route_type filter list."""
+    if not route_type_filter:
+        return None
+
+    selected: set[str] = set()
+    for transport_type, route_types in TRANSPORT_TO_ROUTE_TYPES.items():
+        if any(route_type in route_type_filter for route_type in route_types):
+            selected.add(transport_type)
+    return selected
+
+
 # Transport type name mapping for display
 TRANSPORT_TYPE_NAMES: dict[str, str] = {
     "UBAHN": "U-Bahn",
@@ -442,6 +456,7 @@ class HeatmapService:
             time_range=TimeRange.model_validate({"from": from_time, "to": to_time}),
             points=points,
             summary=summary,
+            last_updated_at=None,
             total_impacted_stations=len(points),
         )
 
@@ -646,6 +661,9 @@ class HeatmapService:
 
             # Convert to HeatmapDataPoint
             data_points = []
+            selected_transport_types = _transport_types_for_route_filter(
+                route_type_filter
+            )
             for row in station_rows:
                 stop_id = row.stop_id
                 total = int(row.total_departures or 0)
@@ -660,19 +678,22 @@ class HeatmapService:
                     dict[str, TransportStats],
                     breakdown_by_station.get(stop_id, {}),
                 )
-                if route_type_filter:
-                    # Filter to only requested transport types
-                    filtered_transport: dict[str, TransportStats] = {}
-                    for transport_type, stats in by_transport.items():
-                        stats = cast(TransportStats, stats)
-                        # Get route types for this transport type
-                        transport_route_types = TRANSPORT_TO_ROUTE_TYPES.get(
-                            transport_type, []
-                        )
-                        # Check if any of these route types are in the filter
-                        if any(rt in route_type_filter for rt in transport_route_types):
-                            filtered_transport[transport_type] = stats
-                    by_transport = filtered_transport
+                if selected_transport_types is not None:
+                    by_transport = {
+                        transport_type: cast(TransportStats, stats)
+                        for transport_type, stats in by_transport.items()
+                        if transport_type in selected_transport_types
+                    }
+                    # Keep station totals aligned with the selected transport filter.
+                    total = sum(stats.total for stats in by_transport.values())
+                    cancelled = sum(stats.cancelled for stats in by_transport.values())
+                    delayed = sum(stats.delayed for stats in by_transport.values())
+                    if total < 1:
+                        continue
+                    cancellation_rate = (
+                        min(cancelled / total, 1.0) if total > 0 else 0.0
+                    )
+                    delay_rate = min(delayed / total, 1.0) if total > 0 else 0.0
 
                 data_points.append(
                     HeatmapDataPoint(
@@ -1106,47 +1127,126 @@ class HeatmapService:
             func.sum(RealtimeStationStatsDaily.delayed_count), 0
         )
 
-        intensity_expr = _overview_intensity_expr(
-            total_departures_expr, cancelled_count_expr, delayed_count_expr, metrics
-        )
+        selected_transport_types = _transport_types_for_route_filter(route_type_filter)
+        points: list[HeatmapPointLight] = []
 
-        stmt = (
-            select(
+        if selected_transport_types is None:
+            intensity_expr = _overview_intensity_expr(
+                total_departures_expr, cancelled_count_expr, delayed_count_expr, metrics
+            )
+
+            stmt = (
+                select(
+                    RealtimeStationStatsDaily.stop_id,
+                    GTFSStop.stop_name,
+                    func.round(GTFSStop.stop_lat.cast(Numeric), 4).label("lat"),
+                    func.round(GTFSStop.stop_lon.cast(Numeric), 4).label("lon"),
+                    intensity_expr,
+                )
+                .join(GTFSStop, RealtimeStationStatsDaily.stop_id == GTFSStop.stop_id)
+                .where(RealtimeStationStatsDaily.date >= from_date)
+                .where(RealtimeStationStatsDaily.date < to_date)
+                .where(GTFSStop.stop_lat.isnot(None))
+                .where(GTFSStop.stop_lon.isnot(None))
+            )
+
+            stmt = stmt.group_by(
                 RealtimeStationStatsDaily.stop_id,
                 GTFSStop.stop_name,
-                func.round(GTFSStop.stop_lat.cast(Numeric), 4).label("lat"),
-                func.round(GTFSStop.stop_lon.cast(Numeric), 4).label("lon"),
-                intensity_expr,
+                GTFSStop.stop_lat,
+                GTFSStop.stop_lon,
+            ).having(
+                _overview_having_clause(
+                    cancelled_count_expr, delayed_count_expr, metrics
+                )
             )
-            .join(GTFSStop, RealtimeStationStatsDaily.stop_id == GTFSStop.stop_id)
-            .where(RealtimeStationStatsDaily.date >= from_date)
-            .where(RealtimeStationStatsDaily.date < to_date)
-            .where(GTFSStop.stop_lat.isnot(None))
-            .where(GTFSStop.stop_lon.isnot(None))
-        )
 
-        stmt = stmt.group_by(
-            RealtimeStationStatsDaily.stop_id,
-            GTFSStop.stop_name,
-            GTFSStop.stop_lat,
-            GTFSStop.stop_lon,
-        ).having(
-            _overview_having_clause(cancelled_count_expr, delayed_count_expr, metrics)
-        )
+            result = await self._session.execute(stmt)
+            rows = result.all()
 
-        result = await self._session.execute(stmt)
-        rows = result.all()
-
-        points = [
-            HeatmapPointLight(
-                id=row.stop_id,
-                n=row.stop_name or row.stop_id,
-                lat=float(row.lat),
-                lon=float(row.lon),
-                i=float(row.intensity) if row.intensity else 0.0,
+            points = [
+                HeatmapPointLight(
+                    id=row.stop_id,
+                    n=row.stop_name or row.stop_id,
+                    lat=float(row.lat),
+                    lon=float(row.lon),
+                    i=float(row.intensity) if row.intensity else 0.0,
+                )
+                for row in rows
+            ]
+        else:
+            # route_type_filter maps to transport names in by_route_type JSON.
+            filtered_stmt = (
+                select(
+                    RealtimeStationStatsDaily.stop_id,
+                    GTFSStop.stop_name,
+                    GTFSStop.stop_lat,
+                    GTFSStop.stop_lon,
+                    RealtimeStationStatsDaily.by_route_type,
+                )
+                .join(GTFSStop, RealtimeStationStatsDaily.stop_id == GTFSStop.stop_id)
+                .where(RealtimeStationStatsDaily.date >= from_date)
+                .where(RealtimeStationStatsDaily.date < to_date)
+                .where(GTFSStop.stop_lat.isnot(None))
+                .where(GTFSStop.stop_lon.isnot(None))
             )
-            for row in rows
-        ]
+
+            filtered_rows = (await self._session.execute(filtered_stmt)).all()
+            station_totals: dict[str, dict[str, float]] = {}
+            station_meta: dict[str, tuple[str, float, float]] = {}
+            for filtered_row in filtered_rows:
+                stop_id = filtered_row.stop_id
+                if stop_id not in station_totals:
+                    station_totals[stop_id] = {
+                        "total": 0.0,
+                        "cancelled": 0.0,
+                        "delayed": 0.0,
+                    }
+                    station_meta[stop_id] = (
+                        filtered_row.stop_name or stop_id,
+                        float(filtered_row.stop_lat),
+                        float(filtered_row.stop_lon),
+                    )
+
+                entry = station_totals[stop_id]
+                by_route_type = filtered_row.by_route_type or {}
+                for transport_type, stats in by_route_type.items():
+                    if transport_type not in selected_transport_types:
+                        continue
+                    entry["total"] += float(stats.get("trips", 0))
+                    entry["cancelled"] += float(stats.get("cancelled", 0))
+                    entry["delayed"] += float(stats.get("delayed", 0))
+
+            for stop_id, entry in station_totals.items():
+                stop_name, stop_lat, stop_lon = station_meta[stop_id]
+                total = float(entry["total"])
+                cancelled = float(entry["cancelled"])
+                delayed = float(entry["delayed"])
+                if total <= 0:
+                    continue
+
+                if metrics == "delays":
+                    if delayed <= 0:
+                        continue
+                    intensity = min((delayed / total) * 5.0, 1.0)
+                elif metrics == "cancellations":
+                    if cancelled <= 0:
+                        continue
+                    intensity = min((cancelled / total) * 10.0, 1.0)
+                else:
+                    if cancelled <= 0 and delayed <= 0:
+                        continue
+                    intensity = min(((cancelled + delayed) / total) * 4.0, 1.0)
+
+                points.append(
+                    HeatmapPointLight(
+                        id=stop_id,
+                        n=stop_name,
+                        lat=round(stop_lat, 4),
+                        lon=round(stop_lon, 4),
+                        i=float(intensity),
+                    )
+                )
 
         logger.info(
             "Retrieved %d impacted stations from daily summaries for heatmap overview",
@@ -1279,47 +1379,82 @@ class HeatmapService:
         from_date = from_time.date()
         to_date = to_time.date()
 
-        total_departures_expr = func.coalesce(
-            func.sum(RealtimeStationStatsDaily.trip_count), 0
-        )
-        total_cancellations_expr = func.coalesce(
-            func.sum(RealtimeStationStatsDaily.cancelled_count), 0
-        )
-        total_delays_expr = func.coalesce(
-            func.sum(RealtimeStationStatsDaily.delayed_count), 0
-        )
-        stations_expr = func.count(func.distinct(RealtimeStationStatsDaily.stop_id))
-
-        stmt = (
-            select(
-                stations_expr.label("total_stations"),
-                total_departures_expr.label("total_departures"),
-                total_cancellations_expr.label("total_cancellations"),
-                total_delays_expr.label("total_delays"),
+        selected_transport_types = _transport_types_for_route_filter(route_type_filter)
+        if selected_transport_types is None:
+            total_departures_expr = func.coalesce(
+                func.sum(RealtimeStationStatsDaily.trip_count), 0
             )
-            .where(RealtimeStationStatsDaily.date >= from_date)
-            .where(RealtimeStationStatsDaily.date < to_date)
-        )
+            total_cancellations_expr = func.coalesce(
+                func.sum(RealtimeStationStatsDaily.cancelled_count), 0
+            )
+            total_delays_expr = func.coalesce(
+                func.sum(RealtimeStationStatsDaily.delayed_count), 0
+            )
+            stations_expr = func.count(func.distinct(RealtimeStationStatsDaily.stop_id))
 
-        result = await self._session.execute(stmt)
-        rows = result.all()
-        row = rows[0] if rows else None
-        if not row:
-            return HeatmapSummary(
-                total_stations=0,
-                total_departures=0,
-                total_cancellations=0,
-                overall_cancellation_rate=0.0,
-                total_delays=0,
-                overall_delay_rate=0.0,
-                most_affected_station=None,
-                most_affected_line=None,
+            stmt = (
+                select(
+                    stations_expr.label("total_stations"),
+                    total_departures_expr.label("total_departures"),
+                    total_cancellations_expr.label("total_cancellations"),
+                    total_delays_expr.label("total_delays"),
+                )
+                .where(RealtimeStationStatsDaily.date >= from_date)
+                .where(RealtimeStationStatsDaily.date < to_date)
             )
 
-        total_stations = int(row.total_stations or 0)
-        total_departures = int(row.total_departures or 0)
-        total_cancellations = int(row.total_cancellations or 0)
-        total_delays = int(row.total_delays or 0)
+            result = await self._session.execute(stmt)
+            rows = result.all()
+            summary_row = rows[0] if rows else None
+            if not summary_row:
+                return HeatmapSummary(
+                    total_stations=0,
+                    total_departures=0,
+                    total_cancellations=0,
+                    overall_cancellation_rate=0.0,
+                    total_delays=0,
+                    overall_delay_rate=0.0,
+                    most_affected_station=None,
+                    most_affected_line=None,
+                )
+
+            total_stations = int(summary_row.total_stations or 0)
+            total_departures = int(summary_row.total_departures or 0)
+            total_cancellations = int(summary_row.total_cancellations or 0)
+            total_delays = int(summary_row.total_delays or 0)
+        else:
+            filtered_stmt = (
+                select(
+                    RealtimeStationStatsDaily.stop_id,
+                    RealtimeStationStatsDaily.by_route_type,
+                )
+                .where(RealtimeStationStatsDaily.date >= from_date)
+                .where(RealtimeStationStatsDaily.date < to_date)
+            )
+            filtered_rows = (await self._session.execute(filtered_stmt)).all()
+
+            total_departures = 0
+            total_cancellations = 0
+            total_delays = 0
+            stations_with_data: set[str] = set()
+
+            for daily_row in filtered_rows:
+                station_total = 0
+                by_route_type = daily_row.by_route_type or {}
+                for transport_type, stats in by_route_type.items():
+                    if transport_type not in selected_transport_types:
+                        continue
+                    trips = int(stats.get("trips", 0) or 0)
+                    cancelled = int(stats.get("cancelled", 0) or 0)
+                    delayed = int(stats.get("delayed", 0) or 0)
+                    station_total += trips
+                    total_departures += trips
+                    total_cancellations += cancelled
+                    total_delays += delayed
+                if station_total > 0:
+                    stations_with_data.add(daily_row.stop_id)
+
+            total_stations = len(stations_with_data)
         overall_cancellation_rate = (
             min(total_cancellations / total_departures, 1.0)
             if total_departures > 0

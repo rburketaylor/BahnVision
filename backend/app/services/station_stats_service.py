@@ -27,6 +27,7 @@ from app.models.station_stats import (
 from app.persistence.models import RealtimeStationStats
 from app.persistence.models import RealtimeStationStatsDaily
 from app.services.gtfs_schedule import GTFSScheduleService
+from app.services.heatmap_cache import heatmap_overview_cache_key
 from app.services.heatmap_service import (
     GTFS_ROUTE_TYPES,
     TRANSPORT_TYPE_NAMES,
@@ -431,7 +432,12 @@ class StationStatsService:
         # The heatmap landing page always hits /api/v1/heatmap/overview first, so this avoids
         # a full-table SUM over realtime_station_stats on the first station click.
         if self._cache:
-            overview_cache_key = f"heatmap:overview:{time_range or 'default'}:all:{bucket_width_minutes}:both"
+            overview_cache_key = heatmap_overview_cache_key(
+                time_range=time_range,
+                transport_modes=None,
+                bucket_width_minutes=bucket_width_minutes,
+                metrics="both",
+            )
             try:
                 overview_cached = await self._cache.get_json(overview_cache_key)
                 if not overview_cached:

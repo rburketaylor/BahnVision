@@ -8,6 +8,7 @@ from app.models.heatmap import HeatmapOverviewResponse, HeatmapResponse
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
     heatmap_live_snapshot_cache_key,
+    heatmap_overview_cache_key,
 )
 from app.services.heatmap_service import resolve_max_points
 from tests.api.conftest import CacheScenario
@@ -243,6 +244,39 @@ def test_heatmap_overview_live_transport_filter(api_client, fake_cache):
     validated = HeatmapOverviewResponse.model_validate(data)
     assert validated.summary.total_departures == 5
     assert validated.total_impacted_stations == 1
+    assert validated.last_updated_at is not None
+
+
+def test_heatmap_overview_cache_key_normalizes_transport_modes(api_client, fake_cache):
+    """Semantically equivalent transport_modes should share a cache key."""
+    cached_payload = {
+        "time_range": {"from": "2025-01-01T00:00:00Z", "to": "2025-01-01T01:00:00Z"},
+        "points": [],
+        "summary": {
+            "total_stations": 1,
+            "total_departures": 10,
+            "total_cancellations": 1,
+            "overall_cancellation_rate": 0.1,
+            "total_delays": 0,
+            "overall_delay_rate": 0.0,
+            "most_affected_station": None,
+            "most_affected_line": None,
+        },
+        "total_impacted_stations": 0,
+    }
+    fake_cache.configure(
+        heatmap_overview_cache_key(
+            time_range=None,
+            transport_modes="BUS,UBAHN",
+            bucket_width_minutes=60,
+            metrics="both",
+        ),
+        CacheScenario(fresh_value=cached_payload),
+    )
+
+    response = api_client.get("/api/v1/heatmap/overview?transport_modes= ubahn , bus ")
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "hit"
 
 
 def test_heatmap_cancellations_with_time_range(
@@ -370,3 +404,23 @@ class TestDailyAggregationEndpoint:
         assert "message" in data
         assert isinstance(data["status"], str)
         assert isinstance(data["message"], str)
+
+
+def test_heatmap_health_returns_503_on_dependency_failure(api_client, monkeypatch):
+    """Health endpoint should return 503 when DB dependency check fails."""
+
+    class _FailingSessionContext:
+        async def __aenter__(self):
+            raise RuntimeError("db unavailable")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.heatmap.AsyncSessionFactory",
+        lambda: _FailingSessionContext(),
+    )
+
+    response = api_client.get("/api/v1/heatmap/health")
+    assert response.status_code == 503
+    assert response.json()["status"] == "unhealthy"

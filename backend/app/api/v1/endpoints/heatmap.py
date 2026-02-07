@@ -5,7 +5,7 @@ Provides an endpoint to retrieve cancellation heatmap data for map visualization
 """
 
 import time
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import (
@@ -17,6 +17,7 @@ from fastapi import (
     Request,
     Response,
 )
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,7 @@ from app.services.daily_aggregation_service import DailyAggregationService
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
     heatmap_live_snapshot_cache_key,
+    heatmap_overview_cache_key,
 )
 from app.services.gtfs_schedule import GTFSScheduleService
 from app.services.heatmap_service import (
@@ -518,6 +520,7 @@ async def get_heatmap_overview(
                 time_range=filtered_snapshot.time_range,
                 points=points,
                 summary=filtered_snapshot.summary,
+                last_updated_at=filtered_snapshot.last_updated_at,
                 total_impacted_stations=len(points),
             )
 
@@ -533,13 +536,19 @@ async def get_heatmap_overview(
                 time_range=filtered_snapshot.time_range,
                 points=points,
                 summary=filtered_snapshot.summary,
+                last_updated_at=filtered_snapshot.last_updated_at,
                 total_impacted_stations=len(points),
             )
 
         # Fall through to normal handling if no live snapshot available
 
     # Build cache key
-    cache_key = f"heatmap:overview:{time_range or 'default'}:{transport_modes or 'all'}:{bucket_width}:{metrics}"
+    cache_key = heatmap_overview_cache_key(
+        time_range=time_range,
+        transport_modes=transport_modes,
+        bucket_width_minutes=bucket_width,
+        metrics=metrics,
+    )
 
     # Check cache first
     try:
@@ -599,7 +608,10 @@ async def heatmap_health_check():
 
     except Exception as e:
         logger.error(f"Heatmap health check failed: {str(e)}")
-        return {"status": "unhealthy", "database": "disconnected"}
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "disconnected"},
+        )
 
 
 async def _daily_aggregation_task() -> None:
@@ -609,7 +621,7 @@ async def _daily_aggregation_task() -> None:
     the GTFS-RT harvest completion hook) to ensure daily summaries are available
     for heatmap queries.
     """
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
 
     logger.info("Starting daily aggregation for %s", yesterday)
 
