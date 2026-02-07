@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from './alert'
 import { Button } from './button'
 
@@ -12,15 +13,13 @@ export function ErrorCard({ title, message, onRetry, retryText = 'Retry' }: Erro
   return (
     <Alert
       variant="destructive"
-      className="border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300"
+      className="border-destructive/30 bg-destructive/10 text-destructive"
     >
-      <div className="flex items-center gap-3">
-        <span className="text-2xl" aria-hidden="true">
-          🚨
-        </span>
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
         <div>
           <AlertTitle>{title}</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
+          <AlertDescription className="text-destructive/90">{message}</AlertDescription>
         </div>
       </div>
       {onRetry && (
@@ -28,7 +27,7 @@ export function ErrorCard({ title, message, onRetry, retryText = 'Retry' }: Erro
           type="button"
           variant="outline"
           onClick={onRetry}
-          className="mt-4 border-red-300 bg-red-100 text-red-800 hover:bg-red-200 dark:border-red-700 dark:bg-red-800 dark:text-red-100 dark:hover:bg-red-700"
+          className="mt-4 border-destructive/40 bg-transparent text-destructive hover:bg-destructive/10"
         >
           {retryText}
         </Button>

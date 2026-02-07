@@ -1,6 +1,6 @@
 /**
  * RefreshButton
- * A button component for refresh actions with loading state
+ * Wrapper for refresh actions with consistent defaults.
  */
 
 import { cn } from '@/lib/utils'
@@ -11,7 +11,6 @@ interface RefreshButtonProps {
   disabled?: boolean
   loading?: boolean
   loadingText?: string
-  icon?: string
   className?: string
 }
 
@@ -20,7 +19,6 @@ export function RefreshButton({
   disabled = false,
   loading = false,
   loadingText = 'Refreshing...',
-  icon = '🔄',
   className = '',
 }: RefreshButtonProps) {
   return (
@@ -29,10 +27,9 @@ export function RefreshButton({
       disabled={disabled}
       loading={loading}
       loadingText={loadingText}
-      icon={icon}
-      className={cn('rounded-lg', className)}
+      className={cn('rounded-md', className)}
     >
-      {icon} Refresh
+      Refresh
     </UiRefreshButton>
   )
 }

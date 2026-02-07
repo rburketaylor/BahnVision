@@ -18,7 +18,7 @@ describe('Badge', () => {
 
   it('renders TransportBadge fallback for unknown type', () => {
     const { container } = render(<TransportBadge type="FERRY" />)
-    expect(container.firstChild).toHaveClass('bg-muted')
+    expect(container.firstChild).toHaveClass('bg-surface-elevated')
     expect(screen.getByText('F')).toBeInTheDocument()
   })
 })

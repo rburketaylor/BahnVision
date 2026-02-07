@@ -1,225 +1,98 @@
 :root {
-  --radius: 0.75rem;
+  --radius: 0.4rem;
 
-  /* shadcn semantic tokens (HSL triplets) */
-  --background: 0 0% 98%;
-  --foreground: 222 47% 11%;
+  /* Base semantic tokens */
+  --background: 210 24% 97%;
+  --foreground: 219 27% 15%;
+
+  --surface: 0 0% 100%;
+  --surface-elevated: 210 24% 95%;
+  --surface-muted: 214 21% 90%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 219 27% 15%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 219 27% 15%;
 
   --primary: 205 100% 34%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 215 16% 47%;
+  --secondary: 214 17% 42%;
   --secondary-foreground: 0 0% 100%;
 
-  --muted: 220 14% 96%;
-  --muted-foreground: 215 16% 47%;
+  --muted: 212 23% 94%;
+  --muted-foreground: 216 12% 40%;
 
   --accent: 205 100% 34%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 0 76% 47%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 220 13% 91%;
+  --border: 214 22% 84%;
   --input: 0 0% 100%;
   --ring: 205 100% 34%;
 
-  /* Brand and transport tokens */
-  --brand-primary: #0065ae;
-  --brand-primary-dark: #004677;
-  --brand-primary-light: #4c9acf;
-  --transport-ubahn: #0065ae;
-  --transport-sbahn: #00ab4e;
-  --transport-tram: #d60f26;
-  --transport-bus: #00558c;
+  /* Interactive states */
+  --interactive: 205 100% 34%;
+  --interactive-hover: 205 100% 30%;
+  --interactive-active: 205 100% 26%;
+
+  /* Status semantics */
+  --status-healthy: 151 74% 31%;
+  --status-warning: 38 92% 45%;
+  --status-critical: 0 76% 47%;
+  --status-info: 205 100% 36%;
+  --status-neutral: 216 12% 40%;
+
+  /* Transit line colors */
+  --transport-ubahn: 205 100% 34%;
+  --transport-sbahn: 148 100% 34%;
+  --transport-tram: 354 86% 45%;
+  --transport-bus: 205 100% 27%;
 }
 
 .dark {
-  --background: 0 0% 7%;
-  --foreground: 0 0% 88%;
+  --background: 222 23% 8%;
+  --foreground: 210 18% 92%;
 
-  --card: 0 0% 12%;
-  --card-foreground: 0 0% 88%;
+  --surface: 220 17% 11%;
+  --surface-elevated: 220 16% 14%;
+  --surface-muted: 220 14% 18%;
 
-  --popover: 0 0% 12%;
-  --popover-foreground: 0 0% 88%;
+  --card: 220 17% 11%;
+  --card-foreground: 210 18% 92%;
 
-  --primary: 205 100% 34%;
-  --primary-foreground: 0 0% 100%;
+  --popover: 220 17% 11%;
+  --popover-foreground: 210 18% 92%;
 
-  --secondary: 215 16% 47%;
-  --secondary-foreground: 0 0% 100%;
+  --primary: 203 86% 52%;
+  --primary-foreground: 214 29% 11%;
 
-  --muted: 0 0% 17%;
-  --muted-foreground: 220 9% 64%;
+  --secondary: 214 14% 63%;
+  --secondary-foreground: 220 22% 10%;
 
-  --accent: 205 100% 34%;
-  --accent-foreground: 0 0% 100%;
+  --muted: 220 16% 16%;
+  --muted-foreground: 216 12% 68%;
 
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 95%;
+  --accent: 203 86% 52%;
+  --accent-foreground: 214 29% 11%;
 
-  --border: 0 0% 17%;
-  --input: 0 0% 17%;
-  --ring: 205 100% 34%;
-}
+  --destructive: 0 70% 55%;
+  --destructive-foreground: 0 0% 100%;
 
-/* Semantic fallback utilities kept for migration compatibility */
-/*
- * App semantic tokens
- *
- * This project uses Tailwind utility class names like `bg-primary`/`text-muted-foreground`.
- * In production builds we also provide explicit CSS fallbacks for these semantic tokens
- * to keep the UI consistent even if Tailwind theme generation changes.
- */
-.text-primary {
-  color: #0065ae !important;
-}
+  --border: 219 14% 24%;
+  --input: 220 16% 14%;
+  --ring: 203 86% 52%;
 
-.bg-primary {
-  background-color: #0065ae !important;
-}
+  --interactive: 203 86% 52%;
+  --interactive-hover: 203 86% 58%;
+  --interactive-active: 203 86% 44%;
 
-.text-primary-foreground {
-  color: #ffffff !important;
-}
-
-.bg-primary\/90 {
-  background-color: rgba(0, 101, 174, 0.9) !important;
-}
-
-.bg-primary\/10 {
-  background-color: rgba(0, 101, 174, 0.1) !important;
-}
-
-.bg-primary\/5 {
-  background-color: rgba(0, 101, 174, 0.05) !important;
-}
-
-.hover\:bg-primary\/90:hover {
-  background-color: rgba(0, 101, 174, 0.9) !important;
-}
-
-.border-primary {
-  border-color: #0065ae !important;
-}
-
-.hover\:border-primary\/30:hover {
-  border-color: rgba(0, 101, 174, 0.3) !important;
-}
-
-.focus\:border-primary:focus {
-  border-color: #0065ae !important;
-}
-
-.focus\:ring-primary:focus {
-  --tw-ring-color: rgba(0, 101, 174, 0.45) !important;
-}
-
-.bg-muted {
-  background-color: #2c2c2c !important;
-}
-
-html:not(.dark) .bg-muted {
-  background-color: #f3f4f6 !important;
-}
-
-.bg-muted\/30 {
-  background-color: rgba(44, 44, 44, 0.3) !important;
-}
-
-html:not(.dark) .bg-muted\/30 {
-  background-color: rgba(243, 244, 246, 0.75) !important;
-}
-
-.bg-muted\/50 {
-  background-color: rgba(44, 44, 44, 0.5) !important;
-}
-
-html:not(.dark) .bg-muted\/50 {
-  background-color: rgba(243, 244, 246, 0.9) !important;
-}
-
-.hover\:bg-muted\/80:hover {
-  background-color: rgba(44, 44, 44, 0.8) !important;
-}
-
-html:not(.dark) .hover\:bg-muted\/80:hover {
-  background-color: rgba(229, 231, 235, 1) !important;
-}
-
-.text-muted-foreground {
-  color: #9ca3af !important;
-}
-
-html:not(.dark) .text-muted-foreground {
-  color: #6b7280 !important;
-}
-
-.hover\:text-primary\/80:hover {
-  color: rgba(0, 101, 174, 0.8) !important;
-}
-
-.text-destructive {
-  color: #ef4444 !important;
-}
-
-.bg-destructive\/10 {
-  background-color: rgba(239, 68, 68, 0.1) !important;
-}
-
-.border-destructive\/20 {
-  border-color: rgba(239, 68, 68, 0.2) !important;
-}
-
-/* Ensure Tailwind custom colors work properly */
-.bg-background {
-  background-color: #121212 !important;
-}
-
-.bg-card {
-  background-color: #1e1e1e !important;
-}
-
-.text-foreground {
-  color: #e0e0e0 !important;
-}
-
-.text-gray-400 {
-  color: #9ca3af !important;
-}
-
-.border-border {
-  border-color: #2c2c2c !important;
-}
-
-.bg-input {
-  background-color: #2c2c2c !important;
-}
-
-/* Light mode overrides */
-html:not(.dark) .bg-background {
-  background-color: #ffffff !important;
-}
-
-html:not(.dark) .bg-card {
-  background-color: #ffffff !important;
-}
-
-html:not(.dark) .text-foreground {
-  color: #111827 !important;
-}
-
-html:not(.dark) .border-border {
-  border-color: #e5e7eb !important;
-}
-
-html:not(.dark) .bg-input {
-  background-color: #ffffff !important;
+  --status-healthy: 151 63% 45%;
+  --status-warning: 38 90% 57%;
+  --status-critical: 0 74% 60%;
+  --status-info: 203 86% 52%;
+  --status-neutral: 216 12% 68%;
 }

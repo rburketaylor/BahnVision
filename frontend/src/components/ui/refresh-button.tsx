@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react'
 import { Button, type ButtonProps } from './button'
 import { Spinner } from './spinner'
 
@@ -5,7 +6,6 @@ interface RefreshButtonProps extends Omit<ButtonProps, 'onClick'> {
   onClick: () => void
   loading?: boolean
   loadingText?: string
-  icon?: string
 }
 
 export function RefreshButton({
@@ -13,7 +13,6 @@ export function RefreshButton({
   disabled = false,
   loading = false,
   loadingText = 'Refreshing...',
-  icon = '🔄',
   children,
   ...props
 }: RefreshButtonProps) {
@@ -25,7 +24,10 @@ export function RefreshButton({
           {loadingText}
         </>
       ) : (
-        <>{children ?? `${icon} Refresh`}</>
+        <>
+          <RefreshCw aria-hidden="true" />
+          {children ?? 'Refresh'}
+        </>
       )}
     </Button>
   )

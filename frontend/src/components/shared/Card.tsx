@@ -1,6 +1,6 @@
 /**
  * Card Component
- * Reusable card with BVV-style left accent border and hover effects
+ * Reusable card wrapper that keeps accent and spacing options.
  */
 
 import { type ReactNode } from 'react'
@@ -10,15 +10,10 @@ import { Card as UiCard } from '../ui/card'
 export type CardAccent = 'blue' | 'green' | 'red' | 'orange' | 'none'
 
 export interface CardProps {
-  /** Card content */
   children: ReactNode
-  /** Accent color for left border */
   accent?: CardAccent
-  /** Additional CSS classes */
   className?: string
-  /** Padding variant */
   padding?: 'compact' | 'spacious'
-  /** Disable hover lift effect */
   noHover?: boolean
 }
 
@@ -48,7 +43,7 @@ export function Card({
         'card-base',
         accentClasses[accent],
         paddingClasses[padding],
-        noHover && '[&:hover]:translate-y-0 [&:hover]:shadow-none',
+        noHover && 'hover:translate-y-0 hover:shadow-surface-1 hover:border-border',
         className
       )}
     >

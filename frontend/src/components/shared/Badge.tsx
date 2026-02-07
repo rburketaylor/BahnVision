@@ -1,6 +1,6 @@
 /**
  * Badge Component
- * BVV-style transport mode badges with circular icons or pill shapes
+ * Transport and status badges mapped to the shared token palette.
  */
 
 import { type ReactNode } from 'react'
@@ -22,37 +22,43 @@ export type BadgeVariant =
 export type BadgeShape = 'circular' | 'pill' | 'square'
 
 export interface BadgeProps {
-  /** Badge content */
   children: ReactNode
-  /** Transport type or status variant */
   variant?: BadgeVariant
-  /** Badge shape */
   shape?: BadgeShape
-  /** Additional CSS classes */
   className?: string
-  /** Small size */
   small?: boolean
-  /** Show as outline/hollow */
   outline?: boolean
 }
 
 const variantClasses: Record<BadgeVariant, { bg: string; text: string; border: string }> = {
-  ubahn: { bg: 'bg-ubahn', text: 'text-white', border: 'border-ubahn' },
-  sbahn: { bg: 'bg-sbahn', text: 'text-white', border: 'border-sbahn' },
-  tram: { bg: 'bg-tram', text: 'text-white', border: 'border-tram' },
-  bus: { bg: 'bg-bus', text: 'text-white', border: 'border-bus' },
-  bahn: { bg: 'bg-gray-600', text: 'text-white', border: 'border-gray-600' },
-  primary: { bg: 'bg-primary', text: 'text-white', border: 'border-primary' },
-  success: { bg: 'bg-status-healthy', text: 'text-white', border: 'border-status-healthy' },
-  warning: { bg: 'bg-status-warning', text: 'text-white', border: 'border-status-warning' },
-  critical: { bg: 'bg-status-critical', text: 'text-white', border: 'border-status-critical' },
-  neutral: { bg: 'bg-muted', text: 'text-foreground', border: 'border-muted' },
+  ubahn: { bg: 'bg-ubahn/90', text: 'text-white', border: 'border-ubahn/65' },
+  sbahn: { bg: 'bg-sbahn/90', text: 'text-white', border: 'border-sbahn/65' },
+  tram: { bg: 'bg-tram/90', text: 'text-white', border: 'border-tram/65' },
+  bus: { bg: 'bg-bus/90', text: 'text-white', border: 'border-bus/65' },
+  bahn: { bg: 'bg-surface-muted', text: 'text-foreground', border: 'border-border' },
+  primary: { bg: 'bg-primary/12', text: 'text-primary', border: 'border-primary/35' },
+  success: {
+    bg: 'bg-status-healthy/14',
+    text: 'text-status-healthy',
+    border: 'border-status-healthy/35',
+  },
+  warning: {
+    bg: 'bg-status-warning/14',
+    text: 'text-status-warning',
+    border: 'border-status-warning/40',
+  },
+  critical: {
+    bg: 'bg-status-critical/14',
+    text: 'text-status-critical',
+    border: 'border-status-critical/40',
+  },
+  neutral: { bg: 'bg-surface-elevated', text: 'text-muted-foreground', border: 'border-border' },
 }
 
 const shapeClasses: Record<BadgeShape, string> = {
   circular: 'rounded-full aspect-square flex items-center justify-center',
-  pill: 'rounded-full px-2.5',
-  square: 'rounded-md',
+  pill: 'rounded-md px-2.5',
+  square: 'rounded-sm',
 }
 
 const sizeClasses: {
@@ -60,14 +66,14 @@ const sizeClasses: {
   small: { circular: string; pill: string; square: string }
 } = {
   normal: {
-    circular: 'w-8 h-8',
-    pill: 'py-1 text-xs',
-    square: 'px-2.5 py-1 text-xs',
+    circular: 'w-8 h-8 text-xs',
+    pill: 'py-1 text-[0.72rem]',
+    square: 'px-2.5 py-1 text-[0.72rem]',
   },
   small: {
-    circular: 'w-6 h-6',
-    pill: 'py-0.5 text-[10px]',
-    square: 'px-2 py-0.5 text-[10px]',
+    circular: 'w-6 h-6 text-[0.62rem]',
+    pill: 'py-0.5 text-[0.62rem]',
+    square: 'px-2 py-0.5 text-[0.62rem]',
   },
 }
 
@@ -85,13 +91,13 @@ export function Badge({
 
   const baseClasses = outline
     ? `bg-transparent border ${colors.border} ${colors.text}`
-    : `${colors.bg} ${colors.text}`
+    : `border ${colors.border} ${colors.bg} ${colors.text}`
 
   return (
     <UiBadge
       variant="secondary"
       className={cn(
-        'inline-flex items-center justify-center font-medium btn-bvv border-0',
+        'inline-flex items-center justify-center font-semibold uppercase tracking-[0.04em] border-0',
         shapeClass,
         sizeClass,
         baseClasses,
@@ -103,7 +109,6 @@ export function Badge({
   )
 }
 
-/** Transport type badges with predefined labels */
 export function TransportBadge({
   type,
   ...props
