@@ -11,10 +11,12 @@ multiple workers if needed.
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 if TYPE_CHECKING:
     from app.services.cache import CacheService
@@ -25,6 +27,8 @@ logger = logging.getLogger(__name__)
 _GTFS_IMPORT_LOCK_KEY = "gtfs:import:in_progress"
 # Maximum time the import lock can be held (safety timeout)
 _GTFS_IMPORT_LOCK_MAX_TTL_SECONDS = 1800  # 30 minutes
+# Fallback file lock path when distributed cache is unavailable.
+_GTFS_IMPORT_LOCK_FILE = "/tmp/bahnvision_gtfs_import.lock"
 
 
 class GTFSImportLock:
@@ -48,6 +52,7 @@ class GTFSImportLock:
         # Fallback in-memory flag for when cache is unavailable
         self._in_memory_flag = False
         self._import_started_at: datetime | None = None
+        self._file_lock_handle: TextIO | None = None
 
     async def is_import_in_progress(self) -> bool:
         """
@@ -66,14 +71,19 @@ class GTFSImportLock:
             except Exception as e:
                 logger.warning("Failed to check import lock in cache: %s", e)
 
-        # Fall back to in-memory flag
-        return self._in_memory_flag
+        # Local process state check first.
+        if self._in_memory_flag:
+            return True
+
+        # Cross-process fallback: check local file lock state.
+        return self._is_file_lock_held()
 
     async def _acquire_lock(self) -> None:
         """Acquire the import lock."""
         self._in_memory_flag = True
         self._import_started_at = datetime.now(timezone.utc)
 
+        distributed_acquired = False
         if self._cache is not None:
             try:
                 await self._cache.set(
@@ -82,10 +92,13 @@ class GTFSImportLock:
                     ttl_seconds=_GTFS_IMPORT_LOCK_MAX_TTL_SECONDS,
                 )
                 logger.info("Acquired GTFS import lock (distributed)")
+                distributed_acquired = True
             except Exception as e:
                 logger.warning("Failed to set import lock in cache: %s", e)
-        else:
-            logger.info("Acquired GTFS import lock (in-memory only)")
+
+        if not distributed_acquired:
+            self._acquire_file_lock()
+            logger.info("Acquired GTFS import lock (local file fallback)")
 
     async def _release_lock(self) -> None:
         """Release the import lock."""
@@ -104,8 +117,59 @@ class GTFSImportLock:
                 )
             except Exception as e:
                 logger.warning("Failed to delete import lock from cache: %s", e)
-        else:
-            logger.info("Released GTFS import lock (in-memory, duration: %s)", duration)
+
+        self._release_file_lock()
+        logger.info("Released GTFS import lock (duration: %s)", duration)
+
+    def _acquire_file_lock(self) -> None:
+        """Acquire a non-blocking local file lock for cross-process coordination."""
+        if self._file_lock_handle is not None:
+            return
+
+        lock_dir = os.path.dirname(_GTFS_IMPORT_LOCK_FILE)
+        if lock_dir:
+            os.makedirs(lock_dir, exist_ok=True)
+
+        lock_handle = open(_GTFS_IMPORT_LOCK_FILE, "a+", encoding="utf-8")
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            lock_handle.close()
+            raise RuntimeError(
+                "Could not acquire fallback GTFS import file lock"
+            ) from exc
+        self._file_lock_handle = lock_handle
+
+    def _release_file_lock(self) -> None:
+        """Release the local fallback file lock if held."""
+        if self._file_lock_handle is None:
+            return
+        try:
+            fcntl.flock(self._file_lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._file_lock_handle.close()
+            self._file_lock_handle = None
+
+    def _is_file_lock_held(self) -> bool:
+        """Check whether another process holds the fallback file lock."""
+        if self._file_lock_handle is not None:
+            return True
+
+        lock_dir = os.path.dirname(_GTFS_IMPORT_LOCK_FILE)
+        if lock_dir:
+            os.makedirs(lock_dir, exist_ok=True)
+
+        probe = open(_GTFS_IMPORT_LOCK_FILE, "a+", encoding="utf-8")
+        try:
+            try:
+                fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            else:
+                fcntl.flock(probe.fileno(), fcntl.LOCK_UN)
+                return False
+        finally:
+            probe.close()
 
     @asynccontextmanager
     async def import_session(self):

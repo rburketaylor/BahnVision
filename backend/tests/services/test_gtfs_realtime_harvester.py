@@ -304,6 +304,71 @@ class TestGTFSRTDataHarvester:
         assert called_key == heatmap_live_snapshot_cache_key()
         assert len(called_payload["data_points"]) == 1
 
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_tracks_delay_deltas_on_upgrade(self):
+        """Delay totals should include delta when status is upgraded in-bucket."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+        first = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+        assert first["trip_count"] == 1
+        assert first["total_delay_seconds"] == 400
+        assert first["delayed"] == 1
+
+        upgraded = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 700, "status": "cancelled"}},
+        )
+        assert upgraded["trip_count"] == 0
+        assert upgraded["total_delay_seconds"] == 300
+        assert upgraded["delayed"] == -1
+        assert upgraded["cancelled"] == 1
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_batch_failure_uses_single_key_fallback(self):
+        """Batch cache failures should not count all trips as new."""
+
+        class BatchFailCache(FakeCache):
+            async def mget(self, keys: list[str]) -> dict[str, str | None]:
+                raise RuntimeError("mget failed")
+
+            async def mset(self, items: dict[str, str], ttl_seconds: int | None = None):
+                raise RuntimeError("mset failed")
+
+        cache = BatchFailCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        cache_key = (
+            f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id('trip_1')}"
+        )
+        cache._store[cache_key] = "delayed|400"
+
+        result = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+        assert result["trip_count"] == 0
+        assert result["delayed"] == 0
+        assert result["cancelled"] == 0
+
 
 class TestScheduleRelationshipMapping:
     """Test schedule relationship enum values."""
