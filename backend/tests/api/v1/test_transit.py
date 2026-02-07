@@ -10,10 +10,9 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import pytest
-from fastapi.testclient import TestClient
-
-from app.services.cache import CacheService, get_cache_service
 from app.api.v1.endpoints.transit.stops import get_transit_data_service
+from app.services.cache import CacheService, get_cache_service
+from fastapi.testclient import TestClient
 from tests.api.conftest import FakeCacheService
 
 
@@ -94,9 +93,10 @@ def transit_api_client(
     Valkey/database connection attempts during unit tests.
     """
     from contextlib import asynccontextmanager
-    from fastapi import FastAPI
+
     from app.api.routes import api_router
     from app.api.v1.shared.rate_limit import limiter
+    from fastapi import FastAPI
 
     # Create a minimal test app without the full lifespan
     @asynccontextmanager

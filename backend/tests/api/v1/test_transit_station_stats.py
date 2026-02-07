@@ -13,14 +13,13 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.api.routes import api_router
 from app.api.v1.endpoints.transit import stops as stops_module
-from app.api.v1.shared import dependencies as dependencies_module
 from app.api.v1.shared import cache_headers as cache_headers_module
+from app.api.v1.shared import dependencies as dependencies_module
 from app.models.station_stats import StationStats, StationTrends, TrendDataPoint
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 @dataclass
