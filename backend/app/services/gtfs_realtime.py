@@ -10,6 +10,7 @@ Handles fetching, parsing, and storing GTFS-RT data including:
 
 import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Set
 from dataclasses import dataclass
@@ -146,6 +147,7 @@ class GtfsRealtimeService:
     def __init__(self, cache_service: CacheService):
         self.settings = get_settings()
         self.cache = cache_service
+        self._circuit_breaker_lock = threading.Lock()
         self._circuit_breaker_state = {
             "failures": 0,
             "last_failure": None,
@@ -154,38 +156,43 @@ class GtfsRealtimeService:
 
     def _check_circuit_breaker(self) -> bool:
         """Check if circuit breaker allows requests"""
-        state = self._circuit_breaker_state
+        with self._circuit_breaker_lock:
+            state = self._circuit_breaker_state
 
-        if state["state"] == "OPEN":
-            # Check if we should try half-open
-            last_failure = state["last_failure"]
-            if (
-                isinstance(last_failure, datetime)
-                and (datetime.now(timezone.utc) - last_failure).seconds
-                > self.settings.gtfs_rt_circuit_breaker_recovery_seconds
-            ):
-                state["state"] = "HALF_OPEN"
-                logger.info("Circuit breaker transitioning to HALF_OPEN")
-                return True
-            return False
+            if state["state"] == "OPEN":
+                # Check if we should try half-open
+                last_failure = state["last_failure"]
+                if (
+                    isinstance(last_failure, datetime)
+                    and (datetime.now(timezone.utc) - last_failure).seconds
+                    > self.settings.gtfs_rt_circuit_breaker_recovery_seconds
+                ):
+                    state["state"] = "HALF_OPEN"
+                    logger.info("Circuit breaker transitioning to HALF_OPEN")
+                    return True
+                return False
 
-        return True
+            return True
 
     def _record_success(self):
         """Record successful request"""
-        state = self._circuit_breaker_state
-        state["failures"] = 0
-        state["state"] = "CLOSED"
+        with self._circuit_breaker_lock:
+            state = self._circuit_breaker_state
+            state["failures"] = 0
+            state["state"] = "CLOSED"
 
     def _record_failure(self):
         """Record failed request"""
-        state = self._circuit_breaker_state
-        state["failures"] += 1
-        state["last_failure"] = datetime.now(timezone.utc)
+        with self._circuit_breaker_lock:
+            state = self._circuit_breaker_state
+            state["failures"] += 1
+            state["last_failure"] = datetime.now(timezone.utc)
 
-        if state["failures"] >= self.settings.gtfs_rt_circuit_breaker_threshold:
-            state["state"] = "OPEN"
-            logger.warning(f"Circuit breaker OPENED after {state['failures']} failures")
+            if state["failures"] >= self.settings.gtfs_rt_circuit_breaker_threshold:
+                state["state"] = "OPEN"
+                logger.warning(
+                    f"Circuit breaker OPENED after {state['failures']} failures"
+                )
 
     async def fetch_and_process_feed(self) -> dict[str, int]:
         """Fetch and process all GTFS-RT data from a single feed.

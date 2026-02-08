@@ -415,6 +415,29 @@ class TestCircuitBreaker:
         """Test that circuit breaker allows requests when CLOSED."""
         assert gtfs_service._check_circuit_breaker()
 
+    def test_circuit_breaker_state_paths_use_lock(self, gtfs_service):
+        """Circuit breaker state checks/updates should be lock-guarded."""
+
+        class CountingLock:
+            def __init__(self):
+                self.enter_count = 0
+
+            def __enter__(self):
+                self.enter_count += 1
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        counting_lock = CountingLock()
+        gtfs_service._circuit_breaker_lock = counting_lock
+
+        gtfs_service._check_circuit_breaker()
+        gtfs_service._record_failure()
+        gtfs_service._record_success()
+
+        assert counting_lock.enter_count == 3
+
 
 class TestDataModels:
     """Test data model functionality."""

@@ -2,7 +2,7 @@ import asyncio
 import logging
 import tempfile
 import zipfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
@@ -108,21 +108,58 @@ class GTFSFeedImporter:
         logger.info("Truncating existing GTFS data...")
         await self._truncate_all_tables()
 
-        if is_zip:
-            with zipfile.ZipFile(feed_path) as zf:
-                stops_df = self._read_gtfs_table(zf, "stops.txt")
-                routes_df = self._read_gtfs_table(zf, "routes.txt")
-                trips_df = self._read_gtfs_table(zf, "trips.txt")
-                calendar_df = self._read_gtfs_table(zf, "calendar.txt")
-                calendar_dates_df = self._read_gtfs_table(zf, "calendar_dates.txt")
-                feed_info_df = self._read_gtfs_table(zf, "feed_info.txt")
+        try:
+            if is_zip:
+                with zipfile.ZipFile(feed_path) as zf:
+                    stops_df = self._read_gtfs_table(zf, "stops.txt")
+                    routes_df = self._read_gtfs_table(zf, "routes.txt")
+                    trips_df = self._read_gtfs_table(zf, "trips.txt")
+                    calendar_df = self._read_gtfs_table(zf, "calendar.txt")
+                    calendar_dates_df = self._read_gtfs_table(zf, "calendar_dates.txt")
+                    feed_info_df = self._read_gtfs_table(zf, "feed_info.txt")
+
+                    logger.info(
+                        f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
+                    )
+
+                    # Phase 1: Parallel import of independent tables (stops, routes, calendar)
+                    # These have no dependencies on each other
+                    try:
+                        async with asyncio.TaskGroup() as tg:
+                            tg.create_task(self._copy_stops(stops_df, feed_id))
+                            tg.create_task(self._copy_routes(routes_df, feed_id))
+                            tg.create_task(
+                                self._copy_calendar(
+                                    calendar_df, calendar_dates_df, feed_id
+                                )
+                            )
+                    except* Exception:  # type: ignore
+                        # ExceptionGroup handling for Python 3.11+
+                        logger.exception(
+                            "Errors during parallel independent table import"
+                        )
+                        raise
+
+                    # Phase 2: Import dependent tables (trips depends on routes, calendar)
+                    await self._copy_trips(trips_df, feed_id)
+
+                    # Phase 3: Import stop_times (depends on trips, stops)
+                    await self._copy_stop_times_from_zip(zf, feed_id)
+            else:
+                stops_df = self._read_gtfs_table(feed_path, "stops.txt")
+                routes_df = self._read_gtfs_table(feed_path, "routes.txt")
+                trips_df = self._read_gtfs_table(feed_path, "trips.txt")
+                calendar_df = self._read_gtfs_table(feed_path, "calendar.txt")
+                calendar_dates_df = self._read_gtfs_table(
+                    feed_path, "calendar_dates.txt"
+                )
+                feed_info_df = self._read_gtfs_table(feed_path, "feed_info.txt")
 
                 logger.info(
                     f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
                 )
 
-                # Phase 1: Parallel import of independent tables (stops, routes, calendar)
-                # These have no dependencies on each other
+                # Phase 1: Parallel import of independent tables
                 try:
                     async with asyncio.TaskGroup() as tg:
                         tg.create_task(self._copy_stops(stops_df, feed_id))
@@ -131,64 +168,42 @@ class GTFSFeedImporter:
                             self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
                         )
                 except* Exception:  # type: ignore
-                    # ExceptionGroup handling for Python 3.11+
                     logger.exception("Errors during parallel independent table import")
                     raise
 
-                # Phase 2: Import dependent tables (trips depends on routes, calendar)
+                # Phase 2: Import dependent tables
                 await self._copy_trips(trips_df, feed_id)
 
-                # Phase 3: Import stop_times (depends on trips, stops)
-                await self._copy_stop_times_from_zip(zf, feed_id)
-        else:
-            stops_df = self._read_gtfs_table(feed_path, "stops.txt")
-            routes_df = self._read_gtfs_table(feed_path, "routes.txt")
-            trips_df = self._read_gtfs_table(feed_path, "trips.txt")
-            calendar_df = self._read_gtfs_table(feed_path, "calendar.txt")
-            calendar_dates_df = self._read_gtfs_table(feed_path, "calendar_dates.txt")
-            feed_info_df = self._read_gtfs_table(feed_path, "feed_info.txt")
+                # Phase 3: Import stop_times
+                await self._copy_stop_times_from_path(feed_path, feed_id)
 
-            logger.info(
-                f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
+            feed_start_date, feed_end_date = self._resolve_feed_dates(
+                feed_info_df, calendar_df
+            )
+            stop_count = 0 if stops_df is None else stops_df.height
+            route_count = 0 if routes_df is None else routes_df.height
+            trip_count = 0 if trips_df is None else trips_df.height
+
+            await self._record_feed_info(
+                feed_id=feed_id,
+                feed_url=feed_url,
+                feed_start_date=feed_start_date,
+                feed_end_date=feed_end_date,
+                stop_count=stop_count,
+                route_count=route_count,
+                trip_count=trip_count,
             )
 
-            # Phase 1: Parallel import of independent tables
+            logger.info(f"Successfully imported GTFS feed {feed_id}")
+            return feed_id
+        except Exception:
             try:
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(self._copy_stops(stops_df, feed_id))
-                    tg.create_task(self._copy_routes(routes_df, feed_id))
-                    tg.create_task(
-                        self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
-                    )
-            except* Exception:  # type: ignore
-                logger.exception("Errors during parallel independent table import")
-                raise
-
-            # Phase 2: Import dependent tables
-            await self._copy_trips(trips_df, feed_id)
-
-            # Phase 3: Import stop_times
-            await self._copy_stop_times_from_path(feed_path, feed_id)
-
-        feed_start_date, feed_end_date = self._resolve_feed_dates(
-            feed_info_df, calendar_df
-        )
-        stop_count = 0 if stops_df is None else stops_df.height
-        route_count = 0 if routes_df is None else routes_df.height
-        trip_count = 0 if trips_df is None else trips_df.height
-
-        await self._record_feed_info(
-            feed_id=feed_id,
-            feed_url=feed_url,
-            feed_start_date=feed_start_date,
-            feed_end_date=feed_end_date,
-            stop_count=stop_count,
-            route_count=route_count,
-            trip_count=trip_count,
-        )
-
-        logger.info(f"Successfully imported GTFS feed {feed_id}")
-        return feed_id
+                await self._recreate_stop_times_indexes_and_fks()
+            except Exception:
+                logger.exception(
+                    "Failed to restore stop_times indexes/FKs after import error"
+                )
+            raise
 
     async def _truncate_all_tables(self):
         """Truncate all GTFS tables for clean import."""
@@ -900,7 +915,7 @@ class GTFSFeedImporter:
         feed_info = {
             "feed_id": feed_id,
             "feed_url": feed_url,
-            "downloaded_at": datetime.utcnow(),
+            "downloaded_at": datetime.now(timezone.utc),
             "feed_start_date": feed_start_date,
             "feed_end_date": feed_end_date,
             "stop_count": stop_count,

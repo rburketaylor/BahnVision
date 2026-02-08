@@ -76,6 +76,106 @@ UNKNOWN_ROUTE_TYPE = -1
 
 _MAX_UPSERT_RETRIES = 3
 _UPSERT_RETRY_DELAY_SECONDS = 1.0
+_TRIP_MARKER_TTL_SECONDS = 7200  # 2 hours
+_TRIP_MARKER_UPDATE_LUA = """
+local prev = redis.call("GET", KEYS[1])
+local new_status = ARGV[1]
+local new_delay = tonumber(ARGV[2]) or 0
+local ttl = tonumber(ARGV[3]) or 7200
+
+local rank = { unknown = 0, on_time = 1, delayed = 2, cancelled = 3 }
+
+local function parse_marker(raw)
+    if not raw then
+        return nil, 0
+    end
+
+    local sep = string.find(raw, "|", 1, true)
+    if not sep then
+        return raw, 0
+    end
+
+    local status = string.sub(raw, 1, sep - 1)
+    local delay = tonumber(string.sub(raw, sep + 1)) or 0
+    if delay < 0 then
+        delay = 0
+    end
+    return status, delay
+end
+
+if rank[new_status] == nil then
+    new_status = "unknown"
+end
+if new_delay < 0 then
+    new_delay = 0
+end
+
+local prev_status, prev_delay = parse_marker(prev)
+if prev_status and rank[prev_status] == nil then
+    prev_status = "unknown"
+end
+
+local trip_delta = 0
+local delay_delta = 0
+local delayed_delta = 0
+local on_time_delta = 0
+local cancelled_delta = 0
+local marker_status = prev_status
+local marker_delay = prev_delay
+local should_write = false
+
+if not prev_status then
+    trip_delta = 1
+    delay_delta = new_delay
+    marker_status = new_status
+    marker_delay = new_delay
+    should_write = true
+
+    if new_status == "delayed" then
+        delayed_delta = 1
+    elseif new_status == "on_time" then
+        on_time_delta = 1
+    elseif new_status == "cancelled" then
+        cancelled_delta = 1
+    end
+elseif (rank[new_status] or 0) > (rank[prev_status] or 0) then
+    if prev_status == "delayed" then
+        delayed_delta = delayed_delta - 1
+    elseif prev_status == "on_time" then
+        on_time_delta = on_time_delta - 1
+    elseif prev_status == "cancelled" then
+        cancelled_delta = cancelled_delta - 1
+    end
+
+    if new_status == "delayed" then
+        delayed_delta = delayed_delta + 1
+    elseif new_status == "on_time" then
+        on_time_delta = on_time_delta + 1
+    elseif new_status == "cancelled" then
+        cancelled_delta = cancelled_delta + 1
+    end
+
+    local increment = new_delay - prev_delay
+    if increment > 0 then
+        delay_delta = increment
+    end
+
+    marker_status = new_status
+    marker_delay = new_delay
+    should_write = true
+elseif new_delay > prev_delay then
+    delay_delta = new_delay - prev_delay
+    marker_status = prev_status
+    marker_delay = new_delay
+    should_write = true
+end
+
+if should_write then
+    redis.call("SET", KEYS[1], marker_status .. "|" .. marker_delay, "EX", ttl)
+end
+
+return {trip_delta, delay_delta, delayed_delta, on_time_delta, cancelled_delta}
+"""
 
 
 T = TypeVar("T")
@@ -868,6 +968,73 @@ class GTFSRTDataHarvester:
         normalized_status = self._normalize_cached_status(status) or STATUS_UNKNOWN
         return f"{normalized_status}|{max(int(delay_seconds), 0)}"
 
+    def _supports_atomic_trip_marker_updates(self) -> bool:
+        if not self._cache:
+            return False
+
+        cache_client = getattr(self._cache, "_client", None)
+        return callable(getattr(cache_client, "eval", None))
+
+    async def _apply_trip_statuses_atomically(
+        self,
+        *,
+        cache_keys: dict[str, str],
+        trip_statuses: dict[str, dict],
+    ) -> dict[str, int]:
+        """Apply per-trip status deltas using atomic server-side cache updates."""
+        if not self._cache:
+            return {
+                "trip_count": 0,
+                "total_delay_seconds": 0,
+                "delayed": 0,
+                "on_time": 0,
+                "cancelled": 0,
+            }
+
+        cache_client = getattr(self._cache, "_client", None)
+        eval_fn = getattr(cache_client, "eval", None)
+        if not callable(eval_fn):
+            raise RuntimeError("Cache client does not support eval")
+
+        trip_count = 0
+        total_delay_seconds = 0
+        delayed = 0
+        on_time = 0
+        cancelled = 0
+
+        for trip_id, info in trip_statuses.items():
+            cache_key = cache_keys[trip_id]
+            new_status = (
+                self._normalize_cached_status(info.get("status")) or STATUS_UNKNOWN
+            )
+            new_delay = max(int(info.get("delay", 0) or 0), 0)
+            raw_deltas = await eval_fn(
+                _TRIP_MARKER_UPDATE_LUA,
+                1,
+                cache_key,
+                new_status,
+                str(new_delay),
+                str(_TRIP_MARKER_TTL_SECONDS),
+            )
+            if not isinstance(raw_deltas, (list, tuple)) or len(raw_deltas) != 5:
+                raise ValueError(
+                    f"Unexpected atomic trip marker response: {raw_deltas!r}"
+                )
+
+            trip_count += int(raw_deltas[0])
+            total_delay_seconds += int(raw_deltas[1])
+            delayed += int(raw_deltas[2])
+            on_time += int(raw_deltas[3])
+            cancelled += int(raw_deltas[4])
+
+        return {
+            "trip_count": trip_count,
+            "total_delay_seconds": total_delay_seconds,
+            "delayed": delayed,
+            "on_time": on_time,
+            "cancelled": cancelled,
+        }
+
     async def _apply_trip_statuses(
         self,
         bucket_start: datetime,
@@ -917,6 +1084,17 @@ class GTFSRTDataHarvester:
                 "on_time": on_time,
                 "cancelled": cancelled,
             }
+
+        if self._supports_atomic_trip_marker_updates():
+            try:
+                return await self._apply_trip_statuses_atomically(
+                    cache_keys=cache_keys, trip_statuses=trip_statuses
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Atomic trip marker update failed, using batch fallback path: %s",
+                    exc,
+                )
 
         updates: dict[str, str] = {}
         try:
@@ -992,7 +1170,9 @@ class GTFSRTDataHarvester:
 
         if updates:
             try:
-                await self._cache.mset(updates, ttl_seconds=7200)  # 2 hours
+                await self._cache.mset(
+                    updates, ttl_seconds=_TRIP_MARKER_TTL_SECONDS
+                )  # 2 hours
             except Exception as exc:
                 logger.debug("Batch cache write failed: %s", exc)
                 await self._store_trip_markers_single_key_fallback(updates)
@@ -1014,7 +1194,9 @@ class GTFSRTDataHarvester:
 
         for cache_key, marker in updates.items():
             try:
-                await self._cache.set(cache_key, marker, ttl_seconds=7200)
+                await self._cache.set(
+                    cache_key, marker, ttl_seconds=_TRIP_MARKER_TTL_SECONDS
+                )
             except Exception as write_exc:
                 logger.debug(
                     "Fallback cache write failed for key '%s': %s",
@@ -1110,7 +1292,7 @@ class GTFSRTDataHarvester:
                     await self._cache.set(
                         cache_key,
                         self._build_cached_trip_marker(marker_status, marker_delay),
-                        ttl_seconds=7200,
+                        ttl_seconds=_TRIP_MARKER_TTL_SECONDS,
                     )
                 except Exception as write_exc:
                     logger.debug(

@@ -516,6 +516,64 @@ class TestGTFSFeedImporterOrchestration:
         assert record_feed.call_args.kwargs["stop_count"] == 1
 
     @pytest.mark.asyncio
+    async def test_import_failure_restores_stop_times_indexes_and_skips_feed_info(
+        self, tmp_path: Path
+    ):
+        session = _make_session()
+        importer = GTFSFeedImporter(session, _make_settings(tmp_path))
+
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stops.txt").write_text(
+            "stop_id,stop_name,stop_lat,stop_lon\ns1,Alpha,1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "routes.txt").write_text(
+            "route_id,route_type\nr1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "trips.txt").write_text(
+            "trip_id,route_id,service_id\nt1,r1,svc1\n", encoding="utf-8"
+        )
+        (feed_dir / "calendar.txt").write_text(
+            "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+            "svc1,1,1,1,1,1,0,0,20250101,20250131\n",
+            encoding="utf-8",
+        )
+        (feed_dir / "calendar_dates.txt").write_text(
+            "service_id,date,exception_type\nsvc1,20250110,2\n", encoding="utf-8"
+        )
+        (feed_dir / "feed_info.txt").write_text(
+            "feed_start_date,feed_end_date\n2025-01-01,2025-01-31\n", encoding="utf-8"
+        )
+
+        with (
+            patch.object(importer, "_truncate_all_tables", new_callable=AsyncMock),
+            patch.object(importer, "_copy_stops", new_callable=AsyncMock),
+            patch.object(importer, "_copy_routes", new_callable=AsyncMock),
+            patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
+            patch.object(
+                importer,
+                "_copy_trips",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("trip copy failed"),
+            ),
+            patch.object(
+                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+            ) as copy_stop_times,
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ) as recreate,
+            patch.object(
+                importer, "_record_feed_info", new_callable=AsyncMock
+            ) as record_feed,
+        ):
+            with pytest.raises(RuntimeError, match="trip copy failed"):
+                await importer._import_from_path(feed_dir, "file://feed_dir")
+
+        recreate.assert_awaited_once()
+        record_feed.assert_not_awaited()
+        copy_stop_times.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_import_from_path_missing_raises_file_not_found(self, tmp_path: Path):
         importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
         missing = tmp_path / "missing.zip"

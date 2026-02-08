@@ -95,8 +95,10 @@ FastAPI app.main
 - **Dependency Injection:** FastAPI dependencies wire config, cache, GTFS service, and repositories per request to keep services stateless.
 - **Caching Paths:** Cache keys include resource + params (e.g., `departure:{stop_id}:{transport}:{limit}:{offset}`) with `:stale` suffix for fallback copy. Single-flight locks use TTL (`CACHE_SINGLEFLIGHT_LOCK_TTL_SECONDS`) and wait/retry knobs to prevent thundering herds.
 - **Circuit Breaker:** When Valkey is unreachable, an in-process fallback store caches recent responses with opportunistic cleanup; breaker timeout controlled by `CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS`.
-- **Persistence:** Async SQLAlchemy models map to tables such as `gtfs_stops`, `gtfs_routes`, `gtfs_stop_times`, `gtfs_rt_observations`, `weather_observations`, `gtfs_feed_status`. The `TransitDataRepository` supports persisting Transit Lines, Departure Observations, Weather Observations, and Ingestion Runs. The API currently persists and reads the GTFS catalog; deeper historical storage for analytics is planned (Phase 2).
+- **Persistence:** Async SQLAlchemy models map to tables such as `gtfs_stops`, `gtfs_routes`, `gtfs_trips`, `gtfs_stop_times`, `realtime_station_stats`, `weather_observations`, and `gtfs_feed_info`. The `TransitDataRepository` supports persisting Transit Lines, Departure Observations, Weather Observations, and Ingestion Runs. The API currently persists and reads the GTFS catalog; deeper historical storage for analytics is planned (Phase 2).
 - **GTFS Flow:** GTFS feed scheduler downloads and imports Germany-wide GTFS data on startup and periodically.
+  The importer uses staged commits for throughput (truncate/logging-mode prep, then parallel COPY phases), so it is not all-or-nothing across the full run.
+  On import failure after truncation, stop_times indexes/FKs are restored in a best-effort recovery step and feed metadata is not recorded as a successful import.
 - **Error Handling:** Validation errors return 422, station not found returns 404 with descriptive payload, cache lock conflicts return 409 after >5 s wait, upstream outages return 503 with `Retry-After`.
 
 ## 8. Frontend Design Notes
@@ -120,6 +122,11 @@ FastAPI app.main
 | `gtfs_feed_status`     | Tracks GTFS feed updates.                         | Records last update, next check, feed health.      |
 
 Valkey stores serialized Pydantic responses (JSON) using TTL + stale TTL pairs for each endpoint.
+
+Integrity model highlights:
+
+- `realtime_station_stats.stop_id` is constrained by a foreign key to `gtfs_stops.stop_id` (with orphan cleanup in migration before constraint creation).
+- `gtfs_trips(route_id)` is indexed to support route-scoped joins and lookups efficiently.
 
 ## 10. Infrastructure & Deployment
 

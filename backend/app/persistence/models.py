@@ -462,7 +462,10 @@ class RealtimeStationStats(Base):
     __tablename__ = "realtime_station_stats"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    stop_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stop_id: Mapped[str] = mapped_column(
+        ForeignKey("gtfs_stops.stop_id", ondelete="cascade"),
+        nullable=False,
+    )
 
     # Time bucket
     bucket_start: Mapped[datetime] = mapped_column(
