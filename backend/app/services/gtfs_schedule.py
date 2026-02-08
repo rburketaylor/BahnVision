@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, time, timedelta, timezone, date
+from datetime import datetime, time, timedelta, timezone
 from typing import Any, List, Optional
 
 from sqlalchemy import select, and_, or_
@@ -192,10 +192,12 @@ class GTFSScheduleService:
         result = await self.session.execute(query)
 
         departures = []
+        # Calculate midnight once to avoid doing it for every row
+        service_midnight = datetime.combine(today, time(0, 0), tzinfo=timezone.utc)
         for row in result:
-            departure_dt = interval_to_datetime(today, row.departure_time)
+            departure_dt = interval_to_datetime(service_midnight, row.departure_time)
             arrival_dt = (
-                interval_to_datetime(today, row.arrival_time)
+                interval_to_datetime(service_midnight, row.arrival_time)
                 if row.arrival_time is not None
                 else None
             )
@@ -293,11 +295,11 @@ def time_to_interval(dt: datetime) -> timedelta:
     return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second)
 
 
-def interval_to_datetime(service_date: date, interval_value) -> Optional[datetime]:
-    """Convert PostgreSQL interval to a concrete UTC datetime on the service date.
+def interval_to_datetime(base_datetime: datetime, interval_value) -> Optional[datetime]:
+    """Convert PostgreSQL interval to a concrete UTC datetime using a base datetime.
 
     Handles GTFS times that extend beyond 24h by adding the full timedelta to
-    the service day midnight instead of wrapping to a time-of-day.
+    the base datetime (usually service day midnight) instead of wrapping to a time-of-day.
     """
     if interval_value is None:
         return None
@@ -329,10 +331,7 @@ def interval_to_datetime(service_date: date, interval_value) -> Optional[datetim
             logger.warning("Unknown interval type: %s", type(interval_value))
             return None
 
-        service_midnight = datetime.combine(
-            service_date, time(0, 0), tzinfo=timezone.utc
-        )
-        return service_midnight + delta
+        return base_datetime + delta
 
     except (ValueError, AttributeError) as exc:
         logger.warning("Invalid interval format: %s, error: %s", interval_value, exc)
