@@ -12,6 +12,13 @@ docker compose up --build
 
 - **API**: http://localhost:8000/docs
 - **Frontend**: http://localhost:3000
+- **Postgres/Valkey**: internal-only by default (not exposed on host ports)
+
+Optional host access to Postgres/Valkey (for local tooling on `localhost`):
+
+```bash
+docker compose --profile host-access up --build
+```
 
 ### Docker + Observability (Prometheus + Grafana)
 
@@ -28,8 +35,8 @@ Configure Grafana login and Prometheus retention in `.env`:
 ```bash
 PROMETHEUS_RETENTION_TIME=7d
 PROMETHEUS_RETENTION_SIZE=5GB
-GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD=admin
+GRAFANA_ADMIN_USER=<set-a-custom-admin-username>
+GRAFANA_ADMIN_PASSWORD=<set-a-long-random-password>
 ```
 
 ### Local Development
