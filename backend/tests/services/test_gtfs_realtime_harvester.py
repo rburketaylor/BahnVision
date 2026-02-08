@@ -369,6 +369,38 @@ class TestGTFSRTDataHarvester:
         assert result["delayed"] == 0
         assert result["cancelled"] == 0
 
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_mset_failure_does_not_double_count(self):
+        """mset failure should not re-apply deltas from fallback counting."""
+
+        class MsetFailCache(FakeCache):
+            async def mset(self, items: dict[str, str], ttl_seconds: int | None = None):
+                raise RuntimeError("mset failed")
+
+        cache = MsetFailCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        cache_key = (
+            f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id('trip_1')}"
+        )
+
+        result = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+
+        assert result["trip_count"] == 1
+        assert result["total_delay_seconds"] == 400
+        assert result["delayed"] == 1
+        assert cache._store[cache_key] == "delayed|400"
+
 
 class TestScheduleRelationshipMapping:
     """Test schedule relationship enum values."""

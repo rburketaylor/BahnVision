@@ -918,9 +918,9 @@ class GTFSRTDataHarvester:
                 "cancelled": cancelled,
             }
 
+        updates: dict[str, str] = {}
         try:
             existing = await self._cache.mget(list(cache_keys.values()))
-            updates: dict[str, str] = {}
 
             for trip_id, info in trip_statuses.items():
                 cache_key = cache_keys[trip_id]
@@ -971,9 +971,6 @@ class GTFSRTDataHarvester:
                         prev_status, new_delay
                     )
 
-            if updates:
-                await self._cache.mset(updates, ttl_seconds=7200)  # 2 hours
-
         except Exception as exc:
             logger.debug("Batch cache operation failed: %s", exc)
             (
@@ -985,11 +982,20 @@ class GTFSRTDataHarvester:
             ) = await self._apply_trip_statuses_single_key_fallback(
                 cache_keys=cache_keys, trip_statuses=trip_statuses
             )
-            trip_count += trip_count_fallback
-            total_delay_seconds += total_delay_seconds_fallback
-            delayed += delayed_fallback
-            on_time += on_time_fallback
-            cancelled += cancelled_fallback
+            return {
+                "trip_count": trip_count_fallback,
+                "total_delay_seconds": total_delay_seconds_fallback,
+                "delayed": delayed_fallback,
+                "on_time": on_time_fallback,
+                "cancelled": cancelled_fallback,
+            }
+
+        if updates:
+            try:
+                await self._cache.mset(updates, ttl_seconds=7200)  # 2 hours
+            except Exception as exc:
+                logger.debug("Batch cache write failed: %s", exc)
+                await self._store_trip_markers_single_key_fallback(updates)
 
         return {
             "trip_count": trip_count,
@@ -998,6 +1004,23 @@ class GTFSRTDataHarvester:
             "on_time": on_time,
             "cancelled": cancelled,
         }
+
+    async def _store_trip_markers_single_key_fallback(
+        self, updates: dict[str, str]
+    ) -> None:
+        """Best-effort per-key cache writes when batch mset fails."""
+        if not self._cache or not hasattr(self._cache, "set"):
+            return
+
+        for cache_key, marker in updates.items():
+            try:
+                await self._cache.set(cache_key, marker, ttl_seconds=7200)
+            except Exception as write_exc:
+                logger.debug(
+                    "Fallback cache write failed for key '%s': %s",
+                    cache_key,
+                    write_exc,
+                )
 
     async def _apply_trip_statuses_single_key_fallback(
         self,
