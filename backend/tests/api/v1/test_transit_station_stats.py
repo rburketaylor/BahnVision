@@ -113,8 +113,8 @@ class TestStationStatsEndpoint:
             ),
             trends=None,
         )
-        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = lambda: (
+            fake_service
         )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/s1/stats?time_range=24h")
@@ -124,8 +124,8 @@ class TestStationStatsEndpoint:
 
     def test_station_stats_returns_404_when_missing(self, test_app: FastAPI):
         fake_service = FakeStationStatsService(stats=None, trends=None)
-        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = lambda: (
+            fake_service
         )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/missing/stats")
@@ -160,8 +160,8 @@ class TestStationTrendsEndpoint:
                 data_to=now,
             ),
         )
-        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = lambda: (
+            fake_service
         )
         with TestClient(test_app) as client:
             resp = client.get(
@@ -173,8 +173,8 @@ class TestStationTrendsEndpoint:
 
     def test_station_trends_returns_404_when_missing(self, test_app: FastAPI):
         fake_service = FakeStationStatsService(stats=None, trends=None)
-        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = lambda: (
+            fake_service
         )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/missing/trends")
@@ -238,8 +238,8 @@ class TestNearbyStopsEndpoint:
                 raise AssertionError("Should not query DB when serving stale cache")
 
         test_app.dependency_overrides[stops_module.get_session] = lambda: object()
-        test_app.dependency_overrides[stops_module.get_cache_service] = (
-            lambda: FakeCache()
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: (
+            FakeCache()
         )
 
         monkeypatch.setattr(

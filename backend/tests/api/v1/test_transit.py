@@ -109,8 +109,8 @@ def transit_api_client(
     # Override dependencies
     test_app.dependency_overrides[CacheService] = lambda: fake_cache
     test_app.dependency_overrides[get_cache_service] = lambda: fake_cache
-    test_app.dependency_overrides[get_transit_data_service] = (
-        lambda: fake_transit_data_service
+    test_app.dependency_overrides[get_transit_data_service] = lambda: (
+        fake_transit_data_service
     )
 
     # Disable rate limiting for tests (avoids Valkey connection requirement)
