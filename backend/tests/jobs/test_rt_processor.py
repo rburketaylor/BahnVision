@@ -118,10 +118,15 @@ class TestGtfsRealtimeProcessor:
         # Mock GTFS service
         mock_gtfs_service = AsyncMock()
         started = asyncio.Event()
+        fetch_cancelled = asyncio.Event()
 
         async def _blocking_fetch():
             started.set()
-            await asyncio.Event().wait()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                fetch_cancelled.set()
+                raise
 
         mock_gtfs_service.fetch_and_process_feed.side_effect = _blocking_fetch
 
@@ -134,12 +139,14 @@ class TestGtfsRealtimeProcessor:
         await asyncio.wait_for(started.wait(), timeout=0.1)
         loop_task.cancel()
 
-        try:
-            await loop_task
-        except asyncio.CancelledError:
-            pass  # Expected
+        # _processing_loop should handle CancelledError internally and exit cleanly.
+        await asyncio.wait_for(loop_task, timeout=0.1)
 
-        mock_gtfs_service.fetch_and_process_feed.assert_awaited()
+        assert fetch_cancelled.is_set()
+        assert loop_task.done()
+        assert not loop_task.cancelled()
+        assert loop_task.exception() is None
+        mock_gtfs_service.fetch_and_process_feed.assert_awaited_once()
 
 
 class TestGtfsRtLifespanManager:
