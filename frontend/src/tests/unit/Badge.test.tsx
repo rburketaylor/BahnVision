@@ -4,21 +4,38 @@ import '@testing-library/jest-dom'
 import { Badge, TransportBadge } from '../../components/shared/Badge'
 
 describe('Badge', () => {
-  it('renders outline variant', () => {
-    const { container } = render(
+  it('renders outline variant with warning semantics', () => {
+    render(
       <Badge variant="warning" outline={true}>
         Warn
       </Badge>
     )
 
-    expect(screen.getByText('Warn')).toBeInTheDocument()
-    expect(container.firstChild).toHaveClass('bg-transparent')
-    expect(container.firstChild).toHaveClass('border')
+    const badge = screen.getByText('Warn')
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveClass('bg-transparent')
+    expect(badge).toHaveClass('border-status-warning/40')
+    expect(badge).toHaveClass('text-status-warning')
+    expect(badge).not.toHaveClass('bg-status-warning/14')
   })
 
-  it('renders TransportBadge fallback for unknown type', () => {
-    const { container } = render(<TransportBadge type="FERRY" />)
-    expect(container.firstChild).toHaveClass('bg-surface-elevated')
-    expect(screen.getByText('F')).toBeInTheDocument()
+  it('maps known transport types to circular labels', () => {
+    render(<TransportBadge type="TRAM" small={true} />)
+
+    const badge = screen.getByText('T')
+    expect(badge).toHaveClass('rounded-full')
+    expect(badge).toHaveClass('aspect-square')
+    expect(badge).toHaveClass('bg-tram/90')
+    expect(badge).toHaveClass('w-6')
+    expect(badge).toHaveClass('h-6')
+  })
+
+  it('falls back to neutral variant and first letter for unknown transport type', () => {
+    render(<TransportBadge type="FERRY" />)
+
+    const badge = screen.getByText('F')
+    expect(badge).toHaveClass('bg-surface-elevated')
+    expect(badge).toHaveClass('text-muted-foreground')
+    expect(badge).toHaveClass('rounded-full')
   })
 })

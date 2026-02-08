@@ -67,6 +67,10 @@ function getCancellationColor(rate: number): string {
   return 'text-status-critical'
 }
 
+function toDomIdFragment(value: string | undefined): string {
+  return value ? value.replace(/[^A-Za-z0-9_-]/g, '-') : 'unknown'
+}
+
 export function StationPage() {
   const { stationId } = useParams<{ stationId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -227,6 +231,13 @@ export function StationPage() {
 
   // Determine station name from available sources
   const stationName = stats?.station_name || stop?.name || `Station ${stationId}`
+  const scheduleControlIdPrefix = useMemo(
+    () => `station-schedule-${toDomIdFragment(stationId)}`,
+    [stationId]
+  )
+  const resultsControlId = `${scheduleControlIdPrefix}-results`
+  const stepControlId = `${scheduleControlIdPrefix}-step`
+  const timeControlId = `${scheduleControlIdPrefix}-time`
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -551,8 +562,14 @@ export function StationPage() {
 
                 {/* Page Size Selector */}
                 <div>
-                  <label className="mb-1 block text-tiny text-muted-foreground">Results</label>
+                  <label
+                    htmlFor={resultsControlId}
+                    className="mb-1 block text-tiny text-muted-foreground"
+                  >
+                    Results
+                  </label>
                   <select
+                    id={resultsControlId}
                     value={paginationState.pageSize}
                     onChange={e =>
                       updatePaginationState({ pageSize: parseInt(e.target.value, 10) })
@@ -568,8 +585,14 @@ export function StationPage() {
 
                 {/* Step Selector */}
                 <div>
-                  <label className="mb-1 block text-tiny text-muted-foreground">Step</label>
+                  <label
+                    htmlFor={stepControlId}
+                    className="mb-1 block text-tiny text-muted-foreground"
+                  >
+                    Step
+                  </label>
                   <select
+                    id={stepControlId}
                     value={paginationState.pageStepMinutes}
                     onChange={e =>
                       updatePaginationState({ pageStepMinutes: parseInt(e.target.value, 10) })
@@ -584,8 +607,14 @@ export function StationPage() {
 
                 {/* Time Picker */}
                 <div>
-                  <label className="mb-1 block text-tiny text-muted-foreground">Time</label>
+                  <label
+                    htmlFor={timeControlId}
+                    className="mb-1 block text-tiny text-muted-foreground"
+                  >
+                    Time
+                  </label>
                   <input
+                    id={timeControlId}
                     type="datetime-local"
                     value={toDateTimeLocalValue(paginationState.fromTime)}
                     onChange={e => {

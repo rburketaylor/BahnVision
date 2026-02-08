@@ -60,8 +60,8 @@ test.describe('Network Error Handling', () => {
     const searchInput = page.getByRole('combobox', { name: /station search/i })
     await searchInput.fill('Mar')
 
-    // Wait a moment for the error state
-    await page.waitForTimeout(500)
+    // Wait for the first failed request to surface an error state
+    await expect(page.getByText(/error|failed|temporary/i)).toBeVisible({ timeout: 5000 })
 
     // Clear and retry (second call should succeed)
     await searchInput.fill('')

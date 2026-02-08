@@ -399,30 +399,6 @@ function sanitize(value: string): string {
   return DOMPurify.sanitize(value, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
 }
 
-/**
- * Suppress WebGL deprecation warnings in development
- */
-function setupWebGLWarningSuppression(): (() => void) | null {
-  // Only suppress warnings in development mode
-  if (import.meta.env.MODE === 'development') {
-    const originalConsoleWarn = console.warn
-    console.warn = (...args) => {
-      if (
-        typeof args[0] === 'string' &&
-        args[0].includes('texImage') &&
-        args[0].includes('deprecated')
-      ) {
-        return // Skip WebGL deprecation warnings
-      }
-      originalConsoleWarn(...args)
-    }
-    return () => {
-      console.warn = originalConsoleWarn
-    }
-  }
-  return null
-}
-
 export function MapLibreHeatmap({
   dataPoints,
   overviewPoints,
@@ -437,14 +413,6 @@ export function MapLibreHeatmap({
   isStationStatsLoading,
   focusRequest,
 }: MapLibreHeatmapProps) {
-  // Setup WebGL warning suppression
-  useEffect(() => {
-    const restore = setupWebGLWarningSuppression()
-    return () => {
-      restore?.()
-    }
-  }, [])
-
   const { resolvedTheme } = useTheme()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -462,6 +430,7 @@ export function MapLibreHeatmap({
   const lastAppliedFocusRequestIdRef = useRef<number | null>(null)
   const transitionStartTsRef = useRef<number | null>(null)
   const transitionClearTimerRef = useRef<number | null>(null)
+  const popupRenderFrameRef = useRef<number | null>(null)
 
   const [isStyleTransitioning, setIsStyleTransitioning] = useState(false)
   const [mapKey, setMapKey] = useState(() => Date.now())
@@ -970,6 +939,10 @@ export function MapLibreHeatmap({
         window.clearTimeout(transitionClearTimerRef.current)
         transitionClearTimerRef.current = null
       }
+      if (popupRenderFrameRef.current !== null) {
+        window.cancelAnimationFrame(popupRenderFrameRef.current)
+        popupRenderFrameRef.current = null
+      }
       if (zoomDebounceTimerRef.current) window.clearTimeout(zoomDebounceTimerRef.current)
       if (saveViewTimerRef.current) window.clearTimeout(saveViewTimerRef.current)
       popupRef.current?.remove()
@@ -1038,6 +1011,11 @@ export function MapLibreHeatmap({
 
   // Update popup when station selection or stats change
   useEffect(() => {
+    if (popupRenderFrameRef.current !== null) {
+      window.cancelAnimationFrame(popupRenderFrameRef.current)
+      popupRenderFrameRef.current = null
+    }
+
     if (!selectedStationId || !mapRef.current) {
       if (popupRef.current && !selectedStationId) {
         popupRef.current.remove()
@@ -1115,7 +1093,17 @@ export function MapLibreHeatmap({
     }
 
     // Use requestAnimationFrame to sync with browser paint
-    requestAnimationFrame(showPopup)
+    popupRenderFrameRef.current = window.requestAnimationFrame(() => {
+      popupRenderFrameRef.current = null
+      showPopup()
+    })
+
+    return () => {
+      if (popupRenderFrameRef.current !== null) {
+        window.cancelAnimationFrame(popupRenderFrameRef.current)
+        popupRenderFrameRef.current = null
+      }
+    }
   }, [
     selectedStationId,
     stationStats,
@@ -1128,6 +1116,10 @@ export function MapLibreHeatmap({
   // Cleanup React root when component unmounts
   useEffect(() => {
     return () => {
+      if (popupRenderFrameRef.current !== null) {
+        window.cancelAnimationFrame(popupRenderFrameRef.current)
+        popupRenderFrameRef.current = null
+      }
       if (popupRootRef.current) {
         popupRootRef.current.unmount()
       }

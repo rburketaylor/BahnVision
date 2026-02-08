@@ -13,6 +13,17 @@ interface TimeFormatToggleProps {
   onToggle: (use24Hour: boolean) => void
 }
 
+function getDepartureKey(departure: TransitDeparture): string {
+  const effectiveDeparture = departure.realtime_departure ?? departure.scheduled_departure
+  return [
+    departure.stop_id,
+    departure.trip_id,
+    departure.route_id,
+    effectiveDeparture,
+    departure.schedule_relationship,
+  ].join(':')
+}
+
 function TimeFormatToggle({ use24Hour, onToggle }: TimeFormatToggleProps) {
   return (
     <div className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-elevated p-1">
@@ -86,7 +97,7 @@ export function DeparturesBoard({
       </div>
 
       <div className="space-y-2">
-        {sortedDepartures.map((departure, index) => {
+        {sortedDepartures.map(departure => {
           const time = formatTime(
             departure.realtime_departure || departure.scheduled_departure,
             use24Hour
@@ -100,7 +111,7 @@ export function DeparturesBoard({
 
           return (
             <div
-              key={index}
+              key={getDepartureKey(departure)}
               className={`rounded-md border px-4 py-3 transition-colors ${
                 isCancelled
                   ? 'border-red-500/35 bg-red-500/8'

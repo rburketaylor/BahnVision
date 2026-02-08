@@ -582,4 +582,62 @@ describe('MapLibreHeatmap Component', () => {
     expect(currentMapInstance.remove).toHaveBeenCalled()
     consoleError.mockRestore()
   })
+
+  it('does not globally monkeypatch console.warn', async () => {
+    const originalWarn = console.warn
+
+    render(
+      <ThemeProvider defaultTheme="light">
+        <MapLibreHeatmap dataPoints={[]} enabledMetrics={{ cancellations: true, delays: true }} />
+      </ThemeProvider>
+    )
+
+    await waitFor(() =>
+      expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
+    )
+    expect(console.warn).toBe(originalWarn)
+  })
+
+  it('cancels pending popup animation frames before rescheduling and on unmount', async () => {
+    let rafId = 0
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation(() => ++rafId)
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation(() => {})
+
+    const overviewPoints = [
+      { id: 'station-1', n: 'Station 1', lat: 52.5, lon: 13.4, i: 0.2 },
+      { id: 'station-2', n: 'Station 2', lat: 52.6, lon: 13.5, i: 0.2 },
+    ]
+
+    const { rerender, unmount } = render(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          overviewPoints={overviewPoints}
+          selectedStationId="station-1"
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <ThemeProvider>
+        <MapLibreHeatmap
+          overviewPoints={overviewPoints}
+          selectedStationId="station-2"
+          enabledMetrics={{ cancellations: true, delays: true }}
+        />
+      </ThemeProvider>
+    )
+
+    await waitFor(() => expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2))
+    expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(1)
+
+    unmount()
+    expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(2)
+  })
 })

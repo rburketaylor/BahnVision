@@ -5,31 +5,40 @@ import { Card } from '../../components/shared/Card'
 
 describe('Card', () => {
   it('renders children with default styling', () => {
-    const { container } = render(
+    render(
       <Card>
         <div>Content</div>
       </Card>
     )
 
     expect(screen.getByText('Content')).toBeInTheDocument()
-    expect(container.firstChild).toHaveClass('card-base')
+    const card = screen.getByText('Content').closest('.card-base')
+    expect(card).toBeInTheDocument()
+    expect(card).toHaveClass('p-4')
   })
 
-  it('applies accent, padding, and noHover variants', () => {
+  it('applies accent, spacious padding, and custom classes', () => {
     const { container: normal } = render(
-      <Card accent="blue" padding="spacious">
+      <Card accent="blue" padding="spacious" className="custom-class">
         Content
       </Card>
     )
     expect(normal.firstChild).toHaveClass('card-accent-blue')
     expect(normal.firstChild).toHaveClass('p-5')
+    expect(normal.firstChild).toHaveClass('custom-class')
+  })
 
-    const { container: noHover } = render(
+  it('applies noHover overrides when requested', () => {
+    const { container } = render(
       <Card accent="green" noHover={true}>
         Content
       </Card>
     )
-    expect(noHover.firstChild).toHaveClass('card-accent-green')
-    expect(noHover.firstChild).toHaveClass('p-4')
+
+    expect(container.firstChild).toHaveClass('card-accent-green')
+    expect(container.firstChild).toHaveClass('p-4')
+    expect(container.firstChild).toHaveClass('hover:translate-y-0')
+    expect(container.firstChild).toHaveClass('hover:shadow-surface-1')
+    expect(container.firstChild).toHaveClass('hover:border-border')
   })
 })
