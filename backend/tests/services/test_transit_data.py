@@ -514,6 +514,133 @@ class TestStopInfo:
         assert stop.zone_id == "M"
 
 
+class TestStopInfoSerialization:
+    """Tests for StopInfo to_dict and from_dict methods."""
+
+    def test_to_dict_and_from_dict_roundtrip(self):
+        """Test that to_dict and from_dict are inverse operations."""
+        original = StopInfo(
+            stop_id="de:09162:6",
+            stop_name="München Hbf",
+            stop_lat=48.1403,
+            stop_lon=11.5583,
+            zone_id="M",
+            wheelchair_boarding=1,
+            upcoming_departures=[
+                DepartureInfo(
+                    trip_id="trip1",
+                    route_id="route1",
+                    route_short_name="S1",
+                    route_long_name="Test Route",
+                    trip_headsign="Destination",
+                    stop_id="stop1",
+                    stop_name="Test Stop",
+                    scheduled_departure=datetime(
+                        2025, 12, 8, 8, 30, tzinfo=timezone.utc
+                    ),
+                )
+            ],
+            alerts=[],
+        )
+
+        serialized = original.to_dict()
+        restored = StopInfo.from_dict(serialized)
+
+        assert restored.stop_id == original.stop_id
+        assert restored.stop_name == original.stop_name
+        assert restored.zone_id == original.zone_id
+        assert len(restored.upcoming_departures) == 1
+        assert restored.upcoming_departures[0].trip_id == "trip1"
+
+    def test_to_dict_handles_alerts(self):
+        """Test proper serialization of alerts in StopInfo."""
+        from app.services.gtfs_realtime import ServiceAlert
+
+        alert = ServiceAlert(
+            alert_id="alert1",
+            cause="TECHNICAL_PROBLEM",
+            effect="SIGNIFICANT_DELAYS",
+            header_text="Delays",
+            description_text="Desc",
+            affected_routes={"S1"},
+            affected_stops={"stop1"},
+            start_time=datetime(2025, 12, 8, 6, 0, tzinfo=timezone.utc),
+        )
+
+        original = StopInfo(
+            stop_id="stop1",
+            stop_name="Test Stop",
+            stop_lat=48.0,
+            stop_lon=11.0,
+            alerts=[alert],
+        )
+
+        serialized = original.to_dict()
+        assert len(serialized["alerts"]) == 1
+        assert serialized["alerts"][0]["alert_id"] == "alert1"
+        assert isinstance(serialized["alerts"][0]["affected_routes"], list)
+
+        restored = StopInfo.from_dict(serialized)
+        assert len(restored.alerts) == 1
+        assert restored.alerts[0].alert_id == "alert1"
+        assert isinstance(restored.alerts[0].affected_routes, set)
+
+
+class TestRouteInfoSerialization:
+    """Tests for RouteInfo to_dict and from_dict methods."""
+
+    def test_to_dict_and_from_dict_roundtrip(self):
+        """Test that to_dict and from_dict are inverse operations."""
+        original = RouteInfo(
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            route_type=2,
+            route_color="00BFFF",
+            route_text_color="FFFFFF",
+            active_trips=5,
+        )
+
+        serialized = original.to_dict()
+        restored = RouteInfo.from_dict(serialized)
+
+        assert restored.route_id == original.route_id
+        assert restored.active_trips == original.active_trips
+
+    def test_to_dict_handles_alerts(self):
+        """Test proper serialization of alerts in RouteInfo."""
+        from app.services.gtfs_realtime import ServiceAlert
+
+        alert = ServiceAlert(
+            alert_id="alert1",
+            cause="TECHNICAL_PROBLEM",
+            effect="SIGNIFICANT_DELAYS",
+            header_text="Delays",
+            description_text="Desc",
+            affected_routes={"S1"},
+            affected_stops={"stop1"},
+            start_time=datetime(2025, 12, 8, 6, 0, tzinfo=timezone.utc),
+        )
+
+        original = RouteInfo(
+            route_id="route1",
+            route_short_name="S1",
+            route_long_name="Test Route",
+            route_type=2,
+            route_color="FFFFFF",
+            route_text_color="000000",
+            alerts=[alert],
+        )
+
+        serialized = original.to_dict()
+        assert len(serialized["alerts"]) == 1
+        assert serialized["alerts"][0]["alert_id"] == "alert1"
+
+        restored = RouteInfo.from_dict(serialized)
+        assert len(restored.alerts) == 1
+        assert restored.alerts[0].alert_id == "alert1"
+
+
 class TestScheduleRelationship:
     """Tests for ScheduleRelationship enum."""
 
