@@ -121,10 +121,13 @@ async def get_ingestion_status(
         is_expired=is_expired,
     )
 
-    # Get harvester status from request.state (populated by lifespan yield dict)
+    # Get harvester status from request.state (lifespan yield dict) or app.state.
     harvester_status = GTFSRTHarvesterStatus()
-    # FastAPI shallow-copies the lifespan yield dict {"harvester": ...} to request.state
-    harvester = getattr(request.state, "harvester", None)
+    # FastAPI shallow-copies lifespan state to request.state, but tests and some
+    # deployments may store runtime objects directly on app.state.
+    harvester = getattr(request.state, "harvester", None) or getattr(
+        request.app.state, "harvester", None
+    )
     if harvester:
         status = harvester.get_status()
         harvester_status = GTFSRTHarvesterStatus(
