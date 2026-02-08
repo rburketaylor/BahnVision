@@ -18,10 +18,13 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.shared import RATE_LIMIT_HEATMAP_OVERVIEW
+from app.api.v1.shared.constants import RATE_LIMIT_HEATMAP_CANCELLATIONS
+from app.api.v1.shared.dependencies import require_admin_api_key
 from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_session
@@ -166,6 +169,54 @@ def _append_server_timing(
     response.headers["Server-Timing"] = f"{existing}, {entry}" if existing else entry
 
 
+async def _purge_cache_entry(cache: CacheService, key: str) -> None:
+    """Best-effort removal of malformed cache entries."""
+    try:
+        await cache.delete(key, remove_stale=True)
+    except Exception:
+        logger.debug("Failed to purge cache key %s after validation failure", key)
+
+
+async def _heatmap_response_from_cache(
+    cache: CacheService,
+    cache_key: str,
+    payload: object | None,
+) -> HeatmapResponse | None:
+    """Deserialize cached heatmap payload, treating invalid payloads as cache miss."""
+    if payload is None:
+        return None
+    try:
+        return HeatmapResponse.model_validate(payload)
+    except (TypeError, ValidationError) as validation_error:
+        logger.warning(
+            "Invalid heatmap cache payload for key '%s'; treating as miss: %s",
+            cache_key,
+            validation_error,
+        )
+        await _purge_cache_entry(cache, cache_key)
+        return None
+
+
+async def _overview_response_from_cache(
+    cache: CacheService,
+    cache_key: str,
+    payload: object | None,
+) -> HeatmapOverviewResponse | None:
+    """Deserialize cached overview payload, treating invalid payloads as cache miss."""
+    if payload is None:
+        return None
+    try:
+        return HeatmapOverviewResponse.model_validate(payload)
+    except (TypeError, ValidationError) as validation_error:
+        logger.warning(
+            "Invalid heatmap overview cache payload for key '%s'; treating as miss: %s",
+            cache_key,
+            validation_error,
+        )
+        await _purge_cache_entry(cache, cache_key)
+        return None
+
+
 async def _refresh_heatmap_cache(
     *,
     cache: CacheService,
@@ -230,7 +281,9 @@ async def get_gtfs_schedule(
         "suitable for rendering as a heatmap overlay on a map."
     ),
 )
+@limiter.limit(RATE_LIMIT_HEATMAP_CANCELLATIONS.value)
 async def get_cancellation_heatmap(
+    request: Request,
     response: Response,
     background_tasks: BackgroundTasks,
     time_range: Annotated[
@@ -305,18 +358,30 @@ async def get_cancellation_heatmap(
 
         if time_range == "live":
             cache_key = heatmap_live_snapshot_cache_key()
-            cached_data = await cache.get_json(cache_key)
-            if cached_data:
+            try:
+                cached_data = await cache.get_json(cache_key)
+            except Exception as cache_error:
+                logger.warning(
+                    "Cache read failed for key '%s': %s", cache_key, cache_error
+                )
+                cached_data = None
+            snapshot = await _heatmap_response_from_cache(cache, cache_key, cached_data)
+            if snapshot is not None:
                 response.headers["X-Cache-Status"] = "hit"
-                snapshot = HeatmapResponse.model_validate(cached_data)
                 return _filter_live_snapshot(
                     snapshot, transport_modes, max_points_effective
                 )
 
-            stale_data = await cache.get_stale_json(cache_key)
-            if stale_data:
+            try:
+                stale_data = await cache.get_stale_json(cache_key)
+            except Exception as cache_error:
+                logger.warning(
+                    "Stale cache read failed for key '%s': %s", cache_key, cache_error
+                )
+                stale_data = None
+            snapshot = await _heatmap_response_from_cache(cache, cache_key, stale_data)
+            if snapshot is not None:
                 response.headers["X-Cache-Status"] = "stale"
-                snapshot = HeatmapResponse.model_validate(stale_data)
                 return _filter_live_snapshot(
                     snapshot, transport_modes, max_points_effective
                 )
@@ -340,19 +405,35 @@ async def get_cancellation_heatmap(
 
         # Try to get from cache
         cache_get_started = time.monotonic()
-        cached_data = await cache.get_json(cache_key)
+        try:
+            cached_data = await cache.get_json(cache_key)
+        except Exception as cache_error:
+            logger.warning("Cache read failed for key '%s': %s", cache_key, cache_error)
+            cached_data = None
         cache_get_ms = (time.monotonic() - cache_get_started) * 1000
         _append_server_timing(response, name="cache", duration_ms=cache_get_ms)
-        if cached_data:
+        cached_response = await _heatmap_response_from_cache(
+            cache, cache_key, cached_data
+        )
+        if cached_response is not None:
             response.headers["X-Cache-Status"] = "hit"
             logger.debug("Cache hit for heatmap data")
-            return HeatmapResponse.model_validate(cached_data)
+            return cached_response
 
         stale_get_started = time.monotonic()
-        stale_data = await cache.get_stale_json(cache_key)
+        try:
+            stale_data = await cache.get_stale_json(cache_key)
+        except Exception as cache_error:
+            logger.warning(
+                "Stale cache read failed for key '%s': %s", cache_key, cache_error
+            )
+            stale_data = None
         stale_get_ms = (time.monotonic() - stale_get_started) * 1000
         _append_server_timing(response, name="stale", duration_ms=stale_get_ms)
-        if stale_data:
+        stale_response = await _heatmap_response_from_cache(
+            cache, cache_key, stale_data
+        )
+        if stale_response is not None:
             response.headers["X-Cache-Status"] = "stale-refresh"
             background_tasks.add_task(
                 _refresh_heatmap_cache,
@@ -364,7 +445,7 @@ async def get_cancellation_heatmap(
                 zoom_level=zoom,
                 max_points=max_points_effective,
             )
-            return HeatmapResponse.model_validate(stale_data)
+            return stale_response
 
         logger.info("Cache miss - generating fresh heatmap data")
 
@@ -379,10 +460,21 @@ async def get_cancellation_heatmap(
             retry_delay=settings.cache_singleflight_retry_delay_seconds,
         ):
             # Double-check after acquiring lock in case another request filled it.
-            cached_data = await cache.get_json(cache_key)
-            if cached_data:
+            try:
+                cached_data = await cache.get_json(cache_key)
+            except Exception as cache_error:
+                logger.warning(
+                    "Cache read failed after lock for key '%s': %s",
+                    cache_key,
+                    cache_error,
+                )
+                cached_data = None
+            cached_response = await _heatmap_response_from_cache(
+                cache, cache_key, cached_data
+            )
+            if cached_response is not None:
                 response.headers["X-Cache-Status"] = "hit"
-                return HeatmapResponse.model_validate(cached_data)
+                return cached_response
 
             generate_started = time.monotonic()
             service = HeatmapService(gtfs_schedule, cache, session=db)
@@ -508,10 +600,20 @@ async def get_heatmap_overview(
     # Handle live mode - use the live snapshot cache
     if time_range == "live":
         live_cache_key = heatmap_live_snapshot_cache_key()
-        cached_data = await cache.get_json(live_cache_key)
-        if cached_data:
+        try:
+            cached_data = await cache.get_json(live_cache_key)
+        except Exception as cache_error:
+            logger.warning(
+                "Cache read failed for overview key '%s': %s",
+                live_cache_key,
+                cache_error,
+            )
+            cached_data = None
+        snapshot = await _heatmap_response_from_cache(
+            cache, live_cache_key, cached_data
+        )
+        if snapshot is not None:
             response.headers["X-Cache-Status"] = "hit"
-            snapshot = HeatmapResponse.model_validate(cached_data)
             filtered_snapshot = _filter_live_snapshot(
                 snapshot, transport_modes, len(snapshot.data_points)
             )
@@ -524,10 +626,18 @@ async def get_heatmap_overview(
                 total_impacted_stations=len(points),
             )
 
-        stale_data = await cache.get_stale_json(live_cache_key)
-        if stale_data:
+        try:
+            stale_data = await cache.get_stale_json(live_cache_key)
+        except Exception as cache_error:
+            logger.warning(
+                "Stale cache read failed for overview key '%s': %s",
+                live_cache_key,
+                cache_error,
+            )
+            stale_data = None
+        snapshot = await _heatmap_response_from_cache(cache, live_cache_key, stale_data)
+        if snapshot is not None:
             response.headers["X-Cache-Status"] = "stale"
-            snapshot = HeatmapResponse.model_validate(stale_data)
             filtered_snapshot = _filter_live_snapshot(
                 snapshot, transport_modes, len(snapshot.data_points)
             )
@@ -551,18 +661,33 @@ async def get_heatmap_overview(
     )
 
     # Check cache first
+    cached = None
     try:
         cached = await cache.get_json(cache_key)
-        if cached:
-            response.headers["X-Cache-Status"] = "hit"
-            return HeatmapOverviewResponse.model_validate(cached)
+    except Exception as cache_error:
+        logger.warning(
+            "Cache read failed for heatmap overview key '%s': %s",
+            cache_key,
+            cache_error,
+        )
+    cached_response = await _overview_response_from_cache(cache, cache_key, cached)
+    if cached_response is not None:
+        response.headers["X-Cache-Status"] = "hit"
+        return cached_response
 
+    stale = None
+    try:
         stale = await cache.get_stale_json(cache_key)
-        if stale:
-            response.headers["X-Cache-Status"] = "stale"
-            return HeatmapOverviewResponse.model_validate(stale)
-    except Exception as e:
-        logger.warning("Cache read failed for heatmap overview: %s", e)
+    except Exception as cache_error:
+        logger.warning(
+            "Stale cache read failed for heatmap overview key '%s': %s",
+            cache_key,
+            cache_error,
+        )
+    stale_response = await _overview_response_from_cache(cache, cache_key, stale)
+    if stale_response is not None:
+        response.headers["X-Cache-Status"] = "stale"
+        return stale_response
 
     response.headers["X-Cache-Status"] = "miss"
 
@@ -641,8 +766,10 @@ async def _daily_aggregation_task() -> None:
 
 @router.post("/aggregate-daily")
 async def trigger_daily_aggregation(
+    request: Request,
     response: Response,
     background_tasks: BackgroundTasks,
+    _admin_auth: None = Depends(require_admin_api_key),
 ) -> dict[str, str]:
     """Manually trigger daily aggregation for yesterday's data.
 
@@ -656,7 +783,13 @@ async def trigger_daily_aggregation(
     background_tasks.add_task(_daily_aggregation_task)
 
     response.headers["X-Background-Task"] = "queued"
-    logger.info("Daily aggregation task queued via API trigger")
+    source_ip = request.client.host if request.client else "unknown"
+    request_id = request.headers.get("X-Request-ID", "")
+    logger.info(
+        "Daily aggregation task queued via API trigger source_ip=%s request_id=%s",
+        source_ip,
+        request_id,
+    )
 
     return {
         "status": "queued",

@@ -13,6 +13,7 @@ from app.api.v1.shared.cache_headers import (
 )
 from app.api.v1.shared.constants import (
     RATE_LIMIT_EXPENSIVE,
+    RATE_LIMIT_HEATMAP_CANCELLATIONS,
     RATE_LIMIT_HEATMAP_OVERVIEW,
     RATE_LIMIT_NEARBY,
     RATE_LIMIT_SEARCH,
@@ -34,6 +35,7 @@ __all__ = [
     "RATE_LIMIT_SEARCH",
     "RATE_LIMIT_EXPENSIVE",
     "RATE_LIMIT_NEARBY",
+    "RATE_LIMIT_HEATMAP_CANCELLATIONS",
     "RATE_LIMIT_HEATMAP_OVERVIEW",
     # Cache headers
     "set_cache_header",

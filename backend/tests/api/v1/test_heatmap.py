@@ -4,6 +4,12 @@ Tests for the heatmap endpoint.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
+from app.api.v1.shared.constants import RATE_LIMIT_HEATMAP_CANCELLATIONS
+from app.api.v1.shared.rate_limit import limiter
 from app.models.heatmap import HeatmapOverviewResponse, HeatmapResponse
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
@@ -12,6 +18,19 @@ from app.services.heatmap_cache import (
 )
 from app.services.heatmap_service import resolve_max_points
 from tests.api.conftest import CacheScenario
+
+
+@pytest.fixture(autouse=True)
+def reset_heatmap_rate_limit_state():
+    try:
+        limiter.reset()
+    except Exception:
+        pass
+    yield
+    try:
+        limiter.reset()
+    except Exception:
+        pass
 
 
 def test_heatmap_cancellations_cache_hit(api_client, fake_cache):
@@ -84,6 +103,26 @@ def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_gtfs_sche
     assert validated.summary.total_stations == 0
 
 
+def test_heatmap_cancellations_invalid_cache_payload_falls_back_to_fresh_data(
+    api_client, fake_cache, fake_gtfs_schedule
+):
+    """Malformed cache payload should be treated as cache miss with fresh generation."""
+    max_points = resolve_max_points(zoom_level=10, max_points=None)
+    fake_cache.configure(
+        heatmap_cancellations_cache_key(
+            time_range="24h",
+            transport_modes=None,
+            bucket_width_minutes=60,
+            max_points=max_points,
+        ),
+        CacheScenario(fresh_value={"bad": "payload"}),
+    )
+
+    response = api_client.get("/api/v1/heatmap/cancellations")
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "miss"
+
+
 def test_heatmap_live_cache_hit(api_client, fake_cache):
     """Test live heatmap endpoint with cache hit scenario."""
     cached_payload = {
@@ -137,6 +176,18 @@ def test_heatmap_live_cache_hit(api_client, fake_cache):
 
 def test_heatmap_live_cache_miss_returns_503(api_client, fake_cache):
     """Test live heatmap endpoint returns 503 when snapshot is missing."""
+    response = api_client.get("/api/v1/heatmap/cancellations?time_range=live")
+    assert response.status_code == 503
+    assert response.headers.get("X-Cache-Status") == "miss"
+
+
+def test_heatmap_live_malformed_cache_payload_treated_as_miss(api_client, fake_cache):
+    """Malformed live cache payload should be treated as a cache miss."""
+    fake_cache.configure(
+        heatmap_live_snapshot_cache_key(),
+        CacheScenario(fresh_value={"bad": "payload"}),
+    )
+
     response = api_client.get("/api/v1/heatmap/cancellations?time_range=live")
     assert response.status_code == 503
     assert response.headers.get("X-Cache-Status") == "miss"
@@ -379,12 +430,58 @@ def test_heatmap_cancellations_stop_list_failure(
     assert len(validated.data_points) == 0
 
 
+def test_heatmap_cancellations_rate_limited(api_client):
+    """Cancellations endpoint should enforce configured per-minute rate limit."""
+    limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
+    for _ in range(limit):
+        response = api_client.get("/api/v1/heatmap/cancellations")
+        assert response.status_code == 200
+
+    response = api_client.get("/api/v1/heatmap/cancellations")
+    assert response.status_code == 429
+
+
 class TestDailyAggregationEndpoint:
     """Tests for the daily aggregation endpoint."""
 
-    def test_trigger_daily_aggregation_queues_background_task(self, api_client):
-        """Test that the aggregation endpoint queues a background task."""
+    def test_trigger_daily_aggregation_requires_admin_auth(
+        self, api_client, monkeypatch
+    ):
+        """Endpoint should reject unauthenticated callers when admin key is configured."""
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+
         response = api_client.post("/api/v1/heatmap/aggregate-daily")
+        assert response.status_code == 401
+
+    def test_trigger_daily_aggregation_rejects_invalid_admin_key(
+        self, api_client, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+
+        response = api_client.post(
+            "/api/v1/heatmap/aggregate-daily",
+            headers={"X-API-Key": "wrong-token"},
+        )
+        assert response.status_code == 403
+
+    def test_trigger_daily_aggregation_queues_background_task_when_authorized(
+        self, api_client, monkeypatch
+    ):
+        """Test that the aggregation endpoint queues a background task."""
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+        response = api_client.post(
+            "/api/v1/heatmap/aggregate-daily",
+            headers={"X-API-Key": "secret-token"},
+        )
 
         assert response.status_code == 200
         assert response.headers.get("X-Background-Task") == "queued"
@@ -393,9 +490,18 @@ class TestDailyAggregationEndpoint:
         assert data["status"] == "queued"
         assert "message" in data
 
-    def test_trigger_daily_aggregation_response_structure(self, api_client):
+    def test_trigger_daily_aggregation_response_structure(
+        self, api_client, monkeypatch
+    ):
         """Test that the aggregation endpoint returns expected structure."""
-        response = api_client.post("/api/v1/heatmap/aggregate-daily")
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+        response = api_client.post(
+            "/api/v1/heatmap/aggregate-daily",
+            headers={"X-API-Key": "secret-token"},
+        )
 
         assert response.status_code == 200
 

@@ -34,5 +34,8 @@ RATE_LIMIT_EXPENSIVE = RateLimit("30/minute")
 RATE_LIMIT_HEATMAP_OVERVIEW = RateLimit("30/minute")
 """Rate limit for heatmap overview endpoint."""
 
+RATE_LIMIT_HEATMAP_CANCELLATIONS = RateLimit("30/minute")
+"""Rate limit for heatmap cancellations endpoint."""
+
 RATE_LIMIT_NEARBY = RateLimit("30/minute")
 """Rate limit for nearby stops endpoint (more expensive)."""
