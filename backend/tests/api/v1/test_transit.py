@@ -90,27 +90,25 @@ def transit_api_client(
 ) -> TestClient:
     """Create test client with transit dependencies mocked.
 
-    We create the app without running the lifespan to avoid
-    Valkey/database connection attempts during unit tests.
+    Use a minimal app and dependency overrides to avoid Valkey/database
+    connection attempts during unit tests.
     """
-    from contextlib import asynccontextmanager
     from fastapi import FastAPI
     from app.api.routes import api_router
     from app.api.v1.shared.rate_limit import limiter
 
-    # Create a minimal test app without the full lifespan
-    @asynccontextmanager
-    async def null_lifespan(app: FastAPI):
-        yield {}
-
-    test_app = FastAPI(lifespan=null_lifespan)
+    test_app = FastAPI()
     test_app.include_router(api_router, prefix="/api/v1")
 
     # Override dependencies
     test_app.dependency_overrides[CacheService] = lambda: fake_cache
     test_app.dependency_overrides[get_cache_service] = lambda: fake_cache
+
+    async def _transit_data_service_override():
+        return fake_transit_data_service
+
     test_app.dependency_overrides[get_transit_data_service] = (
-        lambda: fake_transit_data_service
+        _transit_data_service_override
     )
 
     # Disable rate limiting for tests (avoids Valkey connection requirement)
@@ -190,6 +188,17 @@ class TestTransitStopDetailsEndpoint:
         """Test stop details for non-existent stop."""
         response = transit_api_client.get("/api/v1/transit/stops/unknown_stop_id")
         assert response.status_code == 404
+
+    def test_transit_stop_details_invalid_stop_id_pattern(self, transit_api_client):
+        """Path validation should reject malformed stop IDs."""
+        response = transit_api_client.get("/api/v1/transit/stops/bad stop id")
+        assert response.status_code == 422
+
+    def test_transit_stop_details_stop_id_too_long(self, transit_api_client):
+        """Path validation should reject overly long stop IDs."""
+        long_stop_id = "s" * 129
+        response = transit_api_client.get(f"/api/v1/transit/stops/{long_stop_id}")
+        assert response.status_code == 422
 
 
 class TestTransitStopsSearchValidation:

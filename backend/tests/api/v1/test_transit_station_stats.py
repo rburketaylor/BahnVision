@@ -7,7 +7,6 @@ exercising response shaping, headers, and not-found branches.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
@@ -69,11 +68,7 @@ class FakeGTFSScheduleService:
 def test_app():
     from app.api.v1.shared.rate_limit import limiter
 
-    @asynccontextmanager
-    async def null_lifespan(app: FastAPI):
-        yield {}
-
-    app = FastAPI(lifespan=null_lifespan)
+    app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
 
     # Disable rate limiting for tests (avoids Valkey connection requirement)
@@ -89,6 +84,20 @@ def test_app():
 
 def _client_for(app: FastAPI) -> TestClient:
     return TestClient(app)
+
+
+def _override_async_dependency(value):
+    async def _dep():
+        return value
+
+    return _dep
+
+
+def _override_async_session(value):
+    async def _dep():
+        yield value
+
+    return _dep
 
 
 class TestStationStatsEndpoint:
@@ -114,7 +123,7 @@ class TestStationStatsEndpoint:
             trends=None,
         )
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+            _override_async_dependency(fake_service)
         )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/s1/stats?time_range=24h")
@@ -125,10 +134,45 @@ class TestStationStatsEndpoint:
     def test_station_stats_returns_404_when_missing(self, test_app: FastAPI):
         fake_service = FakeStationStatsService(stats=None, trends=None)
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+            _override_async_dependency(fake_service)
         )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/missing/stats")
+        assert resp.status_code == 404
+
+    def test_station_stats_rejects_invalid_stop_id(self, test_app: FastAPI):
+        fake_service = FakeStationStatsService(stats=None, trends=None)
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
+            _override_async_dependency(fake_service)
+        )
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/bad stop/stats")
+        assert resp.status_code == 422
+
+    def test_station_stats_live_malformed_cache_payload_treated_as_miss(
+        self, test_app: FastAPI
+    ):
+        class _MalformedSnapshotCache:
+            async def get_json(self, _key: str):
+                return {"bad": "payload"}
+
+            async def get_stale_json(self, _key: str):
+                return None
+
+            async def delete(self, *_args, **_kwargs):
+                return None
+
+        fake_service = FakeStationStatsService(stats=None, trends=None)
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
+            _override_async_dependency(fake_service)
+        )
+        test_app.dependency_overrides[stops_module.get_cache_service] = (
+            lambda: _MalformedSnapshotCache()
+        )
+
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/s1/stats?time_range=live")
+        # Malformed cache payload should not 500; fallback path returns not found.
         assert resp.status_code == 404
 
 
@@ -161,7 +205,7 @@ class TestStationTrendsEndpoint:
             ),
         )
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+            _override_async_dependency(fake_service)
         )
         with TestClient(test_app) as client:
             resp = client.get(
@@ -174,11 +218,20 @@ class TestStationTrendsEndpoint:
     def test_station_trends_returns_404_when_missing(self, test_app: FastAPI):
         fake_service = FakeStationStatsService(stats=None, trends=None)
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
-            lambda: fake_service
+            _override_async_dependency(fake_service)
         )
         with TestClient(test_app) as client:
             resp = client.get("/api/v1/transit/stops/missing/trends")
         assert resp.status_code == 404
+
+    def test_station_trends_rejects_invalid_stop_id(self, test_app: FastAPI):
+        fake_service = FakeStationStatsService(stats=None, trends=None)
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
+            _override_async_dependency(fake_service)
+        )
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/bad stop/trends")
+        assert resp.status_code == 422
 
 
 class TestNearbyStopsEndpoint:
@@ -188,7 +241,9 @@ class TestNearbyStopsEndpoint:
         class FakeSettings:
             gtfs_stop_cache_ttl_seconds = 123
 
-        test_app.dependency_overrides[stops_module.get_session] = lambda: object()
+        test_app.dependency_overrides[stops_module.get_session] = (
+            _override_async_session(object())
+        )
         test_app.dependency_overrides[stops_module.get_cache_service] = lambda: object()
 
         monkeypatch.setattr(
@@ -237,7 +292,9 @@ class TestNearbyStopsEndpoint:
             def __init__(self, _db):
                 raise AssertionError("Should not query DB when serving stale cache")
 
-        test_app.dependency_overrides[stops_module.get_session] = lambda: object()
+        test_app.dependency_overrides[stops_module.get_session] = (
+            _override_async_session(object())
+        )
         test_app.dependency_overrides[stops_module.get_cache_service] = (
             lambda: FakeCache()
         )
@@ -266,6 +323,47 @@ class TestNearbyStopsEndpoint:
                 "wheelchair_boarding": 0,
             }
         ]
+
+    def test_nearby_stops_invalid_cache_payload_falls_back_to_db(
+        self, test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+    ):
+        class FakeSettings:
+            gtfs_stop_cache_ttl_seconds = 123
+
+        class InvalidCache:
+            async def get_json(self, _key: str):
+                return [{"id": "cached"}]
+
+            async def get_stale_json(self, _key: str):
+                return None
+
+            async def set_json(self, *_args, **_kwargs):
+                return None
+
+            async def delete(self, *_args, **_kwargs):
+                return None
+
+        test_app.dependency_overrides[stops_module.get_session] = (
+            _override_async_session(object())
+        )
+        test_app.dependency_overrides[stops_module.get_cache_service] = (
+            lambda: InvalidCache()
+        )
+
+        monkeypatch.setattr(
+            stops_module, "GTFSScheduleService", FakeGTFSScheduleService
+        )
+        monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
+        monkeypatch.setattr(
+            cache_headers_module, "get_settings", lambda: FakeSettings()
+        )
+
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/nearby?latitude=1&longitude=2")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[0]["id"] == "s1"
 
 
 class TestStopsDependencyFactories:

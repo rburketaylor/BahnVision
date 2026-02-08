@@ -5,9 +5,11 @@ Provides stop search and information using GTFS data.
 """
 
 from dataclasses import dataclass
+import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -46,7 +48,19 @@ from app.services.transit_data import TransitDataService
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 # Cache names for metrics
+_STOP_ID_PATTERN = r"^[A-Za-z0-9:_\-.]+$"
+StopIdPathParam = Annotated[
+    str,
+    Path(
+        min_length=1,
+        max_length=128,
+        pattern=_STOP_ID_PATTERN,
+        description="GTFS stop identifier.",
+    ),
+]
 
 
 @dataclass
@@ -72,14 +86,32 @@ async def _get_station_stats_from_live_snapshot(
     This function extracts the specific station's data from the live snapshot.
     """
     cache_key = heatmap_live_snapshot_cache_key()
-    cached_data = await cache.get_json(cache_key)
+    try:
+        cached_data = await cache.get_json(cache_key)
+    except Exception as cache_error:
+        logger.warning("Live station stats cache read failed: %s", cache_error)
+        cached_data = None
     if not cached_data:
-        cached_data = await cache.get_stale_json(cache_key)
+        try:
+            cached_data = await cache.get_stale_json(cache_key)
+        except Exception as cache_error:
+            logger.warning(
+                "Live station stats stale cache read failed: %s", cache_error
+            )
+            cached_data = None
 
     if not cached_data:
         return None
 
-    snapshot = HeatmapResponse.model_validate(cached_data)
+    try:
+        snapshot = HeatmapResponse.model_validate(cached_data)
+    except ValidationError as validation_error:
+        logger.warning(
+            "Invalid live station snapshot cache payload; treating as cache miss: %s",
+            validation_error,
+        )
+        await _purge_cache_entry(cache, cache_key)
+        return None
 
     # Find the station in the snapshot
     for point in snapshot.data_points:
@@ -130,6 +162,19 @@ async def _get_station_stats_from_live_snapshot(
             )
 
     return None
+
+
+async def _purge_cache_entry(cache: CacheService, key: str) -> None:
+    """Best-effort removal of malformed cache entries."""
+    delete = getattr(cache, "delete", None)
+    if delete is None:
+        return
+    try:
+        await delete(key, remove_stale=True)
+    except Exception:
+        logger.debug(
+            "Failed to purge cache key %s after decode/validation failure", key
+        )
 
 
 async def get_station_stats_service(
@@ -243,17 +288,27 @@ async def get_nearby_stops(
     try:
         cached_data = await cache.get_json(cache_key)
         if cached_data:
-            return [TransitStop(**s) for s in cached_data]
+            try:
+                return [TransitStop.model_validate(stop) for stop in cached_data]
+            except (TypeError, ValidationError) as decode_error:
+                logger.warning(
+                    "Nearby stops cache payload invalid; treating as miss: %s",
+                    decode_error,
+                )
+                await _purge_cache_entry(cache, cache_key)
 
         stale_data = await cache.get_stale_json(cache_key)
         if stale_data:
-            return [TransitStop(**s) for s in stale_data]
+            try:
+                return [TransitStop.model_validate(stop) for stop in stale_data]
+            except (TypeError, ValidationError) as decode_error:
+                logger.warning(
+                    "Nearby stops stale cache payload invalid; treating as miss: %s",
+                    decode_error,
+                )
+                await _purge_cache_entry(cache, cache_key)
     except Exception as cache_error:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            f"Nearby stops cache read failed: {cache_error}"
-        )
+        logger.warning("Nearby stops cache read failed: %s", cache_error)
 
     # Cache miss - query database
     gtfs_schedule = GTFSScheduleService(db)
@@ -286,11 +341,7 @@ async def get_nearby_stops(
             stale_ttl_seconds=settings.gtfs_stop_cache_ttl_seconds * 2,
         )
     except Exception as cache_error:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            f"Nearby stops cache write failed: {cache_error}"
-        )
+        logger.warning("Nearby stops cache write failed: %s", cache_error)
 
     return results
 
@@ -304,7 +355,7 @@ async def get_nearby_stops(
 @limiter.limit(RATE_LIMIT_SEARCH.value)
 async def get_stop(
     request: Request,
-    stop_id: str,
+    stop_id: StopIdPathParam,
     response: Response,
     transit_service: TransitDataService = Depends(get_transit_data_service),
 ) -> TransitStop:
@@ -329,7 +380,7 @@ async def get_stop(
 @limiter.limit(RATE_LIMIT_SEARCH.value)
 async def get_station_stats(
     request: Request,
-    stop_id: str,
+    stop_id: StopIdPathParam,
     response: Response,
     time_range: Annotated[
         TimeRangePreset,
@@ -382,7 +433,7 @@ async def get_station_stats(
 @limiter.limit(RATE_LIMIT_EXPENSIVE.value)
 async def get_station_trends(
     request: Request,
-    stop_id: str,
+    stop_id: StopIdPathParam,
     response: Response,
     time_range: Annotated[
         TimeRangePreset,
