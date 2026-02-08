@@ -50,3 +50,28 @@ def test_valkey_fields_accept_redis_aliases(monkeypatch):
 def test_cache_bounds_enforced():
     with pytest.raises(ValidationError):
         Settings(CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS=-0.1)
+
+
+def test_database_pool_settings_defaults():
+    settings = Settings()
+
+    assert settings.database_pool_timeout_seconds == 30.0
+    assert settings.database_pool_recycle_seconds == 1800
+    assert settings.database_pool_pre_ping is True
+
+
+def test_database_pool_settings_from_env():
+    settings = Settings(
+        DATABASE_POOL_TIMEOUT_SECONDS="12.5",
+        DATABASE_POOL_RECYCLE_SECONDS="600",
+        DATABASE_POOL_PRE_PING="false",
+    )
+
+    assert settings.database_pool_timeout_seconds == 12.5
+    assert settings.database_pool_recycle_seconds == 600
+    assert settings.database_pool_pre_ping is False
+
+
+def test_database_pool_timeout_must_be_positive():
+    with pytest.raises(ValidationError):
+        Settings(DATABASE_POOL_TIMEOUT_SECONDS=0)

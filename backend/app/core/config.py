@@ -56,7 +56,26 @@ class Settings(BaseSettings):
     )
     database_pool_size: int = Field(default=10, alias="DATABASE_POOL_SIZE", ge=1)
     database_max_overflow: int = Field(default=10, alias="DATABASE_MAX_OVERFLOW", ge=0)
+    database_pool_timeout_seconds: float = Field(
+        default=30.0,
+        alias="DATABASE_POOL_TIMEOUT_SECONDS",
+        gt=0.0,
+    )
+    database_pool_recycle_seconds: int = Field(
+        default=1800,
+        alias="DATABASE_POOL_RECYCLE_SECONDS",
+        ge=0,
+    )
+    database_pool_pre_ping: bool = Field(
+        default=True,
+        alias="DATABASE_POOL_PRE_PING",
+    )
     database_echo: bool = Field(default=False, alias="DATABASE_ECHO")
+    admin_api_key: str | None = Field(
+        default=None,
+        alias="ADMIN_API_KEY",
+        description="Admin token required for privileged API endpoints.",
+    )
 
     # ==========================================================================
     # Cache TTLs (seconds)
