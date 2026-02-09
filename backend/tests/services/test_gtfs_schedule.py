@@ -114,6 +114,23 @@ class TestIntervalToDatetime:
         # Should return None due to exception handling
         assert result is None
 
+    def test_interval_to_datetime_with_base_datetime(self):
+        """Test that base_datetime is used when provided.
+
+        We use a mismatched service_date to ensure base_datetime takes precedence.
+        """
+        service_date = date(2025, 12, 1)  # Different from base_datetime
+        base_datetime = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
+        interval = timedelta(hours=8, minutes=30)
+
+        # This call should use base_datetime + interval, ignoring service_date
+        result = interval_to_datetime(
+            service_date, interval, base_datetime=base_datetime
+        )
+
+        expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
+        assert result == expected
+
 
 class TestGetWeekdayColumn:
     """Tests for _get_weekday_column helper function."""
