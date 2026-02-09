@@ -36,6 +36,10 @@ def upgrade() -> None:
         """
     )
 
+    # To add a foreign key from a logged table (realtime_station_stats),
+    # the referenced table (gtfs_stops) must also be logged.
+    op.execute("ALTER TABLE gtfs_stops SET LOGGED")
+
     op.create_foreign_key(
         _REALTIME_STOP_FK,
         "realtime_station_stats",
@@ -52,4 +56,8 @@ def downgrade() -> None:
         "realtime_station_stats",
         type_="foreignkey",
     )
+
+    # Restore gtfs_stops to UNLOGGED for performance
+    op.execute("ALTER TABLE gtfs_stops SET UNLOGGED")
+
     op.drop_index(_TRIP_ROUTE_INDEX, table_name="gtfs_trips")
