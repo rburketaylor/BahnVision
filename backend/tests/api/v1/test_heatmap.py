@@ -432,13 +432,26 @@ def test_heatmap_cancellations_stop_list_failure(
 
 def test_heatmap_cancellations_rate_limited(api_client):
     """Cancellations endpoint should enforce configured per-minute rate limit."""
-    limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
-    for _ in range(limit):
-        response = api_client.get("/api/v1/heatmap/cancellations")
-        assert response.status_code == 200
+    # Ensure rate limiting is enabled for this test
+    limiter.enabled = True
 
-    response = api_client.get("/api/v1/heatmap/cancellations")
-    assert response.status_code == 429
+    try:
+        limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
+        for _ in range(limit):
+            response = api_client.get("/api/v1/heatmap/cancellations")
+            assert response.status_code == 200
+
+        response = api_client.get("/api/v1/heatmap/cancellations")
+        assert response.status_code == 429
+    finally:
+        # Restore default state (which might be enabled or disabled based on config)
+        # Note: We rely on the fixture to reset state, but we should respect the global config if possible.
+        # Ideally, we should check the config, but for now we leave it enabled or let the fixture clean up.
+        # Given the fixture 'reset_heatmap_rate_limit_state', state is reset but 'enabled' flag is property of limiter.
+        # We should reset it to avoid side effects on other tests if they assume it's disabled (from env).
+        from app.core.config import get_settings
+
+        limiter.enabled = get_settings().rate_limit_enabled
 
 
 class TestDailyAggregationEndpoint:
