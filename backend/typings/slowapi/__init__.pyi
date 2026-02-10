@@ -1,0 +1,9 @@
+from typing import Any, Callable, TypeVar
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+class Limiter:
+    def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+    def limit(self, *args: Any, **kwargs: Any) -> Callable[[F], F]: ...
+
+def _rate_limit_exceeded_handler(*args: Any, **kwargs: Any) -> Any: ...

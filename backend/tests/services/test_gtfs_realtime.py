@@ -309,22 +309,23 @@ class TestServiceAlerts:
         await gtfs_service._store_alerts(alerts)
 
         # Verify batch writes are used (Issue 6: GTFS-RT Batch Writes)
-        # Should call mset_json twice: once for alerts, once for route indexes
-        assert mock_cache_service.mset_json.call_count == 2
+        # Should call mset_json once: combined alerts and route indexes
+        assert mock_cache_service.mset_json.call_count == 1
 
         # Check that individual set_json is NOT called
         assert mock_cache_service.set_json.call_count == 0
 
-        # Verify the first batch call contains the alerts
-        first_call_items = mock_cache_service.mset_json.call_args_list[0][0][0]
-        assert "service_alert:alert1" in first_call_items
-        assert "service_alert:alert2" in first_call_items
+        # Verify the batch call contains both alerts and route indexes
+        batch_items = mock_cache_service.mset_json.call_args[0][0]
 
-        # Verify the second batch call contains the route indexes
-        second_call_items = mock_cache_service.mset_json.call_args_list[1][0][0]
-        assert "service_alerts:route:route1" in second_call_items
-        assert "service_alerts:route:route2" in second_call_items
-        assert "service_alerts:route:route3" in second_call_items
+        # Alerts
+        assert "service_alert:alert1" in batch_items
+        assert "service_alert:alert2" in batch_items
+
+        # Route indexes
+        assert "service_alerts:route:route1" in batch_items
+        assert "service_alerts:route:route2" in batch_items
+        assert "service_alerts:route:route3" in batch_items
 
     @pytest.mark.asyncio
     async def test_get_alerts_for_route(self, gtfs_service, mock_cache_service):
@@ -414,6 +415,29 @@ class TestCircuitBreaker:
         """Test that circuit breaker allows requests when CLOSED."""
         assert gtfs_service._check_circuit_breaker()
 
+    def test_circuit_breaker_state_paths_use_lock(self, gtfs_service):
+        """Circuit breaker state checks/updates should be lock-guarded."""
+
+        class CountingLock:
+            def __init__(self):
+                self.enter_count = 0
+
+            def __enter__(self):
+                self.enter_count += 1
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        counting_lock = CountingLock()
+        gtfs_service._circuit_breaker_lock = counting_lock
+
+        gtfs_service._check_circuit_breaker()
+        gtfs_service._record_failure()
+        gtfs_service._record_success()
+
+        assert counting_lock.enter_count == 3
+
 
 class TestDataModels:
     """Test data model functionality."""
@@ -464,3 +488,7 @@ class TestDataModels:
 
         assert alert.timestamp is not None
         assert before <= alert.timestamp <= after
+
+    def test_map_schedule_relationship_includes_canceled(self, gtfs_service):
+        """Schedule relationship mapping should include CANCELED."""
+        assert gtfs_service._map_schedule_relationship(4) == "CANCELED"

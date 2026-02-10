@@ -1,0 +1,98 @@
+:root {
+  --radius: 0.4rem;
+
+  /* Base semantic tokens */
+  --background: 210 24% 97%;
+  --foreground: 219 27% 15%;
+
+  --surface: 0 0% 100%;
+  --surface-elevated: 210 24% 95%;
+  --surface-muted: 214 21% 90%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 219 27% 15%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 219 27% 15%;
+
+  --primary: 205 100% 34%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 214 17% 42%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 212 23% 94%;
+  --muted-foreground: 216 12% 40%;
+
+  --accent: 205 100% 34%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 76% 47%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 214 22% 84%;
+  --input: 0 0% 100%;
+  --ring: 205 100% 34%;
+
+  /* Interactive states */
+  --interactive: 205 100% 34%;
+  --interactive-hover: 205 100% 30%;
+  --interactive-active: 205 100% 26%;
+
+  /* Status semantics */
+  --status-healthy: 151 74% 31%;
+  --status-warning: 38 92% 45%;
+  --status-critical: 0 76% 47%;
+  --status-info: 205 100% 36%;
+  --status-neutral: 216 12% 40%;
+
+  /* Transit line colors */
+  --transport-ubahn: 205 100% 34%;
+  --transport-sbahn: 148 100% 34%;
+  --transport-tram: 354 86% 45%;
+  --transport-bus: 205 100% 27%;
+}
+
+.dark {
+  --background: 222 23% 8%;
+  --foreground: 210 18% 92%;
+
+  --surface: 220 17% 11%;
+  --surface-elevated: 220 16% 14%;
+  --surface-muted: 220 14% 18%;
+
+  --card: 220 17% 11%;
+  --card-foreground: 210 18% 92%;
+
+  --popover: 220 17% 11%;
+  --popover-foreground: 210 18% 92%;
+
+  --primary: 203 86% 52%;
+  --primary-foreground: 214 29% 11%;
+
+  --secondary: 214 14% 63%;
+  --secondary-foreground: 220 22% 10%;
+
+  --muted: 220 16% 16%;
+  --muted-foreground: 216 12% 68%;
+
+  --accent: 203 86% 52%;
+  --accent-foreground: 214 29% 11%;
+
+  --destructive: 0 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 219 14% 24%;
+  --input: 220 16% 14%;
+  --ring: 203 86% 52%;
+
+  --interactive: 203 86% 52%;
+  --interactive-hover: 203 86% 58%;
+  --interactive-active: 203 86% 44%;
+
+  --status-healthy: 151 63% 45%;
+  --status-warning: 38 90% 57%;
+  --status-critical: 0 74% 60%;
+  --status-info: 203 86% 52%;
+  --status-neutral: 216 12% 68%;
+}

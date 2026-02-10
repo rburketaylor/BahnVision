@@ -1,12 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const baseURL =
-  process.env.PLAYWRIGHT_BASE_URL ??
-  (process.env.CI ? 'http://localhost:3000' : 'http://localhost:5173')
-
 const shouldStartWebServer =
   process.env.PLAYWRIGHT_START_WEB_SERVER === '1' ||
   (!process.env.CI && process.env.PLAYWRIGHT_BASE_URL == null)
+
+const baseURL =
+  process.env.PLAYWRIGHT_BASE_URL ??
+  (shouldStartWebServer ? 'http://localhost:5173' : 'http://localhost:3000')
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -29,10 +29,14 @@ export default defineConfig({
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
     },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
+    ...(process.env.CI || process.env.PLAYWRIGHT_INCLUDE_WEBKIT === '1'
+      ? [
+          {
+            name: 'webkit',
+            use: { ...devices['Desktop Safari'] },
+          },
+        ]
+      : []),
   ],
   webServer: shouldStartWebServer
     ? {

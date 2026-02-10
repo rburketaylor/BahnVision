@@ -27,16 +27,17 @@ Legacy `REDIS_*` variables are accepted for backward compatibility. See `docs/ru
 
 ## API Endpoints
 
-- `GET /api/v1/health` — readiness probe
-- `GET /api/v1/transit/stations/search` — station autocomplete
-- `GET /api/v1/transit/departures` — live departures
-- `GET /api/v1/transit/heatmap/data` — heatmap activity data
+- `GET /api/v1/health` — lightweight health probe
+- `GET /api/v1/transit/stops/search` — stop autocomplete
+- `GET /api/v1/transit/departures` — live departures (query param: `stop_id`)
+- `GET /api/v1/heatmap/cancellations` — heatmap activity data
+- `GET /api/v1/heatmap/overview` — heatmap overview
 - `GET /metrics` — Prometheus metrics
 
 Example:
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/transit/departures?station=de:09162:6&transport_type=UBAHN"
+curl "http://127.0.0.1:8000/api/v1/transit/departures?stop_id=de:09162:6&transport_type=UBAHN"
 ```
 
 ## Caching

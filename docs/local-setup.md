@@ -31,6 +31,8 @@ open http://localhost:3000              # Frontend
 open http://localhost:8000/docs         # Backend API (Swagger)
 ```
 
+Postgres and Valkey are network-isolated by default in Compose. They are reachable by other containers (for example, `backend`), but not exposed on host ports unless you explicitly opt in (see "Host access to DB/cache" below).
+
 ### Option 2: Local Development
 
 For active development with hot reload:
@@ -77,10 +79,12 @@ npm run dev
 Create a `.env` file in the project root:
 
 ```bash
-# Database configuration
-DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
+# If backend runs inside Docker Compose (default)
+# DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@postgres:5432/bahnvision
+# VALKEY_URL=valkey://valkey:6379/0
 
-# Cache configuration
+# If backend runs on the host machine
+DATABASE_URL=postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision
 VALKEY_URL=valkey://localhost:6379/0
 
 # CORS configuration (for local development)
@@ -92,6 +96,28 @@ TRANSIT_DEPARTURES_CACHE_STALE_TTL_SECONDS=300
 ```
 
 See [runtime-configuration.md](./runtime-configuration.md) for all options.
+
+### Host access to DB/cache (optional, explicit opt-in)
+
+If you run backend tooling on the host (instead of in Compose) and need `localhost:5432` / `localhost:6379`, enable the `host-access` profile:
+
+```bash
+docker compose --profile host-access up --build
+```
+
+This starts localhost-bound forwarding services:
+
+- `127.0.0.1:${POSTGRES_HOST_PORT:-5432}` -> `postgres:5432`
+- `127.0.0.1:${VALKEY_HOST_PORT:-6379}` -> `valkey:6379`
+
+Optional `.env` overrides:
+
+```bash
+POSTGRES_HOST_BIND=127.0.0.1
+POSTGRES_HOST_PORT=5432
+VALKEY_HOST_BIND=127.0.0.1
+VALKEY_HOST_PORT=6379
+```
 
 ## Troubleshooting
 
@@ -116,6 +142,8 @@ lsof -i :8000
 # Stop conflicting services
 docker compose down
 ```
+
+When `host-access` is enabled, also check `5432` and `6379`.
 
 ### Database issues
 

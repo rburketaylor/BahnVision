@@ -3,6 +3,7 @@ Test cache service functionality including circuit breaker, single-flight locks,
 """
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 
@@ -174,10 +175,30 @@ class TestCacheService:
         assert result == complex_value
 
     @pytest.mark.asyncio
-    async def test_fallback_store_ttl_expiration(self, cache_service, fake_valkey):
+    async def test_json_serialization_datetime_values(self, cache_service):
+        """Cache JSON helpers should handle datetime values without raising."""
+        test_key = "json_datetime_test"
+        dt = datetime(2026, 1, 27, 12, 34, 56, tzinfo=timezone.utc)
+
+        await cache_service.set_json(test_key, {"at": dt})
+        result = await cache_service.get_json(test_key)
+
+        assert result == {"at": dt.isoformat()}
+
+        await cache_service.mset_json({"json_datetime_test_2": {"at": dt}})
+        result2 = await cache_service.get_json("json_datetime_test_2")
+        assert result2 == {"at": dt.isoformat()}
+
+    @pytest.mark.asyncio
+    async def test_fallback_store_ttl_expiration(
+        self, cache_service, fake_valkey, monkeypatch
+    ):
         """Test that fallback store properly handles TTL expiration."""
         test_key = "ttl_expire_test"
         test_value = {"expire": "test"}
+
+        now = 1000.0
+        monkeypatch.setattr("app.services.cache.time.monotonic", lambda: now)
 
         # Simulate Valkey failure to force fallback usage
         fake_valkey.should_fail = True
@@ -189,8 +210,8 @@ class TestCacheService:
         result = await cache_service.get_json(test_key)
         assert result == test_value
 
-        # Wait for expiration
-        await asyncio.sleep(1.1)
+        # Advance monotonic clock beyond TTL expiration.
+        now += 1.1
 
         # Should be expired now (note: fallback store cleanup happens on access)
         result = await cache_service.get_json(test_key)

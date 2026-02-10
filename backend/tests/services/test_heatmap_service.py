@@ -5,6 +5,7 @@ Tests for the heatmap service.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import pytest
@@ -40,6 +41,16 @@ class FakeResult:
 
     def all(self) -> list[object]:
         return self._rows
+
+    def scalars(self):
+        class _FakeScalars:
+            def __init__(self, rows: list[object]):
+                self._rows = rows
+
+            def all(self) -> list[object]:
+                return self._rows
+
+        return _FakeScalars(self._rows)
 
 
 class FakeAsyncSession:
@@ -412,6 +423,106 @@ class TestHeatmapService:
         assert result.data_points[0].by_transport["BAHN"].total == 100
         assert result.data_points[0].by_transport["BAHN"].cancelled == 5
         assert result.data_points[0].by_transport["BAHN"].delayed == 10
+
+    @pytest.mark.asyncio
+    async def test_daily_aggregation_applies_transport_filter_to_totals(self):
+        """Daily path should align station totals with selected transport modes."""
+
+        @dataclass
+        class StationAggRow:
+            stop_id: str
+            stop_name: str
+            stop_lat: float
+            stop_lon: float
+            total_departures: int
+            cancelled_count: int
+            delayed_count: int
+            impact_score: int = 0
+
+        @dataclass
+        class DailyRow:
+            stop_id: str
+            by_route_type: dict
+
+        station_rows = [
+            StationAggRow(
+                stop_id="stop_1",
+                stop_name="Stop 1",
+                stop_lat=48.1,
+                stop_lon=11.5,
+                total_departures=20,
+                cancelled_count=5,
+                delayed_count=7,
+            )
+        ]
+        daily_rows = [
+            DailyRow(
+                stop_id="stop_1",
+                by_route_type={
+                    "UBAHN": {"trips": 6, "cancelled": 2, "delayed": 3},
+                    "BUS": {"trips": 14, "cancelled": 3, "delayed": 4},
+                },
+            )
+        ]
+
+        session = FakeAsyncSession(row_sets=[station_rows, daily_rows])
+        service = HeatmapService(
+            FakeGTFSScheduleService(), FakeCache(), session=session
+        )
+
+        points = await service._aggregate_from_daily_stats(
+            route_type_filter=[1],  # UBAHN
+            from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            to_time=datetime(2025, 1, 8, tzinfo=timezone.utc),
+            max_points=100,
+        )
+
+        assert len(points) == 1
+        point = points[0]
+        assert point.total_departures == 6
+        assert point.cancelled_count == 2
+        assert point.delayed_count == 3
+        assert set(point.by_transport.keys()) == {"UBAHN"}
+
+    @pytest.mark.asyncio
+    async def test_daily_network_summary_applies_transport_filter(self):
+        """Daily network summary should respect route_type filter."""
+
+        @dataclass
+        class DailySummaryRow:
+            stop_id: str
+            by_route_type: dict
+
+        daily_rows = [
+            DailySummaryRow(
+                stop_id="stop_1",
+                by_route_type={
+                    "UBAHN": {"trips": 10, "cancelled": 1, "delayed": 2},
+                    "BUS": {"trips": 50, "cancelled": 5, "delayed": 6},
+                },
+            ),
+            DailySummaryRow(
+                stop_id="stop_2",
+                by_route_type={"BUS": {"trips": 20, "cancelled": 2, "delayed": 3}},
+            ),
+        ]
+
+        session = FakeAsyncSession(row_sets=[daily_rows])
+        service = HeatmapService(
+            FakeGTFSScheduleService(), FakeCache(), session=session
+        )
+
+        summary = await service._calculate_network_summary_from_db_daily(
+            from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            to_time=datetime(2025, 1, 8, tzinfo=timezone.utc),
+            route_type_filter=[1],  # UBAHN only
+            most_affected_station=None,
+        )
+
+        assert summary.total_stations == 1
+        assert summary.total_departures == 10
+        assert summary.total_cancellations == 1
+        assert summary.total_delays == 2
 
 
 class TestCalculateSummary:

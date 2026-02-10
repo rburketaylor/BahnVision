@@ -8,7 +8,10 @@ import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/query-client'
 import App from './App'
-import './index.css'
+import './styles/globals.css'
+import './styles/theme.css'
+import './styles/map.css'
+import './styles/animations.css'
 // Import MapLibre GL CSS globally
 import 'maplibre-gl/dist/maplibre-gl.css'
 

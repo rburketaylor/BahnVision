@@ -36,7 +36,7 @@ test.describe('Network Error Handling', () => {
     await expect(page.getByText(/error|failed/i)).toBeVisible({ timeout: 10000 })
   })
 
-  test('can retry search after initial failure', async ({ page }) => {
+  test('recovers search results after transient first failure via auto-retry', async ({ page }) => {
     let callCount = 0
 
     await page.route('**/api/v1/transit/stops/search**', async route => {
@@ -60,15 +60,45 @@ test.describe('Network Error Handling', () => {
     const searchInput = page.getByRole('combobox', { name: /station search/i })
     await searchInput.fill('Mar')
 
-    // Wait a moment for the error state
-    await page.waitForTimeout(500)
+    // Auto-retry should recover without requiring manual action.
+    await expect(page.getByRole('button', { name: /Marienplatz/i })).toBeVisible({ timeout: 10000 })
+    await expect.poll(() => callCount).toBeGreaterThanOrEqual(2)
+  })
 
-    // Clear and retry (second call should succeed)
-    await searchInput.fill('')
+  test('can manually retry search after automatic retries are exhausted', async ({ page }) => {
+    let callCount = 0
+
+    await page.route('**/api/v1/transit/stops/search**', async route => {
+      callCount++
+      if (callCount <= 3) {
+        return route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Temporary failure' }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ query: 'mar', results: [mockStation] }),
+      })
+    })
+
+    await page.goto('/search')
+
+    const searchInput = page.getByRole('combobox', { name: /station search/i })
     await searchInput.fill('Mar')
 
-    // Should now show results
+    // Wait for error UI after automatic retries are exhausted.
+    const retryButton = page.getByRole('button', { name: /Try again/i })
+    await expect(retryButton).toBeVisible({ timeout: 10000 })
+    await expect.poll(() => callCount).toBeGreaterThanOrEqual(3)
+
+    // Manual retry should trigger a successful request.
+    await retryButton.click()
+
     await expect(page.getByRole('button', { name: /Marienplatz/i })).toBeVisible({ timeout: 5000 })
+    await expect.poll(() => callCount).toBeGreaterThanOrEqual(4)
   })
 })
 

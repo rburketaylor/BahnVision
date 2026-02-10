@@ -61,7 +61,7 @@
 {
   "event": "api_error",
   "timestamp": 1716200000000,
-  "url": "/api/v1/transit/departures?station_id=de:09162:6",
+  "url": "/api/v1/transit/departures?stop_id=de:09162:6",
   "status": 503,
   "request_id": "req-12345",
   "error_code": "upstream_timeout",
@@ -77,7 +77,7 @@
   "value": 1200,
   "rating": "good",
   "navigation_type": "navigate",
-  "page": "/stations/de:09162:6"
+  "page": "/station/de:09162:6"
 }
 ```
 

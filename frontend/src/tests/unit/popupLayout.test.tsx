@@ -1,132 +1,85 @@
-/**
- * Tests for popup layout improvements
- * Validates that the popup content fits properly within its container
- */
-
 import { describe, it, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import '@testing-library/jest-dom'
+import { StationPopup } from '../../components/heatmap/StationPopup'
+import type { HeatmapPointLight } from '../../types/heatmap'
+import type { StationStats } from '../../types/gtfs'
 
-// Test the popup HTML structure and CSS classes
-function createTestPopup() {
-  return `
-    <div class="bv-map-popup">
-      <h4 class="bv-map-popup__title">Test Station Name</h4>
-      <div class="bv-map-popup__rows">
-        <div class="bv-map-popup__row">
-          <span class="bv-map-popup__label bv-map-popup__label--active">Cancel Rate:</span>
-          <span class="bv-map-popup__value" style="color: #ef4444">12.5%</span>
-        </div>
-        <div class="bv-map-popup__row">
-          <span class="bv-map-popup__label">Delay Rate:</span>
-          <span class="bv-map-popup__value" style="color: currentColor">6.3%</span>
-        </div>
-        <div class="bv-map-popup__row">
-          <span class="bv-map-popup__label">Departures:</span>
-          <span class="bv-map-popup__value">1,250</span>
-        </div>
-        <div class="bv-map-popup__row">
-          <span class="bv-map-popup__label">Cancelled:</span>
-          <span class="bv-map-popup__value text-red-600">156</span>
-        </div>
-        <div class="bv-map-popup__row">
-          <span class="bv-map-popup__label">Delayed:</span>
-          <span class="bv-map-popup__value text-orange-600">79</span>
-        </div>
-      </div>
-      <a href="/station/test-id" class="bv-map-popup__link">
-        Details →
-      </a>
-    </div>
-  `
+const baseStation: HeatmapPointLight = {
+  id: 'de:09162:999',
+  n: 'Marienplatz',
+  lat: 48.1374,
+  lon: 11.5755,
+  i: 0.12,
 }
 
-describe('Popup Layout Improvements', () => {
-  it('should have proper max-width constraint', () => {
-    const popupHTML = createTestPopup()
+const baseDetails: StationStats = {
+  station_id: 'de:09162:999',
+  station_name: 'Marienplatz (Realtime)',
+  time_range: '24h',
+  total_departures: 1250,
+  cancelled_count: 156,
+  cancellation_rate: 0.1248,
+  delayed_count: 79,
+  delay_rate: 0.0632,
+  network_avg_cancellation_rate: null,
+  network_avg_delay_rate: null,
+  performance_score: null,
+  by_transport: [
+    {
+      transport_type: 'UBAHN',
+      display_name: 'U-Bahn',
+      total_departures: 900,
+      cancelled_count: 100,
+      cancellation_rate: 0.1,
+      delayed_count: 60,
+      delay_rate: 0.06,
+    },
+  ],
+  data_from: '2026-01-01T00:00:00Z',
+  data_to: '2026-01-02T00:00:00Z',
+}
 
-    // Create a temporary div to test the HTML structure
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = popupHTML
+describe('popupLayout', () => {
+  it('renders semantic station details and link target from live data', () => {
+    const { container } = render(
+      <StationPopup station={baseStation} details={baseDetails} isLoading={false} />
+    )
 
-    const popupElement = tempDiv.querySelector('.bv-map-popup')
-    expect(popupElement).toBeTruthy()
-
-    // Check that the structure is correct
-    expect(popupElement?.querySelector('.bv-map-popup__title')).toBeTruthy()
-    expect(popupElement?.querySelector('.bv-map-popup__rows')).toBeTruthy()
-    expect(popupElement?.querySelectorAll('.bv-map-popup__row').length).toBe(5)
-    expect(popupElement?.querySelector('.bv-map-popup__link')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Marienplatz (Realtime)' })).toBeInTheDocument()
+    expect(screen.getByText('Departures')).toBeInTheDocument()
+    expect(screen.getByText('1,250')).toBeInTheDocument()
+    expect(screen.getByText('Cancellations')).toBeInTheDocument()
+    expect(screen.getByText('156 (12.5%)')).toBeInTheDocument()
+    expect(screen.getByText('Delays (>5 min)')).toBeInTheDocument()
+    expect(screen.getByText('79 (6.3%)')).toBeInTheDocument()
+    expect(screen.getByText('By Transport Type')).toBeInTheDocument()
+    expect(screen.getByText('U-Bahn')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Full Details →' })).toHaveAttribute(
+      'href',
+      '/station/de:09162:999'
+    )
+    expect(container.querySelectorAll('.bv-map-popup__row')).toHaveLength(4)
   })
 
-  it('should have shortened label text', () => {
-    const popupHTML = createTestPopup()
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = popupHTML
+  it('shows no-data fallback content when details are unavailable', () => {
+    const { container } = render(<StationPopup station={baseStation} isLoading={false} />)
 
-    // Check that labels are shortened
-    const cancelRateLabel = tempDiv.querySelector('.bv-map-popup__label')
-    expect(cancelRateLabel?.textContent).toBe('Cancel Rate:')
-
-    const delayRateLabel = tempDiv.querySelectorAll('.bv-map-popup__label')[1]
-    expect(delayRateLabel?.textContent).toBe('Delay Rate:')
-
-    const departuresLabel = tempDiv.querySelectorAll('.bv-map-popup__label')[2]
-    expect(departuresLabel?.textContent).toBe('Departures:')
+    expect(screen.getByText('No real-time data available for this station.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Full Details →' })).toHaveAttribute(
+      'href',
+      '/station/de:09162:999'
+    )
+    expect(container.querySelectorAll('.bv-map-popup__row')).toHaveLength(0)
   })
 
-  it('should have proper link text', () => {
-    const popupHTML = createTestPopup()
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = popupHTML
+  it('shows loading state and keeps station navigation available', () => {
+    render(<StationPopup station={baseStation} isLoading={true} />)
 
-    const link = tempDiv.querySelector('.bv-map-popup__link')
-    expect(link?.textContent?.trim()).toBe('Details →')
-    expect(link?.getAttribute('href')).toBe('/station/test-id')
-  })
-
-  it('should have compact row structure', () => {
-    const popupHTML = createTestPopup()
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = popupHTML
-
-    const rows = tempDiv.querySelectorAll('.bv-map-popup__row')
-    expect(rows.length).toBe(5)
-
-    // Each row should have label and value
-    rows.forEach(row => {
-      const label = row.querySelector('.bv-map-popup__label')
-      const value = row.querySelector('.bv-map-popup__value')
-      expect(label).toBeTruthy()
-      expect(value).toBeTruthy()
-    })
-  })
-})
-
-// Test CSS properties (these would be visual regression tests in a real scenario)
-describe('Popup CSS Properties', () => {
-  it('should define max-width for popup container', () => {
-    // In a real test environment, you would check computed styles
-    // For now, we'll just verify the structure is correct
-    const popupHTML = createTestPopup()
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = popupHTML
-
-    const popupElement = tempDiv.querySelector('.bv-map-popup')
-    expect(popupElement).toBeTruthy()
-  })
-
-  it('should have proper class structure for styling', () => {
-    const popupHTML = createTestPopup()
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = popupHTML
-
-    // Verify all expected classes are present
-    expect(tempDiv.querySelector('.bv-map-popup')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__title')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__rows')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__row')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__label')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__value')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__link')).toBeTruthy()
-    expect(tempDiv.querySelector('.bv-map-popup__label--active')).toBeTruthy()
+    expect(screen.getByText('Loading details...')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Full Details →' })).toHaveAttribute(
+      'href',
+      '/station/de:09162:999'
+    )
   })
 })

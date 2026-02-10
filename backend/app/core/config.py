@@ -7,10 +7,11 @@ All settings have sensible defaults for local development.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
+import json
+from typing import Annotated, Any
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def _valkey_alias(env_name: str) -> AliasChoices:
@@ -37,15 +38,44 @@ class Settings(BaseSettings):
         default="valkey://localhost:6379/0",
         validation_alias=_valkey_alias("VALKEY_URL"),
     )
+    valkey_socket_connect_timeout_seconds: float = Field(
+        default=0.2,
+        validation_alias=_valkey_alias("VALKEY_SOCKET_CONNECT_TIMEOUT_SECONDS"),
+        ge=0.0,
+    )
+    valkey_socket_timeout_seconds: float = Field(
+        default=0.5,
+        validation_alias=_valkey_alias("VALKEY_SOCKET_TIMEOUT_SECONDS"),
+        ge=0.0,
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://bahnvision:bahnvision@localhost:5432/bahnvision",
         alias="DATABASE_URL",
         description="Database connection URL. Use environment variable in production.",
     )
-    database_pool_size: int = Field(default=5, alias="DATABASE_POOL_SIZE", ge=1)
-    database_max_overflow: int = Field(default=5, alias="DATABASE_MAX_OVERFLOW", ge=0)
+    database_pool_size: int = Field(default=10, alias="DATABASE_POOL_SIZE", ge=1)
+    database_max_overflow: int = Field(default=10, alias="DATABASE_MAX_OVERFLOW", ge=0)
+    database_pool_timeout_seconds: float = Field(
+        default=30.0,
+        alias="DATABASE_POOL_TIMEOUT_SECONDS",
+        gt=0.0,
+    )
+    database_pool_recycle_seconds: int = Field(
+        default=1800,
+        alias="DATABASE_POOL_RECYCLE_SECONDS",
+        ge=0,
+    )
+    database_pool_pre_ping: bool = Field(
+        default=True,
+        alias="DATABASE_POOL_PRE_PING",
+    )
     database_echo: bool = Field(default=False, alias="DATABASE_ECHO")
+    admin_api_key: str | None = Field(
+        default=None,
+        alias="ADMIN_API_KEY",
+        description="Admin token required for privileged API endpoints.",
+    )
 
     # ==========================================================================
     # Cache TTLs (seconds)
@@ -132,12 +162,15 @@ class Settings(BaseSettings):
     cache_circuit_breaker_timeout_seconds: float = Field(
         default=2.0, alias="CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS", ge=0.0
     )
+    cache_mset_batch_size: int = Field(
+        default=10000, alias="CACHE_MSET_BATCH_SIZE", gt=0
+    )
 
     # ==========================================================================
     # Cache Warmup
     # ==========================================================================
 
-    cache_warmup_departure_stations: list[str] = Field(
+    cache_warmup_departure_stations: Annotated[list[str], NoDecode] = Field(
         default_factory=list, alias="CACHE_WARMUP_DEPARTURE_STATIONS"
     )
     cache_warmup_departure_limit: int = Field(
@@ -152,12 +185,12 @@ class Settings(BaseSettings):
         alias="HEATMAP_CACHE_WARMUP_ENABLED",
         description="Warm heatmap cache after each GTFS-RT harvest cycle.",
     )
-    heatmap_cache_warmup_time_ranges: list[str] = Field(
+    heatmap_cache_warmup_time_ranges: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["24h"],
         alias="HEATMAP_CACHE_WARMUP_TIME_RANGES",
         description="Comma-separated list of heatmap time_range presets to prewarm (e.g. 1h,6h,24h).",
     )
-    heatmap_cache_warmup_zoom_levels: list[int] = Field(
+    heatmap_cache_warmup_zoom_levels: Annotated[list[int], NoDecode] = Field(
         default_factory=lambda: [6, 10, 12],
         alias="HEATMAP_CACHE_WARMUP_ZOOM_LEVELS",
         description="Comma-separated list of zoom levels to prewarm (e.g. 6,10,12).",
@@ -174,7 +207,7 @@ class Settings(BaseSettings):
     # CORS
     # ==========================================================================
 
-    cors_allow_origins: list[str] = Field(
+    cors_allow_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
             "http://localhost:3000",
@@ -303,11 +336,24 @@ class Settings(BaseSettings):
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: Any) -> list[str]:
-        """Parse comma-separated CORS origins, rejecting wildcard '*'."""
+        """Parse comma-separated or JSON-array CORS origins, rejecting wildcard '*'."""
         if isinstance(value, str):
             if not value:
                 return []
-            parsed = [item.strip() for item in value.split(",") if item.strip()]
+            raw = value.strip()
+            if raw.startswith("["):
+                try:
+                    loaded = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "Invalid JSON for CORS_ALLOW_ORIGINS. "
+                        "Use a JSON array or comma-separated list."
+                    ) from exc
+                parsed = [
+                    str(item).strip() for item in (loaded or []) if str(item).strip()
+                ]
+            else:
+                parsed = [item.strip() for item in value.split(",") if item.strip()]
         else:
             parsed = list(value) if value is not None else []
 

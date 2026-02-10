@@ -66,5 +66,5 @@ async def test_departures_cache_key_no_time_bucket(transit_data_service, mock_ca
 
     # Check any call to get_json
     key = mock_cache.get_json.call_args[0][0]
-    # Expected: departures:stop_1:10:0:True
-    assert key == "departures:stop_1:10:0:True"
+    # Expected: departures:stop_1:10:0:none:True
+    assert key == "departures:stop_1:10:0:none:True"

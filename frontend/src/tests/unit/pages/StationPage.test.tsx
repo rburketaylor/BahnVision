@@ -16,7 +16,7 @@ vi.mock('../../../hooks/useDepartures', () => ({
   useDepartures: vi.fn(),
 }))
 
-vi.mock('../../../components/DeparturesBoard', () => ({
+vi.mock('../../../components/features/station/DeparturesBoard', () => ({
   DeparturesBoard: () => <div data-testid="departures-board" />,
 }))
 
@@ -273,19 +273,23 @@ describe('StationPage', () => {
     })
 
     const lastDeparturesCall = mockUseDepartures.mock.calls.at(-1)
-    expect(lastDeparturesCall?.[0]).toMatchObject({ stop_id: 'de:09162:1', limit: 20 })
+    expect(lastDeparturesCall?.[0]).toMatchObject({
+      stop_id: 'de:09162:1',
+      limit: 20,
+      from_time: '2025-01-01T01:00:00.000Z',
+    })
     expect(lastDeparturesCall?.[0]).not.toHaveProperty('offset_minutes')
     expect(lastDeparturesCall?.[1]).toMatchObject({ enabled: true, live: false })
   })
 
   it('clearing schedule time picker returns to live mode', async () => {
     const user = userEvent.setup()
-    const { container } = renderStationPage(
+    renderStationPage(
       '/station/de:09162:1?tab=schedule&page=0&limit=20&step=60&from=2025-01-01T00:00:00.000Z&live=false'
     )
 
-    const input = container.querySelector('input[type="datetime-local"]')
-    expect(input).not.toBeNull()
+    const input = screen.getByLabelText('Time')
+    expect(input).toHaveAttribute('id', 'station-schedule-de-09162-1-time')
     await user.clear(input)
 
     await waitFor(() => {
@@ -301,6 +305,18 @@ describe('StationPage', () => {
       offset_minutes: 0,
     })
     expect(lastDeparturesCall?.[1]).toMatchObject({ enabled: true, live: true })
+  })
+
+  it('associates schedule control labels with deterministic ids', async () => {
+    renderStationPage('/station/de:09162:1?tab=schedule')
+
+    const resultsSelect = screen.getByLabelText('Results')
+    const stepSelect = screen.getByLabelText('Step')
+    const timeInput = screen.getByLabelText('Time')
+
+    expect(resultsSelect).toHaveAttribute('id', 'station-schedule-de-09162-1-results')
+    expect(stepSelect).toHaveAttribute('id', 'station-schedule-de-09162-1-step')
+    expect(timeInput).toHaveAttribute('id', 'station-schedule-de-09162-1-time')
   })
 
   it('switches to trends tab and updates URL', async () => {

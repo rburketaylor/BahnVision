@@ -250,22 +250,27 @@ generate_activate_script() {
 #   source .dev-env
 #
 # This adds local Node.js and Python venv to your PATH.
+#
+# When loaded via direnv, activation messages are suppressed for a quieter experience.
 
 _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
+# Quiet mode for direnv (suppresses activation messages)
+_QUIET=${DIRENV_DIR:+1}
 
 # Add local Node.js to PATH
 if [[ -d "$_REPO_ROOT/.node/bin" ]]; then
     export PATH="$_REPO_ROOT/.node/bin:$PATH"
-    echo "Node.js $(node --version) activated"
+    [[ -z "$_QUIET" ]] && echo "Node.js $(node --version) activated"
 fi
 
 # Activate Python venv
 if [[ -f "$_REPO_ROOT/backend/.venv/bin/activate" ]]; then
     source "$_REPO_ROOT/backend/.venv/bin/activate"
-    echo "Python venv activated ($(python --version))"
+    [[ -z "$_QUIET" ]] && echo "Python venv activated ($(python --version))"
 fi
 
-unset _REPO_ROOT
+unset _REPO_ROOT _QUIET
 EOF
 
     success "Created .dev-env activation script"
@@ -293,6 +298,15 @@ main() {
     echo ""
     info "To activate the environment, run:"
     echo "    source .dev-env"
+    echo ""
+    info "For automatic environment loading on 'cd' into this project:"
+    echo "  1. Install direnv:"
+    echo "     - Ubuntu/Debian: sudo apt install direnv"
+    echo "     - macOS: brew install direnv"
+    echo "  2. Add to your shell config (~/.bashrc or ~/.zshrc):"
+    echo "     - bash: eval \"\$(direnv hook bash)\""
+    echo "     - zsh:  eval \"\$(direnv hook zsh)\""
+    echo "  3. Restart shell and run: direnv allow"
     echo ""
     info "Then start development servers:"
     echo "    # Backend:  cd backend && uvicorn app.main:app --reload"

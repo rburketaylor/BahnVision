@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize cache service for GTFS-RT processor
     cache_service = get_cache_service()
+    heatmap_cache_warmer = None
 
     # Configure OpenTelemetry at startup
     configure_opentelemetry(
@@ -109,7 +110,8 @@ async def lifespan(app: FastAPI):
     try:
         from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
 
-        HeatmapCacheWarmer(cache_service).trigger(reason="startup")
+        heatmap_cache_warmer = HeatmapCacheWarmer(cache_service)
+        heatmap_cache_warmer.trigger(reason="startup")
     except Exception:
         logger.exception("Failed to trigger heatmap cache warmup at startup")
 
@@ -120,6 +122,12 @@ async def lifespan(app: FastAPI):
     # Stop harvester before shutdown
     if harvester:
         await harvester.stop()
+
+    if heatmap_cache_warmer is not None:
+        try:
+            await heatmap_cache_warmer.shutdown()
+        except Exception:
+            logger.exception("Failed to stop heatmap cache warmer on shutdown")
 
     await gtfs_scheduler.stop()
     await engine.dispose()

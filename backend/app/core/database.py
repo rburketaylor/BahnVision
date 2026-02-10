@@ -20,11 +20,20 @@ class Base(DeclarativeBase):
 def _build_engine() -> AsyncEngine:
     """Create an async SQLAlchemy engine using application settings."""
     settings = get_settings()
+
+    # Use getattr fallbacks to keep compatibility with lightweight test doubles.
+    pool_timeout = getattr(settings, "database_pool_timeout_seconds", 30.0)
+    pool_recycle = getattr(settings, "database_pool_recycle_seconds", 1800)
+    pool_pre_ping = getattr(settings, "database_pool_pre_ping", True)
+
     return create_async_engine(
         settings.database_url,
         echo=settings.database_echo,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
+        pool_timeout=pool_timeout,
+        pool_recycle=pool_recycle,
+        pool_pre_ping=pool_pre_ping,
     )
 
 

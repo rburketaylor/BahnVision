@@ -19,6 +19,7 @@ if config.config_file_name is not None:
 # Import our models and get the metadata
 from app.core.database import Base  # noqa: E402
 from app.persistence import models  # noqa: F401, E402 - Import to register models
+from app.models import gtfs  # noqa: F401, E402 - Import to register GTFS models
 
 # Import settings to get database URL
 from app.core.config import get_settings  # noqa: E402

@@ -404,7 +404,12 @@ class TestStationStatsService:
         from_time = datetime.now(timezone.utc) - timedelta(hours=24)
         to_time = datetime.now(timezone.utc)
 
-        result = await service._get_network_averages(from_time, to_time)
+        result = await service._get_network_averages(
+            time_range="24h",
+            from_time=from_time,
+            to_time=to_time,
+            bucket_width_minutes=60,
+        )
 
         assert result["cancellation_rate"] == 0.0
         assert result["delay_rate"] == 0.0
@@ -429,7 +434,12 @@ class TestStationStatsService:
         from_time = datetime.now(timezone.utc) - timedelta(hours=24)
         to_time = datetime.now(timezone.utc)
 
-        result = await service._get_network_averages(from_time, to_time)
+        result = await service._get_network_averages(
+            time_range="24h",
+            from_time=from_time,
+            to_time=to_time,
+            bucket_width_minutes=60,
+        )
 
         assert result["cancellation_rate"] == 0.1  # 100/1000
         assert result["delay_rate"] == 0.2  # 200/1000

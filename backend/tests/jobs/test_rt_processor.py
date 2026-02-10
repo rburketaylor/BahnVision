@@ -117,28 +117,36 @@ class TestGtfsRealtimeProcessor:
         """Test that processing loop handles CancelledError gracefully."""
         # Mock GTFS service
         mock_gtfs_service = AsyncMock()
-        mock_gtfs_service.fetch_and_process_feed.return_value = {
-            "trip_updates": 0,
-            "vehicle_positions": 0,
-            "alerts": 0,
-        }
+        started = asyncio.Event()
+        fetch_cancelled = asyncio.Event()
+
+        async def _blocking_fetch():
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                fetch_cancelled.set()
+                raise
+
+        mock_gtfs_service.fetch_and_process_feed.side_effect = _blocking_fetch
 
         rt_processor.gtfs_service = mock_gtfs_service
 
         # Start the loop and immediately cancel it
         loop_task = asyncio.create_task(rt_processor._processing_loop())
 
-        # Give it a moment to start, then cancel
-        await asyncio.sleep(0.001)
+        # Ensure the loop actually entered fetch_and_process_feed.
+        await asyncio.wait_for(started.wait(), timeout=0.1)
         loop_task.cancel()
 
-        try:
-            await loop_task
-        except asyncio.CancelledError:
-            pass  # Expected
+        # _processing_loop should handle CancelledError internally and exit cleanly.
+        await asyncio.wait_for(loop_task, timeout=0.1)
 
-        # The loop should handle CancelledError gracefully
-        assert True  # If we get here, the exception was handled properly
+        assert fetch_cancelled.is_set()
+        assert loop_task.done()
+        assert not loop_task.cancelled()
+        assert loop_task.exception() is None
+        mock_gtfs_service.fetch_and_process_feed.assert_awaited_once()
 
 
 class TestGtfsRtLifespanManager:

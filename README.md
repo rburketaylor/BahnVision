@@ -12,6 +12,32 @@ docker compose up --build
 
 - **API**: http://localhost:8000/docs
 - **Frontend**: http://localhost:3000
+- **Postgres/Valkey**: internal-only by default (not exposed on host ports)
+
+Optional host access to Postgres/Valkey (for local tooling on `localhost`):
+
+```bash
+docker compose --profile host-access up --build
+```
+
+### Docker + Observability (Prometheus + Grafana)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up --build -d
+```
+
+- **Grafana**: http://localhost:3001
+- **Prometheus**: http://localhost:9090
+- **cAdvisor metrics**: http://localhost:8081/metrics
+
+Configure Grafana login and Prometheus retention in `.env`:
+
+```bash
+PROMETHEUS_RETENTION_TIME=7d
+PROMETHEUS_RETENTION_SIZE=5GB
+GRAFANA_ADMIN_USER=<set-a-custom-admin-username>
+GRAFANA_ADMIN_PASSWORD=<set-a-long-random-password>
+```
 
 ### Local Development
 
@@ -21,6 +47,23 @@ docker compose up --build
 ./scripts/setup-dev.sh   # Downloads Node.js (pinned in `.nvmrc`), sets up Python venv
 source .dev-env          # Activate the environment
 ```
+
+**Auto-loading with direnv (recommended):**
+
+```bash
+# Install direnv
+sudo apt install direnv   # Ubuntu/Debian
+# or: brew install direnv  # macOS
+
+# Add to ~/.bashrc or ~/.zshrc:
+echo 'eval "$(direnv hook bash)"' >> ~/.bashrc   # or zsh
+source ~/.bashrc
+
+# Allow the project's .envrc
+direnv allow
+```
+
+The dev environment now loads automatically when you `cd` into the project.
 
 **Backend:**
 
@@ -38,17 +81,18 @@ npm run dev
 
 ## API Endpoints
 
-| Endpoint                                                | Description           |
-| ------------------------------------------------------- | --------------------- |
-| `GET /api/v1/transit/stations/search?query=marienplatz` | Station search        |
-| `GET /api/v1/transit/departures?station=marienplatz`    | Live departures       |
-| `GET /api/v1/transit/heatmap/data`                      | Heatmap activity data |
-| `GET /api/v1/health`                                    | Health check          |
-| `GET /metrics`                                          | Prometheus metrics    |
+| Endpoint                                             | Description           |
+| ---------------------------------------------------- | --------------------- |
+| `GET /api/v1/transit/stops/search?query=marienplatz` | Stop search           |
+| `GET /api/v1/transit/departures?stop_id=de:09162:6`  | Live departures       |
+| `GET /api/v1/heatmap/cancellations`                  | Heatmap activity data |
+| `GET /api/v1/heatmap/overview`                       | Heatmap overview      |
+| `GET /api/v1/health`                                 | Health check          |
+| `GET /metrics`                                       | Prometheus metrics    |
 
 **Response Headers:**
 
-- `X-Cache-Status`: `hit`, `miss`, `stale`, or `stale-refresh`
+- `X-Cache-Status`: `hit`, `miss`, `stale`, or `stale-refresh` (heatmap endpoints)
 - `X-Request-Id`: Request correlation ID
 
 ## Configuration
@@ -120,7 +164,7 @@ This project implements several security best practices:
 - **Production Safeguards**: Application refuses to start with default credentials in production mode
 - **CI/CD Security Scanning**: Bandit, Safety, Semgrep, npm audit, and Trivy container scanning
 
-**CSP Note**: The Content Security Policy currently allows `'unsafe-inline'` for compatibility with MapLibre GL's WebGL rendering pipeline. A future enhancement would implement nonce-based CSP with server-side nonce injection. See [`docs/planning/security-changes.md`](docs/planning/security-changes.md) for the planned approach.
+**CSP Note**: The Content Security Policy currently allows `'unsafe-inline'` for compatibility with MapLibre GL's WebGL rendering pipeline.
 
 ## Contributing
 

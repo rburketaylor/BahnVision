@@ -62,6 +62,7 @@ class ScheduleRelationship(Enum):
     SKIPPED = "SKIPPED"
     NO_DATA = "NO_DATA"
     UNSCHEDULED = "UNSCHEDULED"
+    CANCELED = "CANCELED"
 
 
 @dataclass
@@ -278,6 +279,7 @@ class TransitDataService:
         stop_id: str,
         limit: int = 10,
         offset_minutes: int = 0,
+        from_time: datetime | None = None,
         include_real_time: bool = True,
     ) -> List[DepartureInfo]:
         """Get departures for a stop with optional real-time updates.
@@ -287,9 +289,8 @@ class TransitDataService:
         """
         try:
             # Cache key without time bucket - use stale-while-revalidate instead
-            cache_key = (
-                f"departures:{stop_id}:{limit}:{offset_minutes}:{include_real_time}"
-            )
+            from_time_key = from_time.isoformat() if from_time else "none"
+            cache_key = f"departures:{stop_id}:{limit}:{offset_minutes}:{from_time_key}:{include_real_time}"
 
             # Try to get from cache (fresh or stale)
             try:
@@ -308,8 +309,8 @@ class TransitDataService:
                 )
 
             # Get scheduled departures
-            scheduled_time = datetime.now(timezone.utc) + timedelta(
-                minutes=offset_minutes
+            scheduled_time = from_time or (
+                datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)
             )
             scheduled_departures = await self.gtfs_schedule.get_departures_for_stop(
                 stop_id, scheduled_time, limit, validate_existence=False
@@ -438,8 +439,8 @@ class TransitDataService:
             stop_info = StopInfo(
                 stop_id=str(stop.stop_id),
                 stop_name=str(stop.stop_name),
-                stop_lat=float(stop.stop_lat),
-                stop_lon=float(stop.stop_lon),
+                stop_lat=float(stop.stop_lat) if stop.stop_lat is not None else 0.0,
+                stop_lon=float(stop.stop_lon) if stop.stop_lon is not None else 0.0,
                 zone_id=None,  # Not in GTFS model
                 wheelchair_boarding=0,  # Not in GTFS model
             )
@@ -665,9 +666,12 @@ class TransitDataService:
                         departure.departure_delay_seconds = tu.departure_delay
 
                     # Update schedule relationship
-                    departure.schedule_relationship = ScheduleRelationship(
-                        tu.schedule_relationship
-                    )
+                    try:
+                        departure.schedule_relationship = ScheduleRelationship(
+                            tu.schedule_relationship
+                        )
+                    except ValueError:
+                        departure.schedule_relationship = ScheduleRelationship.SCHEDULED
 
                 # Apply vehicle positions
                 vehicle_pos = vehicle_positions.get(departure.trip_id)

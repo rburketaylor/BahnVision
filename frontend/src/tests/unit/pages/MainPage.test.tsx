@@ -15,7 +15,7 @@ const mockStop: TransitStop = {
   wheelchair_boarding: 1,
 }
 
-vi.mock('../../../components/StationSearch', () => ({
+vi.mock('../../../components/features/station/StationSearch', () => ({
   StationSearch: ({ onSelect }: { onSelect: (stop: TransitStop) => void }) => (
     <button type="button" onClick={() => onSelect(mockStop)}>
       Select Station

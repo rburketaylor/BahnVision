@@ -25,7 +25,7 @@ export type GtfsRouteType = (typeof GtfsRouteType)[keyof typeof GtfsRouteType]
 /**
  * Schedule relationship status
  */
-export type ScheduleRelationship = 'SCHEDULED' | 'SKIPPED' | 'NO_DATA' | 'UNSCHEDULED'
+export type ScheduleRelationship = 'SCHEDULED' | 'SKIPPED' | 'NO_DATA' | 'UNSCHEDULED' | 'CANCELED'
 
 /**
  * A transit stop from GTFS data
@@ -143,6 +143,8 @@ export interface TransitDeparturesParams {
   limit?: number
   /** Walking time offset in minutes */
   offset_minutes?: number
+  /** Absolute start time for departures window (ISO 8601 UTC) */
+  from_time?: string
   /** Include real-time data (default: true) */
   include_realtime?: boolean
 }
@@ -296,6 +298,7 @@ export interface StationTrends {
 export interface StationStatsParams {
   stop_id: string
   time_range?: StationStatsTimeRange
+  include_network_averages?: boolean
 }
 
 /** Query parameters for station trends endpoint */

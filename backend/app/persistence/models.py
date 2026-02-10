@@ -61,6 +61,9 @@ class ExternalStatus(str, enum.Enum):
 
 
 class IngestionSource(str, enum.Enum):
+    # Legacy values retained for backward-compatible ORM deserialization.
+    MVG_DEPARTURES = "MVG_DEPARTURES"
+    MVG_STATIONS = "MVG_STATIONS"
     TRANSIT_DEPARTURES = "TRANSIT_DEPARTURES"
     TRANSIT_STATIONS = "TRANSIT_STATIONS"
     WEATHER = "WEATHER"
@@ -459,7 +462,10 @@ class RealtimeStationStats(Base):
     __tablename__ = "realtime_station_stats"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    stop_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stop_id: Mapped[str] = mapped_column(
+        ForeignKey("gtfs_stops.stop_id", ondelete="cascade"),
+        nullable=False,
+    )
 
     # Time bucket
     bucket_start: Mapped[datetime] = mapped_column(
@@ -549,6 +555,7 @@ class RealtimeStationStats(Base):
             "bucket_width_minutes",
             "route_type",
             name="uq_realtime_stats_unique",
+            postgresql_nulls_not_distinct=True,
         ),
     )
 

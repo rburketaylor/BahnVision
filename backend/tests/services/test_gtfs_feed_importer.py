@@ -516,6 +516,64 @@ class TestGTFSFeedImporterOrchestration:
         assert record_feed.call_args.kwargs["stop_count"] == 1
 
     @pytest.mark.asyncio
+    async def test_import_failure_restores_stop_times_indexes_and_skips_feed_info(
+        self, tmp_path: Path
+    ):
+        session = _make_session()
+        importer = GTFSFeedImporter(session, _make_settings(tmp_path))
+
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stops.txt").write_text(
+            "stop_id,stop_name,stop_lat,stop_lon\ns1,Alpha,1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "routes.txt").write_text(
+            "route_id,route_type\nr1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "trips.txt").write_text(
+            "trip_id,route_id,service_id\nt1,r1,svc1\n", encoding="utf-8"
+        )
+        (feed_dir / "calendar.txt").write_text(
+            "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+            "svc1,1,1,1,1,1,0,0,20250101,20250131\n",
+            encoding="utf-8",
+        )
+        (feed_dir / "calendar_dates.txt").write_text(
+            "service_id,date,exception_type\nsvc1,20250110,2\n", encoding="utf-8"
+        )
+        (feed_dir / "feed_info.txt").write_text(
+            "feed_start_date,feed_end_date\n2025-01-01,2025-01-31\n", encoding="utf-8"
+        )
+
+        with (
+            patch.object(importer, "_truncate_all_tables", new_callable=AsyncMock),
+            patch.object(importer, "_copy_stops", new_callable=AsyncMock),
+            patch.object(importer, "_copy_routes", new_callable=AsyncMock),
+            patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
+            patch.object(
+                importer,
+                "_copy_trips",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("trip copy failed"),
+            ),
+            patch.object(
+                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+            ) as copy_stop_times,
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ) as recreate,
+            patch.object(
+                importer, "_record_feed_info", new_callable=AsyncMock
+            ) as record_feed,
+        ):
+            with pytest.raises(RuntimeError, match="trip copy failed"):
+                await importer._import_from_path(feed_dir, "file://feed_dir")
+
+        recreate.assert_awaited_once()
+        record_feed.assert_not_awaited()
+        copy_stop_times.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_import_from_path_missing_raises_file_not_found(self, tmp_path: Path):
         importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
         missing = tmp_path / "missing.zip"
@@ -825,11 +883,17 @@ class TestGTFSFeedImporterCopyPolarsDf:
         class FakeConn:
             copy_to_table = AsyncMock()
 
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
         with patch.object(
             importer,
             "_get_asyncpg_conn",
-            new_callable=AsyncMock,
-            return_value=FakeConn(),
+            return_value=FakeConnContext(),
         ):
             tmp_csv = tmp_path / "tmp.csv"
 
@@ -858,12 +922,10 @@ class TestGTFSFeedImporterCopyPolarsDf:
         importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
         empty_df = pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)})
 
-        with patch.object(
-            importer, "_get_asyncpg_conn", new_callable=AsyncMock
-        ) as get_conn:
+        with patch.object(importer, "_get_asyncpg_conn") as get_conn:
             await importer._copy_polars_df(empty_df, "gtfs_table", columns=["a"])
 
-        get_conn.assert_not_awaited()
+        get_conn.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_copy_polars_df_logs_when_temp_cleanup_fails(self, tmp_path: Path):
@@ -872,6 +934,13 @@ class TestGTFSFeedImporterCopyPolarsDf:
 
         class FakeConn:
             copy_to_table = AsyncMock()
+
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
 
         tmp_csv = tmp_path / "tmp.csv"
 
@@ -889,8 +958,7 @@ class TestGTFSFeedImporterCopyPolarsDf:
             patch.object(
                 importer,
                 "_get_asyncpg_conn",
-                new_callable=AsyncMock,
-                return_value=FakeConn(),
+                return_value=FakeConnContext(),
             ),
             patch(
                 "app.services.gtfs_feed.tempfile.NamedTemporaryFile",
@@ -956,14 +1024,29 @@ class TestGTFSFeedImporterNetworkAndPersistence:
 
     @pytest.mark.asyncio
     async def test_get_asyncpg_conn_returns_driver_connection(self, tmp_path: Path):
+        """_get_asyncpg_conn returns a context manager that yields the driver connection."""
         driver = object()
         dbapi = MagicMock(driver_connection=driver)
-        raw = AsyncMock(get_raw_connection=AsyncMock(return_value=dbapi))
-        session = _make_session()
-        session.connection = AsyncMock(return_value=raw)
+        sa_conn = AsyncMock(get_raw_connection=AsyncMock(return_value=dbapi))
+        sa_conn.close = AsyncMock()
 
-        importer = GTFSFeedImporter(session, _make_settings(tmp_path))
-        assert await importer._get_asyncpg_conn() is driver
+        # Mock the engine.connect() to return our mock sa_conn
+        with patch("app.core.database.engine") as mock_engine:
+            mock_engine.connect = AsyncMock(return_value=sa_conn)
+
+            importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+            conn_ctx = importer._get_asyncpg_conn()
+
+            # The returned value is an async context manager
+            assert hasattr(conn_ctx, "__aenter__")
+            assert hasattr(conn_ctx, "__aexit__")
+
+            # When entered, it yields the driver connection
+            async with conn_ctx as conn:
+                assert conn is driver
+
+            # Verify the connection was closed
+            sa_conn.close.assert_awaited_once()
 
 
 class TestGTFSFeedImporterCsvBatchCompatibility:

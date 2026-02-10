@@ -5,7 +5,8 @@ Provides status information about GTFS static feed imports and
 GTFS-RT realtime harvester.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import cast
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select, text
@@ -92,25 +93,41 @@ async def get_ingestion_status(
     # Check if feed is expired
     today = datetime.now(timezone.utc).date()
     is_expired = False
-    if feed_info and feed_info.feed_end_date:
-        is_expired = feed_info.feed_end_date < today
+    feed_end_date = cast(date | None, feed_info.feed_end_date) if feed_info else None
+    if feed_end_date:
+        is_expired = feed_end_date < today
+
+    feed_id = cast(str | None, feed_info.feed_id) if feed_info else None
+    feed_url = cast(str | None, feed_info.feed_url) if feed_info else None
+    downloaded_at = (
+        cast(datetime | None, feed_info.downloaded_at) if feed_info else None
+    )
+    feed_start_date = (
+        cast(date | None, feed_info.feed_start_date) if feed_info else None
+    )
+    stop_count = cast(int | None, feed_info.stop_count) if feed_info else None
+    route_count = cast(int | None, feed_info.route_count) if feed_info else None
+    trip_count = cast(int | None, feed_info.trip_count) if feed_info else None
 
     gtfs_feed_status = GTFSFeedStatus(
-        feed_id=feed_info.feed_id if feed_info else None,
-        feed_url=feed_info.feed_url if feed_info else None,
-        downloaded_at=feed_info.downloaded_at if feed_info else None,
-        feed_start_date=feed_info.feed_start_date if feed_info else None,
-        feed_end_date=feed_info.feed_end_date if feed_info else None,
-        stop_count=feed_info.stop_count or 0 if feed_info else 0,
-        route_count=feed_info.route_count or 0 if feed_info else 0,
-        trip_count=feed_info.trip_count or 0 if feed_info else 0,
+        feed_id=feed_id,
+        feed_url=feed_url,
+        downloaded_at=downloaded_at,
+        feed_start_date=feed_start_date,
+        feed_end_date=feed_end_date,
+        stop_count=stop_count or 0,
+        route_count=route_count or 0,
+        trip_count=trip_count or 0,
         is_expired=is_expired,
     )
 
-    # Get harvester status from request.state (populated by lifespan yield dict)
+    # Get harvester status from request.state (lifespan yield dict) or app.state.
     harvester_status = GTFSRTHarvesterStatus()
-    # FastAPI shallow-copies the lifespan yield dict {"harvester": ...} to request.state
-    harvester = getattr(request.state, "harvester", None)
+    # FastAPI shallow-copies lifespan state to request.state, but tests and some
+    # deployments may store runtime objects directly on app.state.
+    harvester = getattr(request.state, "harvester", None) or getattr(
+        request.app.state, "harvester", None
+    )
     if harvester:
         status = harvester.get_status()
         harvester_status = GTFSRTHarvesterStatus(

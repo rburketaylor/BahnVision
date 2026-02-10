@@ -8,6 +8,11 @@ No live architecture/product/operations subfolders live here today; add new back
 
 Each subdirectory should own its README or index as content grows; cross-link updates belong in PR descriptions when docs move.
 
+## Local Runtime Security Defaults
+
+- Docker Compose runtime hardening (network isolation for Postgres/Valkey, optional host access profile, and observability credential requirements) is documented in `docs/local-setup.md` and `docs/runtime-configuration.md`.
+- Keep backend-focused operational docs in sync with those shared runtime docs when changing service defaults.
+
 ## Heatmap Live Mode
 
 - The heatmap endpoint supports `time_range=live` to serve the latest GTFS-RT snapshot.

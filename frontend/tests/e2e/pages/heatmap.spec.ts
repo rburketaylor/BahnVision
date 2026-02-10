@@ -4,7 +4,12 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { setupHeatmapMocks, setupStationMocks, mockHeatmapData } from '../fixtures/mocks'
+import {
+  setupHeatmapMocks,
+  setupStationMocks,
+  mockHeatmapData,
+  mockStationStats,
+} from '../fixtures/mocks'
 
 test.describe('Heatmap Page', () => {
   test.beforeEach(async ({ page }) => {
@@ -59,6 +64,66 @@ test.describe('Heatmap Page', () => {
 
     // Should redirect to root
     await expect(page).toHaveURL('/')
+  })
+
+  test('shows a station popup on first click and loads stats', async ({ page }) => {
+    // Delay station stats slightly so we can observe the loading state.
+    await page.route('**/api/v1/transit/stops/**/stats**', async route => {
+      await new Promise(resolve => setTimeout(resolve, 300))
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockStationStats),
+      })
+    })
+
+    const overviewResponse = page.waitForResponse(
+      resp => resp.url().includes('/api/v1/heatmap/overview'),
+      { timeout: 15000 }
+    )
+
+    await page.goto('/')
+
+    const canvas = page.locator('canvas.maplibregl-canvas')
+    await expect(canvas).toBeVisible({ timeout: 15000 })
+
+    await overviewResponse
+
+    await page.waitForFunction(() => {
+      const el = document.querySelector('canvas.maplibregl-canvas') as HTMLCanvasElement | null
+      return Boolean(el && el.width > 0 && el.height > 0)
+    })
+
+    const statsResponse = page.waitForResponse(resp => {
+      return resp.url().includes('/api/v1/transit/stops/') && resp.url().includes('/stats')
+    })
+
+    const box = await canvas.boundingBox()
+    expect(box).toBeTruthy()
+
+    // Clicking canvas coordinates is slightly flaky across browsers; try a small cluster of points.
+    const popup = page.locator('.maplibregl-popup-content')
+    const centerX = box!.width / 2
+    const centerY = box!.height / 2
+    const offsets = [
+      [0, 0],
+      [8, 0],
+      [-8, 0],
+      [0, 8],
+      [0, -8],
+    ] as const
+
+    for (const [dx, dy] of offsets) {
+      await canvas.click({ position: { x: centerX + dx, y: centerY + dy } })
+      if (await popup.isVisible()) break
+    }
+
+    await expect(popup).toBeVisible({ timeout: 10000 })
+    await expect(popup).toContainText(mockStationStats.station_name)
+    await expect(popup).toContainText('Loading details...')
+
+    await statsResponse
+    await expect(popup).toContainText('Departures', { timeout: 10000 })
   })
 })
 

@@ -8,7 +8,9 @@ Handles fetching, parsing, and storing GTFS-RT data including:
 - Service alerts
 """
 
+import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Set
 from dataclasses import dataclass
@@ -19,6 +21,8 @@ from app.core.config import get_settings
 from app.services.cache import CacheService
 
 # Import GTFS-RT bindings with fallback
+FeedMessage: type[Any] | None
+
 try:
     from google.transit import gtfs_realtime_pb2
 
@@ -57,6 +61,19 @@ class TripUpdate:
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary with JSON-serializable values."""
+        return {
+            "trip_id": self.trip_id,
+            "route_id": self.route_id,
+            "stop_id": self.stop_id,
+            "stop_sequence": self.stop_sequence,
+            "arrival_delay": self.arrival_delay,
+            "departure_delay": self.departure_delay,
+            "schedule_relationship": self.schedule_relationship,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
 
 @dataclass
 class VehiclePosition:
@@ -74,6 +91,19 @@ class VehiclePosition:
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary with JSON-serializable values."""
+        return {
+            "trip_id": self.trip_id,
+            "vehicle_id": self.vehicle_id,
+            "route_id": self.route_id,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "bearing": self.bearing,
+            "speed": self.speed,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
 
 
 @dataclass
@@ -95,6 +125,21 @@ class ServiceAlert:
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary with JSON-serializable values."""
+        return {
+            "alert_id": self.alert_id,
+            "cause": self.cause,
+            "effect": self.effect,
+            "header_text": self.header_text,
+            "description_text": self.description_text,
+            "affected_routes": list(self.affected_routes),
+            "affected_stops": list(self.affected_stops),
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
 
 class GtfsRealtimeService:
     """Service for processing GTFS-RT data streams"""
@@ -102,6 +147,7 @@ class GtfsRealtimeService:
     def __init__(self, cache_service: CacheService):
         self.settings = get_settings()
         self.cache = cache_service
+        self._circuit_breaker_lock = threading.Lock()
         self._circuit_breaker_state = {
             "failures": 0,
             "last_failure": None,
@@ -110,38 +156,43 @@ class GtfsRealtimeService:
 
     def _check_circuit_breaker(self) -> bool:
         """Check if circuit breaker allows requests"""
-        state = self._circuit_breaker_state
+        with self._circuit_breaker_lock:
+            state = self._circuit_breaker_state
 
-        if state["state"] == "OPEN":
-            # Check if we should try half-open
-            last_failure = state["last_failure"]
-            if (
-                isinstance(last_failure, datetime)
-                and (datetime.now(timezone.utc) - last_failure).seconds
-                > self.settings.gtfs_rt_circuit_breaker_recovery_seconds
-            ):
-                state["state"] = "HALF_OPEN"
-                logger.info("Circuit breaker transitioning to HALF_OPEN")
-                return True
-            return False
+            if state["state"] == "OPEN":
+                # Check if we should try half-open
+                last_failure = state["last_failure"]
+                if (
+                    isinstance(last_failure, datetime)
+                    and (datetime.now(timezone.utc) - last_failure).seconds
+                    > self.settings.gtfs_rt_circuit_breaker_recovery_seconds
+                ):
+                    state["state"] = "HALF_OPEN"
+                    logger.info("Circuit breaker transitioning to HALF_OPEN")
+                    return True
+                return False
 
-        return True
+            return True
 
     def _record_success(self):
         """Record successful request"""
-        state = self._circuit_breaker_state
-        state["failures"] = 0
-        state["state"] = "CLOSED"
+        with self._circuit_breaker_lock:
+            state = self._circuit_breaker_state
+            state["failures"] = 0
+            state["state"] = "CLOSED"
 
     def _record_failure(self):
         """Record failed request"""
-        state = self._circuit_breaker_state
-        state["failures"] += 1
-        state["last_failure"] = datetime.now(timezone.utc)
+        with self._circuit_breaker_lock:
+            state = self._circuit_breaker_state
+            state["failures"] += 1
+            state["last_failure"] = datetime.now(timezone.utc)
 
-        if state["failures"] >= self.settings.gtfs_rt_circuit_breaker_threshold:
-            state["state"] = "OPEN"
-            logger.warning(f"Circuit breaker OPENED after {state['failures']} failures")
+            if state["failures"] >= self.settings.gtfs_rt_circuit_breaker_threshold:
+                state["state"] = "OPEN"
+                logger.warning(
+                    f"Circuit breaker OPENED after {state['failures']} failures"
+                )
 
     async def fetch_and_process_feed(self) -> dict[str, int]:
         """Fetch and process all GTFS-RT data from a single feed.
@@ -160,7 +211,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -281,10 +335,18 @@ class GtfsRealtimeService:
                         )
                     )
 
-            # Store in cache
-            await self._store_trip_updates(trip_updates)
-            await self._store_vehicle_positions(vehicle_positions)
-            await self._store_alerts(alerts)
+            # Store in cache. Cache write failures are isolated from feed parsing
+            # so transient cache issues do not mark feed fetches as failed.
+            await asyncio.gather(
+                self._store_with_error_isolation(
+                    "trip updates", self._store_trip_updates(trip_updates)
+                ),
+                self._store_with_error_isolation(
+                    "vehicle positions",
+                    self._store_vehicle_positions(vehicle_positions),
+                ),
+                self._store_with_error_isolation("alerts", self._store_alerts(alerts)),
+            )
 
             self._record_success()
 
@@ -317,7 +379,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -372,7 +437,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -422,7 +490,10 @@ class GtfsRealtimeService:
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.gtfs_rt_timeout_seconds,
-                headers={"User-Agent": "BahnVision-GTFS-RT/1.0"},
+                headers={
+                    "User-Agent": "BahnVision-GTFS-RT/1.0",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
             ) as client:
                 response = await client.get(self.settings.gtfs_rt_feed_url)
             response.raise_for_status()
@@ -483,18 +554,6 @@ class GtfsRealtimeService:
             logger.error(f"Failed to fetch alerts: {e}")
             return []
 
-    def _serialize_dataclass(self, obj) -> dict[str, Any]:
-        """Serialize a dataclass to a JSON-safe dict, converting datetime to ISO format"""
-        result: dict[str, Any] = {}
-        for key, value in obj.__dict__.items():
-            if isinstance(value, datetime):
-                result[key] = value.isoformat()
-            elif isinstance(value, set):
-                result[key] = list(value)
-            else:
-                result[key] = value
-        return result
-
     async def _store_trip_updates(self, trip_updates: List[TripUpdate]):
         """Store trip updates in Valkey cache with stop-based indexing using batch writes."""
         if not trip_updates:
@@ -506,7 +565,7 @@ class GtfsRealtimeService:
         for tu in trip_updates:
             if tu.stop_id not in updates_by_stop:
                 updates_by_stop[tu.stop_id] = []
-            updates_by_stop[tu.stop_id].append(self._serialize_dataclass(tu))
+            updates_by_stop[tu.stop_id].append(tu.to_dict())
 
         # Build batch of items to store
         # Key: trip_updates:stop:{stop_id} -> Value: List[TripUpdate]
@@ -530,12 +589,12 @@ class GtfsRealtimeService:
         for vp in vehicle_positions:
             # Store by vehicle_id
             vehicle_key = f"vehicle_position:{vp.vehicle_id}"
-            items_to_store[vehicle_key] = self._serialize_dataclass(vp)
+            items_to_store[vehicle_key] = vp.to_dict()
 
             # Create trip-to-vehicle index if trip_id is available
             if vp.trip_id:
                 trip_vehicle_key = f"vehicle_position:trip:{vp.trip_id}"
-                items_to_store[trip_vehicle_key] = self._serialize_dataclass(vp)
+                items_to_store[trip_vehicle_key] = vp.to_dict()
 
         # Batch write all vehicle positions and indexes
         await self.cache.mset_json(
@@ -554,7 +613,7 @@ class GtfsRealtimeService:
 
         for alert in alerts:
             key = f"service_alert:{alert.alert_id}"
-            items_to_store[key] = self._serialize_dataclass(alert)
+            items_to_store[key] = alert.to_dict()
 
             # Build route-to-alerts index
             for route_id in alert.affected_routes:
@@ -562,26 +621,33 @@ class GtfsRealtimeService:
                     route_to_alerts[route_id] = set()
                 route_to_alerts[route_id].add(alert.alert_id)
 
-        # Batch write all alerts
+        # Add route-based indexes to the same batch
+        for route_id, alert_ids in route_to_alerts.items():
+            index_key = f"service_alerts:route:{route_id}"
+            items_to_store[index_key] = list(alert_ids)
+
+        # Batch write all alerts and indexes
         await self.cache.mset_json(
             items_to_store,
             ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
         )
 
-        # Batch write all route-based indexes
-        index_items: dict[str, Any] = {}
-        for route_id, alert_ids in route_to_alerts.items():
-            index_key = f"service_alerts:route:{route_id}"
-            index_items[index_key] = list(alert_ids)
-
-        await self.cache.mset_json(
-            index_items,
-            ttl_seconds=self.settings.gtfs_rt_cache_ttl_seconds,
-        )
+    async def _store_with_error_isolation(self, label: str, operation) -> None:
+        """Run a cache-store operation and isolate any failures."""
+        try:
+            await operation
+        except Exception as exc:
+            logger.warning("Failed to store GTFS-RT %s in cache: %s", label, exc)
 
     def _map_schedule_relationship(self, relationship) -> str:
         """Map GTFS-RT schedule relationship to string"""
-        mapping = {0: "SCHEDULED", 1: "SKIPPED", 2: "NO_DATA", 3: "UNSCHEDULED"}
+        mapping = {
+            0: "SCHEDULED",
+            1: "SKIPPED",
+            2: "NO_DATA",
+            3: "UNSCHEDULED",
+            4: "CANCELED",
+        }
         return mapping.get(relationship, "SCHEDULED")
 
     def _map_cause(self, cause) -> str:

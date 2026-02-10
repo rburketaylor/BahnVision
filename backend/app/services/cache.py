@@ -11,6 +11,7 @@ Provides distributed caching via Valkey with:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import time
@@ -19,6 +20,7 @@ from functools import lru_cache, wraps
 from typing import Any, AsyncIterator, Callable, TypeVar
 
 import valkey.asyncio as valkey
+from fastapi.encoders import jsonable_encoder
 
 from app.core.config import get_settings
 from app.core.metrics import record_cache_event
@@ -41,6 +43,7 @@ class TTLConfig:
         self.valkey_cache_ttl = settings.valkey_cache_ttl_seconds
         self.valkey_cache_ttl_not_found = settings.valkey_cache_ttl_not_found_seconds
         self.circuit_breaker_timeout = settings.cache_circuit_breaker_timeout_seconds
+        self.cache_mset_batch_size = settings.cache_mset_batch_size
 
         self._validate_ttls()
 
@@ -386,17 +389,26 @@ class CacheService:
             return
 
         effective_ttl = self._config.get_effective_ttl(ttl_seconds)
+        batch_size = self._config.cache_mset_batch_size
+        if batch_size <= 0:
+            batch_size = len(items)
 
-        # Write to Valkey using pipeline
+        # Write to Valkey using pipeline with batching
         if not self._circuit_breaker.is_open():
             try:
-                pipe = self._client.pipeline()
-                for key, value in items.items():
-                    if effective_ttl and effective_ttl > 0:
-                        pipe.set(key, value, ex=effective_ttl)
-                    else:
-                        pipe.set(key, value)
-                await pipe.execute()
+                # Process in batches to avoid timeouts
+                item_iter = iter(items.items())
+                while True:
+                    batch = dict(itertools.islice(item_iter, batch_size))
+                    if not batch:
+                        break
+                    pipe = self._client.pipeline()
+                    for key, value in batch.items():
+                        if effective_ttl and effective_ttl > 0:
+                            pipe.set(key, value, ex=effective_ttl)
+                        else:
+                            pipe.set(key, value)
+                    await pipe.execute()
                 self._circuit_breaker.close()
             except Exception as exc:
                 logger.warning("MSET pipeline failed: %s", exc)
@@ -421,7 +433,9 @@ class CacheService:
             return
 
         # Serialize all values to JSON
-        serialized = {key: json.dumps(value) for key, value in items.items()}
+        serialized = {
+            key: json.dumps(jsonable_encoder(value)) for key, value in items.items()
+        }
         await self.mset(serialized, ttl_seconds)
 
     async def get_json(self, key: str) -> Any | None:
@@ -460,7 +474,7 @@ class CacheService:
         stale_ttl_seconds: int | None = None,
     ) -> None:
         """Serialize and store a JSON-compatible document."""
-        encoded = json.dumps(value)
+        encoded = json.dumps(jsonable_encoder(value))
         stale_key = f"{key}{self._STALE_SUFFIX}"
 
         effective_ttl = self._config.get_effective_ttl(ttl_seconds)
@@ -555,6 +569,8 @@ def get_valkey_client() -> valkey.Valkey:
         settings.valkey_url,
         encoding="utf-8",
         decode_responses=True,
+        socket_connect_timeout=settings.valkey_socket_connect_timeout_seconds,
+        socket_timeout=settings.valkey_socket_timeout_seconds,
     )
 
 

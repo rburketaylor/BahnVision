@@ -17,6 +17,8 @@ const STATION_STATS_CACHE_TIME = 10 * 60 * 1000 // 10 minutes
 
 interface UseStationStatsOptions {
   enabled?: boolean
+  /** Whether to include network average rates (can be expensive for long time ranges). */
+  includeNetworkAverages?: boolean
 }
 
 /**
@@ -27,15 +29,16 @@ export function useStationStats(
   timeRange: StationStatsTimeRange = '24h',
   options: UseStationStatsOptions = {}
 ) {
-  const { enabled = true } = options
+  const { enabled = true, includeNetworkAverages = true } = options
 
   return useQuery<StationStats>({
-    queryKey: ['stationStats', stopId, timeRange],
+    queryKey: ['stationStats', stopId, timeRange, includeNetworkAverages],
     queryFn: async () => {
       if (!stopId) throw new Error('Stop ID is required')
       const response = await transitApiClient.getStationStats({
         stop_id: stopId,
         time_range: timeRange,
+        include_network_averages: includeNetworkAverages,
       })
       return response.data
     },

@@ -4,13 +4,35 @@ Tests for the heatmap endpoint.
 
 from __future__ import annotations
 
-from app.models.heatmap import HeatmapResponse
+from types import SimpleNamespace
+
+import pytest
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from app.api.v1.shared.constants import RATE_LIMIT_HEATMAP_CANCELLATIONS
+from app.api.v1.shared.rate_limit import limiter
+from app.models.heatmap import HeatmapOverviewResponse, HeatmapResponse
 from app.services.heatmap_cache import (
     heatmap_cancellations_cache_key,
     heatmap_live_snapshot_cache_key,
+    heatmap_overview_cache_key,
 )
 from app.services.heatmap_service import resolve_max_points
 from tests.api.conftest import CacheScenario
+
+
+@pytest.fixture(autouse=True)
+def reset_heatmap_rate_limit_state():
+    try:
+        limiter.reset()
+    except Exception:
+        pass
+    yield
+    try:
+        limiter.reset()
+    except Exception:
+        pass
 
 
 def test_heatmap_cancellations_cache_hit(api_client, fake_cache):
@@ -83,6 +105,26 @@ def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_gtfs_sche
     assert validated.summary.total_stations == 0
 
 
+def test_heatmap_cancellations_invalid_cache_payload_falls_back_to_fresh_data(
+    api_client, fake_cache, fake_gtfs_schedule
+):
+    """Malformed cache payload should be treated as cache miss with fresh generation."""
+    max_points = resolve_max_points(zoom_level=10, max_points=None)
+    fake_cache.configure(
+        heatmap_cancellations_cache_key(
+            time_range="24h",
+            transport_modes=None,
+            bucket_width_minutes=60,
+            max_points=max_points,
+        ),
+        CacheScenario(fresh_value={"bad": "payload"}),
+    )
+
+    response = api_client.get("/api/v1/heatmap/cancellations")
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "miss"
+
+
 def test_heatmap_live_cache_hit(api_client, fake_cache):
     """Test live heatmap endpoint with cache hit scenario."""
     cached_payload = {
@@ -141,6 +183,18 @@ def test_heatmap_live_cache_miss_returns_503(api_client, fake_cache):
     assert response.headers.get("X-Cache-Status") == "miss"
 
 
+def test_heatmap_live_malformed_cache_payload_treated_as_miss(api_client, fake_cache):
+    """Malformed live cache payload should be treated as a cache miss."""
+    fake_cache.configure(
+        heatmap_live_snapshot_cache_key(),
+        CacheScenario(fresh_value={"bad": "payload"}),
+    )
+
+    response = api_client.get("/api/v1/heatmap/cancellations?time_range=live")
+    assert response.status_code == 503
+    assert response.headers.get("X-Cache-Status") == "miss"
+
+
 def test_heatmap_live_transport_filter(api_client, fake_cache):
     """Test live heatmap endpoint filters by transport modes."""
     cached_payload = {
@@ -191,6 +245,91 @@ def test_heatmap_live_transport_filter(api_client, fake_cache):
     validated = HeatmapResponse.model_validate(data)
     assert validated.summary.total_departures == 5
     assert validated.data_points[0].cancelled_count == 2
+
+
+def test_heatmap_overview_live_transport_filter(api_client, fake_cache):
+    """Test live heatmap overview endpoint filters by transport modes."""
+    cached_payload = {
+        "time_range": {
+            "from": "2025-01-15T00:00:00Z",
+            "to": "2025-01-15T00:05:00Z",
+        },
+        "last_updated_at": "2025-01-15T00:05:00Z",
+        "data_points": [
+            {
+                "station_id": "de:09162:6",
+                "station_name": "Marienplatz",
+                "latitude": 48.137,
+                "longitude": 11.575,
+                "total_departures": 12,
+                "cancelled_count": 2,
+                "cancellation_rate": 0.166,
+                "delayed_count": 1,
+                "delay_rate": 0.083,
+                "by_transport": {
+                    "UBAHN": {"total": 5, "cancelled": 2, "delayed": 0},
+                    "BUS": {"total": 7, "cancelled": 0, "delayed": 1},
+                },
+            }
+        ],
+        "summary": {
+            "total_stations": 1,
+            "total_departures": 12,
+            "total_cancellations": 2,
+            "overall_cancellation_rate": 0.166,
+            "total_delays": 1,
+            "overall_delay_rate": 0.083,
+            "most_affected_station": "Marienplatz",
+            "most_affected_line": "U-Bahn",
+        },
+    }
+
+    fake_cache.configure(
+        heatmap_live_snapshot_cache_key(),
+        CacheScenario(fresh_value=cached_payload),
+    )
+
+    response = api_client.get(
+        "/api/v1/heatmap/overview?time_range=live&transport_modes=UBAHN"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    validated = HeatmapOverviewResponse.model_validate(data)
+    assert validated.summary.total_departures == 5
+    assert validated.total_impacted_stations == 1
+    assert validated.last_updated_at is not None
+
+
+def test_heatmap_overview_cache_key_normalizes_transport_modes(api_client, fake_cache):
+    """Semantically equivalent transport_modes should share a cache key."""
+    cached_payload = {
+        "time_range": {"from": "2025-01-01T00:00:00Z", "to": "2025-01-01T01:00:00Z"},
+        "points": [],
+        "summary": {
+            "total_stations": 1,
+            "total_departures": 10,
+            "total_cancellations": 1,
+            "overall_cancellation_rate": 0.1,
+            "total_delays": 0,
+            "overall_delay_rate": 0.0,
+            "most_affected_station": None,
+            "most_affected_line": None,
+        },
+        "total_impacted_stations": 0,
+    }
+    fake_cache.configure(
+        heatmap_overview_cache_key(
+            time_range=None,
+            transport_modes="BUS,UBAHN",
+            bucket_width_minutes=60,
+            metrics="both",
+        ),
+        CacheScenario(fresh_value=cached_payload),
+    )
+
+    response = api_client.get("/api/v1/heatmap/overview?transport_modes= ubahn , bus ")
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "hit"
 
 
 def test_heatmap_cancellations_with_time_range(
@@ -293,12 +432,82 @@ def test_heatmap_cancellations_stop_list_failure(
     assert len(validated.data_points) == 0
 
 
+def test_heatmap_cancellations_rate_limited(api_client):
+    """Cancellations endpoint should enforce configured per-minute rate limit."""
+    app = api_client.app
+    original_enabled = limiter.enabled
+    had_limiter_state = hasattr(app.state, "limiter")
+    original_state_limiter = getattr(app.state, "limiter", None)
+    original_handler = app.exception_handlers.get(RateLimitExceeded)
+
+    limiter.enabled = True
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+    try:
+        limiter.reset()
+        limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
+        for _ in range(limit):
+            response = api_client.get("/api/v1/heatmap/cancellations")
+            assert response.status_code == 200
+
+        response = api_client.get("/api/v1/heatmap/cancellations")
+        assert response.status_code == 429
+    finally:
+        limiter.enabled = original_enabled
+        limiter.reset()
+        if had_limiter_state:
+            app.state.limiter = original_state_limiter
+        elif hasattr(app.state, "limiter"):
+            delattr(app.state, "limiter")
+
+        if original_handler is None:
+            app.exception_handlers.pop(RateLimitExceeded, None)
+        else:
+            app.exception_handlers[RateLimitExceeded] = original_handler
+
+
 class TestDailyAggregationEndpoint:
     """Tests for the daily aggregation endpoint."""
 
-    def test_trigger_daily_aggregation_queues_background_task(self, api_client):
-        """Test that the aggregation endpoint queues a background task."""
+    def test_trigger_daily_aggregation_requires_admin_auth(
+        self, api_client, monkeypatch
+    ):
+        """Endpoint should reject unauthenticated callers when admin key is configured."""
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+
         response = api_client.post("/api/v1/heatmap/aggregate-daily")
+        assert response.status_code == 401
+
+    def test_trigger_daily_aggregation_rejects_invalid_admin_key(
+        self, api_client, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+
+        response = api_client.post(
+            "/api/v1/heatmap/aggregate-daily",
+            headers={"X-API-Key": "wrong-token"},
+        )
+        assert response.status_code == 403
+
+    def test_trigger_daily_aggregation_queues_background_task_when_authorized(
+        self, api_client, monkeypatch
+    ):
+        """Test that the aggregation endpoint queues a background task."""
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+        response = api_client.post(
+            "/api/v1/heatmap/aggregate-daily",
+            headers={"X-API-Key": "secret-token"},
+        )
 
         assert response.status_code == 200
         assert response.headers.get("X-Background-Task") == "queued"
@@ -307,9 +516,18 @@ class TestDailyAggregationEndpoint:
         assert data["status"] == "queued"
         assert "message" in data
 
-    def test_trigger_daily_aggregation_response_structure(self, api_client):
+    def test_trigger_daily_aggregation_response_structure(
+        self, api_client, monkeypatch
+    ):
         """Test that the aggregation endpoint returns expected structure."""
-        response = api_client.post("/api/v1/heatmap/aggregate-daily")
+        monkeypatch.setattr(
+            "app.api.v1.shared.dependencies.get_settings",
+            lambda: SimpleNamespace(admin_api_key="secret-token"),
+        )
+        response = api_client.post(
+            "/api/v1/heatmap/aggregate-daily",
+            headers={"X-API-Key": "secret-token"},
+        )
 
         assert response.status_code == 200
 
@@ -318,3 +536,23 @@ class TestDailyAggregationEndpoint:
         assert "message" in data
         assert isinstance(data["status"], str)
         assert isinstance(data["message"], str)
+
+
+def test_heatmap_health_returns_503_on_dependency_failure(api_client, monkeypatch):
+    """Health endpoint should return 503 when DB dependency check fails."""
+
+    class _FailingSessionContext:
+        async def __aenter__(self):
+            raise RuntimeError("db unavailable")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.heatmap.AsyncSessionFactory",
+        lambda: _FailingSessionContext(),
+    )
+
+    response = api_client.get("/api/v1/heatmap/health")
+    assert response.status_code == 503
+    assert response.json()["status"] == "unhealthy"

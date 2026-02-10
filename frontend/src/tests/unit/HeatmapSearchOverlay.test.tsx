@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { HeatmapSearchOverlay } from '../../components/heatmap/HeatmapSearchOverlay'
 import type { TransitStop } from '../../types/gtfs'
 
-vi.mock('../../components/StationSearch', () => ({
+vi.mock('../../components/features/station/StationSearch', () => ({
   StationSearch: ({
     onSelect,
     autoFocus,
@@ -111,6 +111,17 @@ describe('HeatmapSearchOverlay', () => {
 
     await user.keyboard('s')
     expect(screen.getByText('Find Station')).toBeInTheDocument()
+  })
+
+  it('does not toggle with modified Save shortcuts', async () => {
+    const user = userEvent.setup()
+    renderOverlay(<HeatmapSearchOverlay />)
+
+    expect(screen.getByRole('button', { name: 'Search stations (S)' })).toBeInTheDocument()
+
+    await user.keyboard('{Control>}s{/Control}')
+    expect(screen.getByRole('button', { name: 'Search stations (S)' })).toBeInTheDocument()
+    expect(screen.queryByText('Find Station')).not.toBeInTheDocument()
   })
 
   it('hides details link when configured', async () => {

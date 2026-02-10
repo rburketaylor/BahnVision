@@ -165,7 +165,7 @@ class TransitDataRepository:
         self,
         ingestion_run_id: int,
         *,
-        status: str = "completed",
+        status: str = models.IngestionStatus.SUCCESS.value,
         records_inserted: int = 0,
         completed_at: datetime | None = None,
         notes: str | None = None,

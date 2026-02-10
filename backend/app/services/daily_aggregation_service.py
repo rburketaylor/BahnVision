@@ -161,9 +161,9 @@ class DailyAggregationService:
 
         # Build breakdown by station and transport type
         breakdown_by_station: dict[str, dict[str, dict[str, int]]] = {}
-        for row in breakdown_rows:
-            stop_id = row.stop_id
-            route_type = row.route_type
+        for breakdown_row in breakdown_rows:
+            stop_id = breakdown_row.stop_id
+            route_type = breakdown_row.route_type
 
             if route_type is None:
                 # Skip NULL route_type (already included in totals)
@@ -175,10 +175,10 @@ class DailyAggregationService:
                 breakdown_by_station[stop_id] = {}
 
             breakdown_by_station[stop_id][transport_type] = {
-                "trips": int(row.trip_count),
-                "cancelled": int(row.cancelled_count),
-                "delayed": int(row.delayed_count),
-                "on_time": int(row.on_time_count),
+                "trips": int(breakdown_row.trip_count),
+                "cancelled": int(breakdown_row.cancelled_count),
+                "delayed": int(breakdown_row.delayed_count),
+                "on_time": int(breakdown_row.on_time_count),
             }
 
         # Delete existing daily summaries for this date
@@ -189,17 +189,17 @@ class DailyAggregationService:
 
         # Insert new daily summaries
         stations_created = 0
-        for row in hourly_rows:
+        for hourly_row in hourly_rows:
             daily_summary = RealtimeStationStatsDaily(
-                stop_id=row.stop_id,
+                stop_id=hourly_row.stop_id,
                 date=target_date,
-                trip_count=int(row.trip_count),
-                delayed_count=int(row.delayed_count),
-                cancelled_count=int(row.cancelled_count),
-                on_time_count=int(row.on_time_count),
-                total_delay_seconds=int(row.total_delay_seconds),
-                observation_count=int(row.observation_count),
-                by_route_type=breakdown_by_station.get(row.stop_id, {}),
+                trip_count=int(hourly_row.trip_count),
+                delayed_count=int(hourly_row.delayed_count),
+                cancelled_count=int(hourly_row.cancelled_count),
+                on_time_count=int(hourly_row.on_time_count),
+                total_delay_seconds=int(hourly_row.total_delay_seconds),
+                observation_count=int(hourly_row.observation_count),
+                by_route_type=breakdown_by_station.get(hourly_row.stop_id, {}),
             )
             self._session.add(daily_summary)
             stations_created += 1

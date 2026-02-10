@@ -4,6 +4,7 @@ Tests for the GTFS-RT data harvester service (streaming aggregation).
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,6 +46,99 @@ class FakeCache:
         stale_ttl_seconds: int | None = None,
     ):
         self._store[key] = value
+
+
+class AtomicEvalClient:
+    """Redis eval-compatible fake client for atomic marker updates."""
+
+    def __init__(self, store: dict[str, str]):
+        self._store = store
+        self._lock = asyncio.Lock()
+
+    async def eval(self, _script: str, numkeys: int, *keys_and_args):
+        assert numkeys == 1
+        key = keys_and_args[0]
+        new_status = keys_and_args[1]
+        new_delay = max(int(keys_and_args[2]), 0)
+        _ttl = int(keys_and_args[3])
+        rank = {"unknown": 0, "on_time": 1, "delayed": 2, "cancelled": 3}
+
+        async with self._lock:
+            prev_raw = self._store.get(key)
+            prev_status: str | None = None
+            prev_delay = 0
+
+            if prev_raw is not None:
+                if "|" in prev_raw:
+                    status_raw, delay_raw = prev_raw.split("|", 1)
+                    prev_status = status_raw if status_raw in rank else "unknown"
+                    try:
+                        prev_delay = max(int(delay_raw), 0)
+                    except ValueError:
+                        prev_delay = 0
+                else:
+                    prev_status = prev_raw if prev_raw in rank else "unknown"
+
+            trip_delta = 0
+            delay_delta = 0
+            delayed_delta = 0
+            on_time_delta = 0
+            cancelled_delta = 0
+
+            if prev_status is None:
+                trip_delta = 1
+                delay_delta = new_delay
+                if new_status == "delayed":
+                    delayed_delta = 1
+                elif new_status == "on_time":
+                    on_time_delta = 1
+                elif new_status == "cancelled":
+                    cancelled_delta = 1
+                self._store[key] = f"{new_status}|{new_delay}"
+                return [
+                    trip_delta,
+                    delay_delta,
+                    delayed_delta,
+                    on_time_delta,
+                    cancelled_delta,
+                ]
+
+            prev_rank = rank.get(prev_status, 0)
+            new_rank = rank.get(new_status, 0)
+            if new_rank > prev_rank:
+                if prev_status == "delayed":
+                    delayed_delta -= 1
+                elif prev_status == "on_time":
+                    on_time_delta -= 1
+                elif prev_status == "cancelled":
+                    cancelled_delta -= 1
+
+                if new_status == "delayed":
+                    delayed_delta += 1
+                elif new_status == "on_time":
+                    on_time_delta += 1
+                elif new_status == "cancelled":
+                    cancelled_delta += 1
+
+                delay_delta = max(new_delay - prev_delay, 0)
+                self._store[key] = f"{new_status}|{new_delay}"
+            elif new_delay > prev_delay:
+                delay_delta = new_delay - prev_delay
+                self._store[key] = f"{prev_status}|{new_delay}"
+
+            return [
+                trip_delta,
+                delay_delta,
+                delayed_delta,
+                on_time_delta,
+                cancelled_delta,
+            ]
+
+
+class AtomicCache(FakeCache):
+    def __init__(self):
+        super().__init__()
+        self._client = AtomicEvalClient(self._store)
 
 
 class FakeResult:
@@ -303,6 +397,131 @@ class TestGTFSRTDataHarvester:
         called_payload = cache.set_json.call_args[0][1]
         assert called_key == heatmap_live_snapshot_cache_key()
         assert len(called_payload["data_points"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_tracks_delay_deltas_on_upgrade(self):
+        """Delay totals should include delta when status is upgraded in-bucket."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+        first = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+        assert first["trip_count"] == 1
+        assert first["total_delay_seconds"] == 400
+        assert first["delayed"] == 1
+
+        upgraded = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 700, "status": "cancelled"}},
+        )
+        assert upgraded["trip_count"] == 0
+        assert upgraded["total_delay_seconds"] == 300
+        assert upgraded["delayed"] == -1
+        assert upgraded["cancelled"] == 1
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_batch_failure_uses_single_key_fallback(self):
+        """Batch cache failures should not count all trips as new."""
+
+        class BatchFailCache(FakeCache):
+            async def mget(self, keys: list[str]) -> dict[str, str | None]:
+                raise RuntimeError("mget failed")
+
+            async def mset(self, items: dict[str, str], ttl_seconds: int | None = None):
+                raise RuntimeError("mset failed")
+
+        cache = BatchFailCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        cache_key = (
+            f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id('trip_1')}"
+        )
+        cache._store[cache_key] = "delayed|400"
+
+        result = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+        assert result["trip_count"] == 0
+        assert result["delayed"] == 0
+        assert result["cancelled"] == 0
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_mset_failure_does_not_double_count(self):
+        """mset failure should not re-apply deltas from fallback counting."""
+
+        class MsetFailCache(FakeCache):
+            async def mset(self, items: dict[str, str], ttl_seconds: int | None = None):
+                raise RuntimeError("mset failed")
+
+        cache = MsetFailCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        cache_key = (
+            f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id('trip_1')}"
+        )
+
+        result = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+
+        assert result["trip_count"] == 1
+        assert result["total_delay_seconds"] == 400
+        assert result["delayed"] == 1
+        assert cache._store[cache_key] == "delayed|400"
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_atomic_path_prevents_parallel_double_count(self):
+        """Atomic cache updates should avoid TOCTOU double-counting."""
+        cache = AtomicCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        trip_statuses = {"trip_1": {"delay": 400, "status": "delayed"}}
+
+        first, second = await asyncio.gather(
+            harvester._apply_trip_statuses(bucket_start, "stop_A", trip_statuses),
+            harvester._apply_trip_statuses(bucket_start, "stop_A", trip_statuses),
+        )
+
+        assert first["trip_count"] + second["trip_count"] == 1
+        assert first["delayed"] + second["delayed"] == 1
+        assert first["total_delay_seconds"] + second["total_delay_seconds"] == 400
+
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        cache_key = (
+            f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id('trip_1')}"
+        )
+        assert cache._store[cache_key] == "delayed|400"
 
 
 class TestScheduleRelationshipMapping:
