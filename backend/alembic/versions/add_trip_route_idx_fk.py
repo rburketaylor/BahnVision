@@ -1,6 +1,6 @@
 """Add gtfs_trips route index and realtime stop FK integrity.
 
-Revision ID: add_trip_route_idx_and_rt_stop_fk
+Revision ID: add_trip_route_idx_fk
 Revises: fix_heatmap_duplication
 Create Date: 2026-02-08 00:00:00.000000
 
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "add_trip_route_idx_and_rt_stop_fk"
+revision: str = "add_trip_route_idx_fk"
 down_revision: Union[str, None] = "fix_heatmap_duplication"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
