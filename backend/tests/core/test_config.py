@@ -35,6 +35,19 @@ def test_cors_parsing_rejects_wildcard():
         Settings(CORS_ALLOW_ORIGINS="http://localhost:3000, *")
 
 
+def test_cors_parsing_accepts_comma_separated_env_var(monkeypatch):
+    monkeypatch.setenv(
+        "CORS_ALLOW_ORIGINS", "https://app.example.com, http://localhost:9000"
+    )
+
+    settings = Settings()
+
+    assert settings.cors_allow_origins == [
+        "https://app.example.com",
+        "http://localhost:9000",
+    ]
+
+
 def test_valkey_fields_accept_redis_aliases(monkeypatch):
     monkeypatch.setenv("REDIS_URL", "redis://example:6379/1")
     monkeypatch.setenv("REDIS_CACHE_TTL_SECONDS", "45")

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def _valkey_alias(env_name: str) -> AliasChoices:
@@ -170,7 +170,7 @@ class Settings(BaseSettings):
     # Cache Warmup
     # ==========================================================================
 
-    cache_warmup_departure_stations: list[str] = Field(
+    cache_warmup_departure_stations: Annotated[list[str], NoDecode] = Field(
         default_factory=list, alias="CACHE_WARMUP_DEPARTURE_STATIONS"
     )
     cache_warmup_departure_limit: int = Field(
@@ -185,12 +185,12 @@ class Settings(BaseSettings):
         alias="HEATMAP_CACHE_WARMUP_ENABLED",
         description="Warm heatmap cache after each GTFS-RT harvest cycle.",
     )
-    heatmap_cache_warmup_time_ranges: list[str] = Field(
+    heatmap_cache_warmup_time_ranges: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["24h"],
         alias="HEATMAP_CACHE_WARMUP_TIME_RANGES",
         description="Comma-separated list of heatmap time_range presets to prewarm (e.g. 1h,6h,24h).",
     )
-    heatmap_cache_warmup_zoom_levels: list[int] = Field(
+    heatmap_cache_warmup_zoom_levels: Annotated[list[int], NoDecode] = Field(
         default_factory=lambda: [6, 10, 12],
         alias="HEATMAP_CACHE_WARMUP_ZOOM_LEVELS",
         description="Comma-separated list of zoom levels to prewarm (e.g. 6,10,12).",
@@ -207,7 +207,7 @@ class Settings(BaseSettings):
     # CORS
     # ==========================================================================
 
-    cors_allow_origins: list[str] = Field(
+    cors_allow_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
             "http://localhost:3000",
