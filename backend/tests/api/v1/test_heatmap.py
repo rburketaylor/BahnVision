@@ -430,18 +430,41 @@ def test_heatmap_cancellations_stop_list_failure(
     assert len(validated.data_points) == 0
 
 
-def test_heatmap_cancellations_rate_limited(api_client, monkeypatch):
+def test_heatmap_cancellations_rate_limited(monkeypatch, cache_service):
     """Cancellations endpoint should enforce configured per-minute rate limit."""
-    # Ensure rate limit is enabled for this test
-    monkeypatch.setattr("app.core.config.Settings.rate_limit_enabled", True)
+    from app.core.config import get_settings
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+    from app.services.cache import get_cache_service
 
-    limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
-    for _ in range(limit):
-        response = api_client.get("/api/v1/heatmap/cancellations")
-        assert response.status_code == 200
+    # Override settings to enable rate limiting
+    settings = get_settings()
+    # Create a copy or mock since we can't easily modify the cached instance safely in parallel tests
+    # But get_settings is lru_cached.
+    # We can mock get_settings to return a modified object.
 
-    response = api_client.get("/api/v1/heatmap/cancellations")
-    assert response.status_code == 429
+    original_settings = get_settings()
+    # Create a new settings object with rate_limit_enabled=True
+    # We use model_copy(update=...) if it's Pydantic v2, or copy(update=...) for v1.
+    # Assuming Pydantic v2 based on previous logs (pydantic_core).
+    new_settings = original_settings.model_copy(update={"rate_limit_enabled": True})
+
+    monkeypatch.setattr("app.main.get_settings", lambda: new_settings)
+
+    # Create a fresh app instance which will see the new settings and configure slowapi
+    app = create_app()
+
+    # Override dependencies as in the main fixture
+    app.dependency_overrides[get_cache_service] = lambda: cache_service
+
+    with TestClient(app) as client:
+        limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
+        for _ in range(limit):
+            response = client.get("/api/v1/heatmap/cancellations")
+            assert response.status_code == 200
+
+        response = client.get("/api/v1/heatmap/cancellations")
+        assert response.status_code == 429
 
 
 class TestDailyAggregationEndpoint:
