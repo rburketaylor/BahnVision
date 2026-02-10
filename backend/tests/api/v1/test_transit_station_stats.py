@@ -166,8 +166,8 @@ class TestStationStatsEndpoint:
         test_app.dependency_overrides[stops_module.get_station_stats_service] = (
             _override_async_dependency(fake_service)
         )
-        test_app.dependency_overrides[stops_module.get_cache_service] = (
-            lambda: _MalformedSnapshotCache()
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: (
+            _MalformedSnapshotCache()
         )
 
         with TestClient(test_app) as client:
@@ -295,8 +295,8 @@ class TestNearbyStopsEndpoint:
         test_app.dependency_overrides[stops_module.get_session] = (
             _override_async_session(object())
         )
-        test_app.dependency_overrides[stops_module.get_cache_service] = (
-            lambda: FakeCache()
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: (
+            FakeCache()
         )
 
         monkeypatch.setattr(
@@ -346,8 +346,8 @@ class TestNearbyStopsEndpoint:
         test_app.dependency_overrides[stops_module.get_session] = (
             _override_async_session(object())
         )
-        test_app.dependency_overrides[stops_module.get_cache_service] = (
-            lambda: InvalidCache()
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: (
+            InvalidCache()
         )
 
         monkeypatch.setattr(
