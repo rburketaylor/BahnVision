@@ -7,6 +7,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.shared.constants import RATE_LIMIT_HEATMAP_CANCELLATIONS
 from app.api.v1.shared.rate_limit import limiter
@@ -432,13 +434,37 @@ def test_heatmap_cancellations_stop_list_failure(
 
 def test_heatmap_cancellations_rate_limited(api_client):
     """Cancellations endpoint should enforce configured per-minute rate limit."""
-    limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
-    for _ in range(limit):
-        response = api_client.get("/api/v1/heatmap/cancellations")
-        assert response.status_code == 200
+    app = api_client.app
+    original_enabled = limiter.enabled
+    had_limiter_state = hasattr(app.state, "limiter")
+    original_state_limiter = getattr(app.state, "limiter", None)
+    original_handler = app.exception_handlers.get(RateLimitExceeded)
 
-    response = api_client.get("/api/v1/heatmap/cancellations")
-    assert response.status_code == 429
+    limiter.enabled = True
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+    try:
+        limiter.reset()
+        limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
+        for _ in range(limit):
+            response = api_client.get("/api/v1/heatmap/cancellations")
+            assert response.status_code == 200
+
+        response = api_client.get("/api/v1/heatmap/cancellations")
+        assert response.status_code == 429
+    finally:
+        limiter.enabled = original_enabled
+        limiter.reset()
+        if had_limiter_state:
+            app.state.limiter = original_state_limiter
+        elif hasattr(app.state, "limiter"):
+            delattr(app.state, "limiter")
+
+        if original_handler is None:
+            app.exception_handlers.pop(RateLimitExceeded, None)
+        else:
+            app.exception_handlers[RateLimitExceeded] = original_handler
 
 
 class TestDailyAggregationEndpoint:
