@@ -430,8 +430,11 @@ def test_heatmap_cancellations_stop_list_failure(
     assert len(validated.data_points) == 0
 
 
-def test_heatmap_cancellations_rate_limited(api_client):
+def test_heatmap_cancellations_rate_limited(api_client, monkeypatch):
     """Cancellations endpoint should enforce configured per-minute rate limit."""
+    # Ensure rate limit is enabled for this test
+    monkeypatch.setattr("app.core.config.Settings.rate_limit_enabled", True)
+
     limit = RATE_LIMIT_HEATMAP_CANCELLATIONS.per_minute
     for _ in range(limit):
         response = api_client.get("/api/v1/heatmap/cancellations")
