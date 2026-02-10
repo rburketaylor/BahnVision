@@ -1,6 +1,6 @@
 """Add gtfs_trips route index and realtime stop FK integrity.
 
-Revision ID: add_trip_route_idx_and_rt_stop_fk
+Revision ID: add_trip_route_idx_rt_stop_fk
 Revises: fix_heatmap_duplication
 Create Date: 2026-02-08 00:00:00.000000
 
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "add_trip_route_idx_and_rt_stop_fk"
+revision: str = "add_trip_route_idx_rt_stop_fk"
 down_revision: Union[str, None] = "fix_heatmap_duplication"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -36,6 +36,11 @@ def upgrade() -> None:
         """
     )
 
+    # gtfs_stops is UNLOGGED in earlier migrations. PostgreSQL does not allow a
+    # permanent (logged) table to reference an UNLOGGED table via FK, so align
+    # realtime_station_stats before creating the constraint.
+    op.execute("ALTER TABLE realtime_station_stats SET UNLOGGED")
+
     op.create_foreign_key(
         _REALTIME_STOP_FK,
         "realtime_station_stats",
@@ -52,4 +57,5 @@ def downgrade() -> None:
         "realtime_station_stats",
         type_="foreignkey",
     )
+    op.execute("ALTER TABLE realtime_station_stats SET LOGGED")
     op.drop_index(_TRIP_ROUTE_INDEX, table_name="gtfs_trips")
