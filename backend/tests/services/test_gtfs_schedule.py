@@ -114,6 +114,20 @@ class TestIntervalToDatetime:
         # Should return None due to exception handling
         assert result is None
 
+    def test_interval_to_datetime_with_base_datetime(self):
+        """Test conversion with explicit base_datetime."""
+        service_date = date(2025, 12, 8)
+        base_datetime = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
+        interval = timedelta(hours=10)
+
+        # Pass both service_date (ignored for calculation) and base_datetime
+        result = interval_to_datetime(
+            service_date, interval, base_datetime=base_datetime
+        )
+
+        expected = datetime(2025, 12, 8, 10, 0, 0, tzinfo=timezone.utc)
+        assert result == expected
+
 
 class TestGetWeekdayColumn:
     """Tests for _get_weekday_column helper function."""
