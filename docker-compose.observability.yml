@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:v3.5.0
+    image: prom/prometheus:v3.9.1
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:12.1.1
+    image: grafana/grafana:12.3.2
     ports:
       - "3001:3000"
     environment:
@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
     ports:
       - "8081:8080"
     volumes:
@@ -41,7 +41,7 @@ services:
     restart: unless-stopped
 
   postgres_exporter:
-    image: prometheuscommunity/postgres-exporter:v0.18.1
+    image: prometheuscommunity/postgres-exporter:v0.19.0
     environment:
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-bahnvision}:${POSTGRES_PASSWORD:-bahnvision}@postgres:5432/${POSTGRES_DB:-bahnvision}?sslmode=disable
     depends_on:
@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
 
   redis_exporter:
-    image: oliver006/redis_exporter:v1.74.0
+    image: oliver006/redis_exporter:v1.81.0
     environment:
       REDIS_ADDR: redis://valkey:6379
     depends_on:
