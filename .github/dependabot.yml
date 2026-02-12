@@ -4,6 +4,7 @@ updates:
   # Production Python dependencies - WEEKLY (stability focus)
   - package-ecosystem: "pip"
     directory: "/backend"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -35,6 +36,7 @@ updates:
   # Production Node.js dependencies - WEEKLY (stability focus)
   - package-ecosystem: "npm"
     directory: "/frontend"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -70,6 +72,7 @@ updates:
   # Security-sensitive GitHub Actions - DAILY (security focus)
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "daily"
       time: "10:00"
@@ -87,6 +90,7 @@ updates:
   # Infrastructure Docker Compose - MONTHLY (stability focus)
   - package-ecosystem: "docker-compose"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "monthly"
       day: "monday"
@@ -99,6 +103,7 @@ updates:
   # Root directory GitHub Actions - DAILY (for workflow files)
   - package-ecosystem: "github-actions"
     directory: "/.github"
+    target-branch: "develop"
     schedule:
       interval: "daily"
       time: "10:00"
