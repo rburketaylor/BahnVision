@@ -191,11 +191,18 @@ class GTFSScheduleService:
 
         result = await self.session.execute(query)
 
+        # Optimization: Pre-calculate midnight to avoid repeated datetime.combine calls
+        service_midnight = datetime.combine(today, time(0, 0), tzinfo=timezone.utc)
+
         departures = []
         for row in result:
-            departure_dt = interval_to_datetime(today, row.departure_time)
+            departure_dt = interval_to_datetime(
+                today, row.departure_time, base_datetime=service_midnight
+            )
             arrival_dt = (
-                interval_to_datetime(today, row.arrival_time)
+                interval_to_datetime(
+                    today, row.arrival_time, base_datetime=service_midnight
+                )
                 if row.arrival_time is not None
                 else None
             )
@@ -293,11 +300,19 @@ def time_to_interval(dt: datetime) -> timedelta:
     return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second)
 
 
-def interval_to_datetime(service_date: date, interval_value) -> Optional[datetime]:
+def interval_to_datetime(
+    service_date: date, interval_value, base_datetime: Optional[datetime] = None
+) -> Optional[datetime]:
     """Convert PostgreSQL interval to a concrete UTC datetime on the service date.
 
     Handles GTFS times that extend beyond 24h by adding the full timedelta to
     the service day midnight instead of wrapping to a time-of-day.
+
+    Args:
+        service_date: The date of service.
+        interval_value: The interval value (timedelta or string).
+        base_datetime: Optional pre-calculated midnight datetime to avoid
+            recalculating it for every call.
     """
     if interval_value is None:
         return None
@@ -328,6 +343,9 @@ def interval_to_datetime(service_date: date, interval_value) -> Optional[datetim
         else:
             logger.warning("Unknown interval type: %s", type(interval_value))
             return None
+
+        if base_datetime:
+            return base_datetime + delta
 
         service_midnight = datetime.combine(
             service_date, time(0, 0), tzinfo=timezone.utc
