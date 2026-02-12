@@ -121,7 +121,7 @@ services:
     mem_limit: 64m
 
   daily-aggregation:
-    image: alpine:3.23.2
+    image: alpine:3.23.3
     env_file:
       - .env
     command: >
