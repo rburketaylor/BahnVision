@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -95,6 +95,43 @@ class GTFSScheduleService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_active_service_ids(self, query_date: date) -> List[str]:
+        """Get active service_ids for a specific date.
+
+        Combines calendar range/weekday checks with calendar_dates exceptions
+        to return a flat list of valid service_ids. This avoids complex joins
+        in the main departures query.
+        """
+        weekday = query_date.strftime("%A").lower()
+
+        c = aliased(GTFSCalendar, name="c")
+        cd = aliased(GTFSCalendarDate, name="cd")
+
+        weekday_col = _get_weekday_column(c, weekday)
+
+        # 1. Get services active by calendar (range + weekday)
+        stmt_cal = select(c.service_id).where(
+            c.start_date <= query_date,
+            c.end_date >= query_date,
+            weekday_col == True,  # noqa: E712
+        )
+
+        # 2. Get exceptions for today
+        stmt_cd = select(cd.service_id, cd.exception_type).where(cd.date == query_date)
+
+        # Execute queries
+        cal_result = await self.session.execute(stmt_cal)
+        active_cal = set(cal_result.scalars().all())
+
+        cd_result = await self.session.execute(stmt_cd)
+        exceptions = cd_result.all()  # List of (service_id, exception_type)
+
+        # Apply exceptions
+        added = {row.service_id for row in exceptions if row.exception_type == 1}
+        removed = {row.service_id for row in exceptions if row.exception_type == 2}
+
+        return list((active_cal - removed) | added)
+
     async def get_stop_departures(
         self,
         stop_id: str,
@@ -130,22 +167,18 @@ class GTFSScheduleService:
 
         # Determine which service_ids are active today
         today = from_time.date()
-        weekday = today.strftime("%A").lower()  # 'monday', 'tuesday', etc.
 
-        # Some GTFS feeds omit calendar.txt and rely only on calendar_dates.txt.
-        # In that case, a strict INNER JOIN to gtfs_calendar yields no results.
-        # We use a LEFT JOIN and treat calendar_dates exception_type=1 as an
-        # explicit inclusion even when there is no calendar row.
+        # Optimization: Pre-fetch active service IDs to simplify main query
+        # This removes 2 joins and complex OR conditions from the hot path
+        active_service_ids = await self.get_active_service_ids(today)
+
+        if not active_service_ids:
+            return []
 
         # Use aliases for clarity in the query
         st = aliased(GTFSStopTime, name="st")
         t = aliased(GTFSTrip, name="t")
         r = aliased(GTFSRoute, name="r")
-        c = aliased(GTFSCalendar, name="c")
-        cd = aliased(GTFSCalendarDate, name="cd")
-
-        # Get the weekday column safely using the model attribute
-        weekday_col = _get_weekday_column(c, weekday)
 
         from_interval = time_to_interval(from_time)
 
@@ -167,23 +200,10 @@ class GTFSScheduleService:
             .select_from(st)
             .join(t, st.trip_id == t.trip_id)
             .join(r, t.route_id == r.route_id)
-            .outerjoin(c, t.service_id == c.service_id)
-            .outerjoin(cd, and_(t.service_id == cd.service_id, cd.date == today))
             .where(
                 st.stop_id.in_(target_stop_ids),
                 st.departure_time >= from_interval,
-                or_(
-                    # Calendar-based service with possible exceptions
-                    and_(
-                        c.service_id.isnot(None),
-                        c.start_date <= today,
-                        c.end_date >= today,
-                        weekday_col == True,  # noqa: E712
-                        or_(cd.exception_type.is_(None), cd.exception_type != 2),
-                    ),
-                    # Explicit addition via calendar_dates
-                    cd.exception_type == 1,
-                ),
+                t.service_id.in_(active_service_ids),
             )
             .order_by(st.departure_time)
             .limit(limit)

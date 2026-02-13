@@ -497,8 +497,6 @@ class TestGetStopDepartures:
         row.route_type = route_type
         row.route_color = route_color
         row.stop_id = stop_id
-        # row.stop_name is NOT returned by the query anymore, but needed for map check
-        # row.stop_name = stop_name
         row.trip_id = trip_id
         row.route_id = route_id
         # Add _mapping for dict conversion
@@ -523,6 +521,21 @@ class TestGetStopDepartures:
         mock_stop.stop_name = "Marienplatz"
         return mock_stop
 
+    def _mock_active_services(self, active_ids=None):
+        """Create mock results for get_active_service_ids queries."""
+        if active_ids is None:
+            active_ids = ["service_1"]
+
+        # 1. Calendar query result
+        mock_cal = MagicMock()
+        mock_cal.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=active_ids)))
+
+        # 2. CalendarDate query result (empty for simplicity)
+        mock_cd = MagicMock()
+        mock_cd.all = MagicMock(return_value=[])
+
+        return mock_cal, mock_cd
+
     @pytest.mark.asyncio
     async def test_get_stop_departures_weekday_service(self, service, mock_session):
         """Test departures for normal weekday service (Monday)."""
@@ -545,12 +558,15 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        # Active services mock
+        mock_cal, mock_cd = self._mock_active_services()
+
         # Second call: get departures (returns departure rows)
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         # Query for a Monday
@@ -578,22 +594,32 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        # Active services mock (simulating calendar dates)
+        mock_cal = MagicMock()
+        mock_cal.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+
+        mock_cd = MagicMock()
+        mock_row = MagicMock()
+        mock_row.service_id = "service_dates_only"
+        mock_row.exception_type = 1
+        mock_cd.all = MagicMock(return_value=[mock_row])
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)  # Monday
         await service.get_stop_departures("de:09162:6", query_time, limit=10)
 
-        # Second execute() call is the departures query (SQLAlchemy Select object)
-        query_obj = mock_session.execute.call_args_list[1][0][0]
+        # Verify departures query uses filtered service IDs
+        # The 4th execute call (index 3) is the departures query
+        query_obj = mock_session.execute.call_args_list[3][0][0]
         sql = str(query_obj)
-        # SQLAlchemy ORM uses 'LEFT OUTER JOIN ... AS' format
-        assert "LEFT OUTER JOIN gtfs_calendar AS c" in sql
-        assert "cd.exception_type =" in sql  # Check exception_type=1 condition exists
+
+        assert "t.service_id IN" in sql or "gtfs_trips.service_id IN" in sql
 
     @pytest.mark.asyncio
     async def test_get_stop_departures_includes_parent_station_children(
@@ -605,11 +631,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)  # Monday
@@ -620,16 +648,14 @@ class TestGetStopDepartures:
         sql_stops = str(query_obj_stops)
         assert "gtfs_stops.parent_station =" in sql_stops
 
-        # Second query is for departures, which now uses IN clause
-        query_obj_deps = mock_session.execute.call_args_list[1][0][0]
+        # Departures query is the 4th call
+        query_obj_deps = mock_session.execute.call_args_list[3][0][0]
         sql_deps = str(query_obj_deps)
         assert "st.stop_id IN" in sql_deps
 
     @pytest.mark.asyncio
     async def test_get_stop_departures_overnight_service(self, service, mock_session):
         """Test departures with times > 24:00 (overnight service spanning midnight)."""
-        # GTFS times can exceed 24:00 for overnight services
-        # e.g., 25:30 = 1:30 AM next day
         departure_rows = [
             self._create_departure_row(
                 departure_time=timedelta(hours=25, minutes=30),  # 1:30 AM next day
@@ -642,11 +668,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         # Query at 11 PM on the service date
@@ -668,12 +696,14 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         # Return empty departures
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([]))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
@@ -716,11 +746,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
@@ -751,11 +783,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         # Query for a Saturday
@@ -784,11 +818,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter(departure_rows))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         # Query for a Sunday
@@ -814,11 +850,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
@@ -847,11 +885,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
@@ -883,6 +923,8 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         # Only return 5 rows to simulate limit
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(
@@ -890,7 +932,7 @@ class TestGetStopDepartures:
         )
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
@@ -928,13 +970,15 @@ class TestGetStopDepartures:
             mock_stop_result = MagicMock()
             mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+            mock_cal, mock_cd = self._mock_active_services()
+
             mock_departure_result = MagicMock()
             mock_departure_result.__iter__ = MagicMock(
                 return_value=iter(departure_rows)
             )
 
             mock_session.execute = AsyncMock(
-                side_effect=[mock_stop_result, mock_departure_result]
+                side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
             )
 
             departures = await service.get_stop_departures(
@@ -965,11 +1009,13 @@ class TestGetStopDepartures:
         mock_stop_result = MagicMock()
         mock_stop_result.all = MagicMock(return_value=[mock_stop])
 
+        mock_cal, mock_cd = self._mock_active_services()
+
         mock_departure_result = MagicMock()
         mock_departure_result.__iter__ = MagicMock(return_value=iter([departure_row]))
 
         mock_session.execute = AsyncMock(
-            side_effect=[mock_stop_result, mock_departure_result]
+            side_effect=[mock_stop_result, mock_cal, mock_cd, mock_departure_result]
         )
 
         query_time = datetime(2025, 12, 8, 8, 0, tzinfo=timezone.utc)
