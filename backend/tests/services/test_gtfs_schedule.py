@@ -528,7 +528,9 @@ class TestGetStopDepartures:
 
         # 1. Calendar query result
         mock_cal = MagicMock()
-        mock_cal.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=active_ids)))
+        mock_cal.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=active_ids))
+        )
 
         # 2. CalendarDate query result (empty for simplicity)
         mock_cd = MagicMock()
@@ -596,7 +598,9 @@ class TestGetStopDepartures:
 
         # Active services mock (simulating calendar dates)
         mock_cal = MagicMock()
-        mock_cal.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        mock_cal.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
 
         mock_cd = MagicMock()
         mock_row = MagicMock()
