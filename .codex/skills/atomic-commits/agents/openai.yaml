@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atomic Commits"
+  short_description: "Plan and create atomic git commits"
+  default_prompt: "Analyze local changes, propose an atomic commit plan, run relevant checks, and create commits after confirmation"
