@@ -38,15 +38,9 @@ Planned commits (N total):
 
 Ask for confirmation before creating commits.
 
-### 3) Run repo-appropriate checks
+### 3) Run targeted checks before committing
 
-Prefer targeted checks based on what changed; run broader checks for risky/wide changes.
-
-Common baseline:
-
-```bash
-pre-commit run --all-files
-```
+Prefer targeted checks based on what changed so feedback is fast.
 
 Examples (repo-specific; use only if they exist in the repo):
 
@@ -71,6 +65,13 @@ For each planned commit:
 git add <files>
 # or: git add -p
 
+# Run pre-commit only on staged files for this commit (catches new files too)
+git diff --cached --name-only -z | xargs -0 -r pre-commit run --files
+
+# If hooks modified files, re-stage and re-run staged-file hooks
+git add <files>
+git diff --cached --name-only -z | xargs -0 -r pre-commit run --files
+
 # Double-check the staged diff
 git diff --staged
 
@@ -85,7 +86,19 @@ EOF
 
 Do not push. Avoid `--amend` unless the user explicitly requests it.
 
-### 5) Verify and report
+### 5) Final full-repo check before handoff
+
+After all commits are created, run a final full check:
+
+```bash
+pre-commit run --all-files
+```
+
+If this fails, fix and create follow-up commit(s) as needed.
+
+Do not push. The user pushes manually.
+
+### 6) Verify and report
 
 ```bash
 git log --oneline -10
