@@ -67,16 +67,16 @@ describe('MonitoringPage', () => {
   it('displays tab navigation', async () => {
     render(<MonitoringPage />)
 
-    expect(screen.getByRole('button', { name: /Overview/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Ingestion/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Performance/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Overview/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Ingestion/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Performance/ })).toBeInTheDocument()
   })
 
   it('switches to Ingestion tab when clicked', async () => {
     render(<MonitoringPage />)
 
     const user = userEvent.setup()
-    const ingestionTab = screen.getByRole('button', { name: /Ingestion/ })
+    const ingestionTab = screen.getByRole('tab', { name: /Ingestion/ })
 
     await user.click(ingestionTab)
 
@@ -98,7 +98,7 @@ describe('MonitoringPage', () => {
     render(<MonitoringPage />)
 
     const user = userEvent.setup()
-    const performanceTab = screen.getByRole('button', { name: /Performance/ })
+    const performanceTab = screen.getByRole('tab', { name: /Performance/ })
 
     await user.click(performanceTab)
 
