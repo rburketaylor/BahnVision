@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, literal, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -110,7 +110,8 @@ class GTFSScheduleService:
         weekday_col = _get_weekday_column(c, weekday)
 
         # 1. Get services active by calendar (range + weekday)
-        stmt_cal = select(c.service_id).where(
+        # Add literal(0) as exception_type to match the union structure
+        stmt_cal = select(c.service_id, literal(0).label("exception_type")).where(
             c.start_date <= query_date,
             c.end_date >= query_date,
             weekday_col == True,  # noqa: E712
@@ -119,17 +120,28 @@ class GTFSScheduleService:
         # 2. Get exceptions for today
         stmt_cd = select(cd.service_id, cd.exception_type).where(cd.date == query_date)
 
-        # Execute queries
-        cal_result = await self.session.execute(stmt_cal)
-        active_cal = set(cal_result.scalars().all())
+        # Combine into a single query
+        stmt = union_all(stmt_cal, stmt_cd)
 
-        cd_result = await self.session.execute(stmt_cd)
-        exceptions = cd_result.all()  # List of (service_id, exception_type)
+        # Execute query once
+        result = await self.session.execute(stmt)
+        rows = result.all()
 
-        # Apply exceptions
-        added = {row.service_id for row in exceptions if row.exception_type == 1}
-        removed = {row.service_id for row in exceptions if row.exception_type == 2}
+        active_cal = set()
+        added = set()
+        removed = set()
 
+        for row in rows:
+            if row.exception_type == 0:
+                active_cal.add(row.service_id)
+            elif row.exception_type == 1:
+                added.add(row.service_id)
+            elif row.exception_type == 2:
+                removed.add(row.service_id)
+
+        # Apply exceptions:
+        # - Remove services that are explicitly removed (type 2)
+        # - Add services that are explicitly added (type 1)
         return list((active_cal - removed) | added)
 
     async def get_stop_departures(
