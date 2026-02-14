@@ -107,7 +107,8 @@ h6 {
 .card-base {
   border: 1px solid hsl(var(--border) / 1);
   border-left: 2px solid transparent;
-  background: hsl(var(--card) / 1);
+  background:
+    linear-gradient(hsl(var(--card) / 0.96), hsl(var(--card) / 0.96)), hsl(var(--card) / 1);
   border-radius: calc(var(--radius) + 1px);
   box-shadow:
     0 1px 1px hsl(210 35% 10% / 0.06),
@@ -183,4 +184,19 @@ h6 {
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--status-neutral) / 0.65);
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down {
+  animation: slide-down 180ms ease-out;
 }
