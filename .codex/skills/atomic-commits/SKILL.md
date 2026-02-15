@@ -86,15 +86,13 @@ EOF
 
 Do not push. Avoid `--amend` unless the user explicitly requests it.
 
-### 5) Final full-repo check before handoff
+### 5) Optional full-repo check (manual/on-demand)
 
-After all commits are created, run a final full check:
+Do not run `pre-commit run --all-files` automatically.
 
-```bash
-pre-commit run --all-files
-```
+Use staged-file hooks and targeted checks as the default validation path. Run a full-repo pre-commit check only when the user explicitly asks for it, or when preparing for a release-level validation pass.
 
-If this fails, fix and create follow-up commit(s) as needed.
+If an optional full-repo check is run and fails, fix issues and create follow-up commit(s) as needed.
 
 Do not push. The user pushes manually.
 
@@ -109,4 +107,5 @@ Report:
 
 - The commits created (subjects + high-level contents)
 - What checks were run and whether they passed
+- Whether a full-repo pre-commit check was run or intentionally skipped
 - Reminder that commits are local and not pushed
