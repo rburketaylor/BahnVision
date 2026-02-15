@@ -42,3 +42,13 @@ The heatmap uses **spatially stratified sampling** to ensure consistent network 
 
 - Index `idx_gtfs_stops_location` on `(stop_lat, stop_lon)` supports efficient grid-based queries
 - Uses PostgreSQL's `DISTINCT ON (grid_x, grid_y)` for tier-1 selection
+
+## GTFS-RT Monitoring
+
+See `backend/docs/gtfs-rt-monitoring.md` for comprehensive documentation of:
+
+- Status endpoints (`/api/v1/system/ingestion-status`, `/api/v1/health`, `/api/v1/ready`)
+- Prometheus metrics for GTFS-RT harvesting
+- Grafana dashboard configuration
+- Harvester status field interpretation
+- Recommended metrics, dashboard panels, and alerting rules for realtime data monitoring
