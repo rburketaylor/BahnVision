@@ -114,7 +114,8 @@ class GTFSScheduleService:
         # Explicitly cast to SmallInteger to match gtfs_calendar_dates.exception_type for asyncpg
         # Use literal_column to avoid bind parameter type issues in UNION
         stmt_cal = select(
-            c.service_id, cast(literal_column("0"), SmallInteger).label("exception_type")
+            c.service_id,
+            cast(literal_column("0"), SmallInteger).label("exception_type"),
         ).where(
             c.start_date <= query_date,
             c.end_date >= query_date,
