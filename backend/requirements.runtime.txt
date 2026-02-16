@@ -1,7 +1,7 @@
 fastapi==0.129.0
 uvicorn[standard]==0.40.0
 valkey==6.1.1
-pydantic-settings==2.12.0
+pydantic-settings==2.13.0
 prometheus-client==0.24.1
 SQLAlchemy==2.0.46
 alembic==1.18.4
