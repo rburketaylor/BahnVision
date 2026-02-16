@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
-from sqlalchemy import select, or_, union_all, literal
+from sqlalchemy import select, or_, union_all, literal, cast, SmallInteger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -111,7 +111,10 @@ class GTFSScheduleService:
 
         # 1. Get services active by calendar (range + weekday)
         # Use 0 as exception_type for standard calendar entries
-        stmt_cal = select(c.service_id, literal(0).label("exception_type")).where(
+        # Explicitly cast to SmallInteger to match gtfs_calendar_dates.exception_type for asyncpg
+        stmt_cal = select(
+            c.service_id, cast(literal(0), SmallInteger).label("exception_type")
+        ).where(
             c.start_date <= query_date,
             c.end_date >= query_date,
             weekday_col == True,  # noqa: E712
