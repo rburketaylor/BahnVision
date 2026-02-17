@@ -77,11 +77,16 @@ UNKNOWN_ROUTE_TYPE = -1
 _MAX_UPSERT_RETRIES = 3
 _UPSERT_RETRY_DELAY_SECONDS = 1.0
 _TRIP_MARKER_TTL_SECONDS = 7200  # 2 hours
-_TRIP_MARKER_UPDATE_LUA = """
+_TRIP_HASH_HEX_LENGTH = 24
+_LEGACY_TRIP_HASH_HEX_LENGTH = 12
+_TRIP_MARKER_UPDATE_LUA = (
+    """
 local prev = redis.call("GET", KEYS[1])
 local new_status = ARGV[1]
 local new_delay = tonumber(ARGV[2]) or 0
-local ttl = tonumber(ARGV[3]) or 7200
+local ttl = tonumber(ARGV[3]) or """
+    + str(_TRIP_MARKER_TTL_SECONDS)
+    + """
 
 local rank = { unknown = 0, on_time = 1, delayed = 2, cancelled = 3 }
 
@@ -123,6 +128,7 @@ local cancelled_delta = 0
 local marker_status = prev_status
 local marker_delay = prev_delay
 local should_write = false
+local is_uncancel = prev_status == "cancelled" and new_status ~= "cancelled"
 
 if not prev_status then
     trip_delta = 1
@@ -138,7 +144,7 @@ if not prev_status then
     elseif new_status == "cancelled" then
         cancelled_delta = 1
     end
-elseif (rank[new_status] or 0) > (rank[prev_status] or 0) then
+elseif (rank[new_status] or 0) > (rank[prev_status] or 0) or is_uncancel then
     if prev_status == "delayed" then
         delayed_delta = delayed_delta - 1
     elseif prev_status == "on_time" then
@@ -163,7 +169,7 @@ elseif (rank[new_status] or 0) > (rank[prev_status] or 0) then
     marker_status = new_status
     marker_delay = new_delay
     should_write = true
-elseif new_delay > prev_delay then
+elseif prev_status ~= "cancelled" and new_delay > prev_delay then
     delay_delta = new_delay - prev_delay
     marker_status = prev_status
     marker_delay = new_delay
@@ -176,6 +182,7 @@ end
 
 return {trip_delta, delay_delta, delayed_delta, on_time_delta, cancelled_delta}
 """
+)
 
 
 T = TypeVar("T")
@@ -339,10 +346,6 @@ class GTFSRTDataHarvester:
             logger.warning("GTFS-RT bindings not available, skipping harvest")
             return 0
 
-        if await self._check_import_lock():
-            logger.info("Skipping GTFS-RT harvest: GTFS feed import is in progress")
-            return 0
-
         try:
             logger.info("Starting GTFS-RT harvest cycle")
 
@@ -350,6 +353,9 @@ class GTFSRTDataHarvester:
             trip_updates = await self._fetch_trip_updates()
 
             now = datetime.now(timezone.utc)
+            if await self._check_import_lock():
+                logger.info("Skipping GTFS-RT harvest: GTFS feed import is in progress")
+                return 0
 
             if not trip_updates:
                 # Even with no trip updates, cache an empty live snapshot so the
@@ -368,10 +374,6 @@ class GTFSRTDataHarvester:
 
             updated_count = 0
             async with AsyncSessionFactory() as session:
-                if await self._check_import_lock():
-                    logger.info("Skipping route type lookup: import in progress")
-                    return 0
-
                 route_type_map = await self._get_route_type_map(session)
 
                 bucket_start = now.replace(minute=0, second=0, microsecond=0)
@@ -388,10 +390,6 @@ class GTFSRTDataHarvester:
                 )
                 snapshot_timestamp = self._resolve_snapshot_timestamp(trip_updates)
 
-                if await self._check_import_lock():
-                    logger.info("Skipping live snapshot caching: import in progress")
-                    return 0
-
                 await self._cache_live_snapshot(
                     session, snapshot_stats, snapshot_timestamp
                 )
@@ -400,10 +398,6 @@ class GTFSRTDataHarvester:
                     logger.debug("No stop statistics generated from trip updates")
                     self._last_harvest_at = now
                     self._last_stations_updated = 0
-                    return 0
-
-                if await self._check_import_lock():
-                    logger.info("Skipping stats upsert: import in progress")
                     return 0
 
                 await self._upsert_stats(session, bucket_start, stop_stats)
@@ -569,7 +563,7 @@ class GTFSRTDataHarvester:
             else:
                 existing = trip_status_by_stop[key]
                 existing["delay"] = max(existing["delay"], delay)
-                existing["cancelled"] = existing["cancelled"] or is_cancelled
+                existing["cancelled"] = is_cancelled
 
         # Aggregate per stop using cache-backed deduplication logic.
         trip_statuses_per_stop: dict[str, dict[str, dict]] = defaultdict(dict)
@@ -631,7 +625,7 @@ class GTFSRTDataHarvester:
             else:
                 existing = trip_status_by_stop[key]
                 existing["delay"] = max(existing["delay"], delay)
-                existing["cancelled"] = existing["cancelled"] or is_cancelled
+                existing["cancelled"] = is_cancelled
 
         # Second pass: aggregate by (stop_id, route_type)
         stats_by_key: dict[tuple[str, int], dict] = defaultdict(
@@ -692,7 +686,7 @@ class GTFSRTDataHarvester:
             else:
                 existing = trip_status_by_stop[key]
                 existing["delay"] = max(existing["delay"], delay)
-                existing["cancelled"] = existing["cancelled"] or is_cancelled
+                existing["cancelled"] = is_cancelled
 
         snapshot_stats: dict[tuple[str, int], dict] = defaultdict(
             lambda: {
@@ -930,11 +924,12 @@ class GTFSRTDataHarvester:
 
     def _classify_status(self, delay: int, cancelled: bool) -> str:
         """Classify a trip status based on delay and cancellation."""
+        normalized_delay = max(int(delay or 0), 0)
         if cancelled:
             return STATUS_CANCELLED
-        if delay > DELAY_THRESHOLD_SECONDS:
+        if normalized_delay > DELAY_THRESHOLD_SECONDS:
             return STATUS_DELAYED
-        if abs(delay) < ON_TIME_THRESHOLD_SECONDS:
+        if normalized_delay < ON_TIME_THRESHOLD_SECONDS:
             return STATUS_ON_TIME
         return STATUS_UNKNOWN
 
@@ -968,6 +963,57 @@ class GTFSRTDataHarvester:
         normalized_status = self._normalize_cached_status(status) or STATUS_UNKNOWN
         return f"{normalized_status}|{max(int(delay_seconds), 0)}"
 
+    def _trip_marker_cache_key(
+        self, bucket_key: str, stop_id: str, trip_hash: str
+    ) -> str:
+        return f"gtfs_rt_trip:{bucket_key}:{stop_id}:{trip_hash}"
+
+    def _trip_marker_cache_keys_for_trip(
+        self, bucket_key: str, stop_id: str, trip_id: str
+    ) -> tuple[str, str]:
+        primary_key = self._trip_marker_cache_key(
+            bucket_key, stop_id, self._hash_trip_id(trip_id)
+        )
+        legacy_key = self._trip_marker_cache_key(
+            bucket_key, stop_id, self._hash_trip_id_legacy(trip_id)
+        )
+        return primary_key, legacy_key
+
+    def _all_trip_marker_cache_keys(
+        self, cache_key_pairs: dict[str, tuple[str, str]]
+    ) -> list[str]:
+        keys: list[str] = []
+        for primary_key, legacy_key in cache_key_pairs.values():
+            keys.append(primary_key)
+            if legacy_key != primary_key:
+                keys.append(legacy_key)
+        return keys
+
+    def _select_trip_marker_cache_key(
+        self,
+        *,
+        existing: dict[str, str | None],
+        primary_key: str,
+        legacy_key: str,
+    ) -> str:
+        if existing.get(primary_key) is not None:
+            return primary_key
+        if existing.get(legacy_key) is not None:
+            return legacy_key
+        return primary_key
+
+    def _record_trip_marker_updates(
+        self,
+        *,
+        updates: dict[str, str],
+        primary_key: str,
+        legacy_key: str,
+        marker: str,
+    ) -> None:
+        updates[primary_key] = marker
+        if legacy_key != primary_key:
+            updates[legacy_key] = marker
+
     def _supports_atomic_trip_marker_updates(self) -> bool:
         if not self._cache:
             return False
@@ -978,7 +1024,7 @@ class GTFSRTDataHarvester:
     async def _apply_trip_statuses_atomically(
         self,
         *,
-        cache_keys: dict[str, str],
+        cache_key_pairs: dict[str, tuple[str, str]],
         trip_statuses: dict[str, dict],
     ) -> dict[str, int]:
         """Apply per-trip status deltas using atomic server-side cache updates."""
@@ -1001,9 +1047,25 @@ class GTFSRTDataHarvester:
         delayed = 0
         on_time = 0
         cancelled = 0
+        existing: dict[str, str | None] = {}
+        compatibility_pairs: list[tuple[str, str]] = []
+
+        try:
+            existing = await self._cache.mget(
+                self._all_trip_marker_cache_keys(cache_key_pairs)
+            )
+        except Exception as exc:
+            logger.debug(
+                "Atomic trip marker compatibility read failed, continuing: %s", exc
+            )
 
         for trip_id, info in trip_statuses.items():
-            cache_key = cache_keys[trip_id]
+            primary_key, legacy_key = cache_key_pairs[trip_id]
+            cache_key = self._select_trip_marker_cache_key(
+                existing=existing,
+                primary_key=primary_key,
+                legacy_key=legacy_key,
+            )
             new_status = (
                 self._normalize_cached_status(info.get("status")) or STATUS_UNKNOWN
             )
@@ -1026,6 +1088,27 @@ class GTFSRTDataHarvester:
             delayed += int(raw_deltas[2])
             on_time += int(raw_deltas[3])
             cancelled += int(raw_deltas[4])
+            compatibility_key = legacy_key if cache_key == primary_key else primary_key
+            if compatibility_key != cache_key:
+                compatibility_pairs.append((cache_key, compatibility_key))
+
+        if compatibility_pairs:
+            try:
+                source_keys = list(
+                    {source_key for source_key, _ in compatibility_pairs}
+                )
+                source_values = await self._cache.mget(source_keys)
+                compatibility_updates: dict[str, str] = {}
+                for source_key, compatibility_key in compatibility_pairs:
+                    marker = source_values.get(source_key)
+                    if marker is not None:
+                        compatibility_updates[compatibility_key] = marker
+                if compatibility_updates:
+                    await self._cache.mset(
+                        compatibility_updates, ttl_seconds=_TRIP_MARKER_TTL_SECONDS
+                    )
+            except Exception as exc:
+                logger.debug("Atomic trip marker compatibility write failed: %s", exc)
 
         return {
             "trip_count": trip_count,
@@ -1062,8 +1145,8 @@ class GTFSRTDataHarvester:
             }
 
         bucket_key = bucket_start.strftime("%Y%m%d%H")
-        cache_keys = {
-            trip_id: f"gtfs_rt_trip:{bucket_key}:{stop_id}:{self._hash_trip_id(trip_id)}"
+        cache_key_pairs = {
+            trip_id: self._trip_marker_cache_keys_for_trip(bucket_key, stop_id, trip_id)
             for trip_id in trip_statuses
         }
 
@@ -1088,7 +1171,7 @@ class GTFSRTDataHarvester:
         if self._supports_atomic_trip_marker_updates():
             try:
                 return await self._apply_trip_statuses_atomically(
-                    cache_keys=cache_keys, trip_statuses=trip_statuses
+                    cache_key_pairs=cache_key_pairs, trip_statuses=trip_statuses
                 )
             except Exception as exc:
                 logger.debug(
@@ -1098,10 +1181,17 @@ class GTFSRTDataHarvester:
 
         updates: dict[str, str] = {}
         try:
-            existing = await self._cache.mget(list(cache_keys.values()))
+            existing = await self._cache.mget(
+                self._all_trip_marker_cache_keys(cache_key_pairs)
+            )
 
             for trip_id, info in trip_statuses.items():
-                cache_key = cache_keys[trip_id]
+                primary_key, legacy_key = cache_key_pairs[trip_id]
+                cache_key = self._select_trip_marker_cache_key(
+                    existing=existing,
+                    primary_key=primary_key,
+                    legacy_key=legacy_key,
+                )
                 prev_status, prev_delay = self._parse_cached_trip_marker(
                     existing.get(cache_key)
                 )
@@ -1117,14 +1207,21 @@ class GTFSRTDataHarvester:
                         on_time += 1
                     elif new_status == STATUS_CANCELLED:
                         cancelled += 1
-                    updates[cache_key] = self._build_cached_trip_marker(
-                        new_status, new_delay
+                    marker = self._build_cached_trip_marker(new_status, new_delay)
+                    self._record_trip_marker_updates(
+                        updates=updates,
+                        primary_key=primary_key,
+                        legacy_key=legacy_key,
+                        marker=marker,
                     )
                     continue
 
                 prev_rank = STATUS_RANK.get(prev_status, 0)
                 new_rank = STATUS_RANK.get(new_status, 0)
-                if new_rank > prev_rank:
+                is_uncancel = (
+                    prev_status == STATUS_CANCELLED and new_status != STATUS_CANCELLED
+                )
+                if new_rank > prev_rank or is_uncancel:
                     if prev_status == STATUS_DELAYED:
                         delayed -= 1
                     elif prev_status == STATUS_ON_TIME:
@@ -1139,14 +1236,22 @@ class GTFSRTDataHarvester:
                     elif new_status == STATUS_CANCELLED:
                         cancelled += 1
                     total_delay_seconds += max(new_delay - prev_delay, 0)
-                    updates[cache_key] = self._build_cached_trip_marker(
-                        new_status, new_delay
+                    marker = self._build_cached_trip_marker(new_status, new_delay)
+                    self._record_trip_marker_updates(
+                        updates=updates,
+                        primary_key=primary_key,
+                        legacy_key=legacy_key,
+                        marker=marker,
                     )
-                elif new_delay > prev_delay:
+                elif prev_status != STATUS_CANCELLED and new_delay > prev_delay:
                     # Same status but worse delay for this bucket.
                     total_delay_seconds += new_delay - prev_delay
-                    updates[cache_key] = self._build_cached_trip_marker(
-                        prev_status, new_delay
+                    marker = self._build_cached_trip_marker(prev_status, new_delay)
+                    self._record_trip_marker_updates(
+                        updates=updates,
+                        primary_key=primary_key,
+                        legacy_key=legacy_key,
+                        marker=marker,
                     )
 
         except Exception as exc:
@@ -1158,7 +1263,7 @@ class GTFSRTDataHarvester:
                 on_time_fallback,
                 cancelled_fallback,
             ) = await self._apply_trip_statuses_single_key_fallback(
-                cache_keys=cache_keys, trip_statuses=trip_statuses
+                cache_key_pairs=cache_key_pairs, trip_statuses=trip_statuses
             )
             return {
                 "trip_count": trip_count_fallback,
@@ -1207,7 +1312,7 @@ class GTFSRTDataHarvester:
     async def _apply_trip_statuses_single_key_fallback(
         self,
         *,
-        cache_keys: dict[str, str],
+        cache_key_pairs: dict[str, tuple[str, str]],
         trip_statuses: dict[str, dict],
     ) -> tuple[int, int, int, int, int]:
         """Fallback deduplication using per-key cache operations.
@@ -1229,16 +1334,41 @@ class GTFSRTDataHarvester:
         cancelled = 0
 
         for trip_id, info in trip_statuses.items():
-            cache_key = cache_keys[trip_id]
+            primary_key, legacy_key = cache_key_pairs[trip_id]
+            cache_key = primary_key
             new_status = info["status"] or STATUS_UNKNOWN
             new_delay = int(info.get("delay", 0) or 0)
+            prev_raw: str | None = None
+            read_failed = False
 
             try:
-                prev_raw = await self._cache.get(cache_key)
+                prev_raw = await self._cache.get(primary_key)
             except Exception as read_exc:
                 logger.debug(
-                    "Fallback cache read failed for trip '%s': %s", trip_id, read_exc
+                    "Fallback cache read failed for trip '%s' key '%s': %s",
+                    trip_id,
+                    primary_key,
+                    read_exc,
                 )
+                read_failed = True
+
+            if prev_raw is None and legacy_key != primary_key:
+                try:
+                    legacy_raw = await self._cache.get(legacy_key)
+                except Exception as read_exc:
+                    logger.debug(
+                        "Fallback cache read failed for trip '%s' key '%s': %s",
+                        trip_id,
+                        legacy_key,
+                        read_exc,
+                    )
+                    read_failed = True
+                else:
+                    if legacy_raw is not None:
+                        prev_raw = legacy_raw
+                        cache_key = legacy_key
+
+            if read_failed and prev_raw is None:
                 continue
 
             prev_status, prev_delay = self._parse_cached_trip_marker(prev_raw)
@@ -1261,8 +1391,11 @@ class GTFSRTDataHarvester:
                 new_rank = STATUS_RANK.get(new_status, 0)
                 marker_status = prev_status
                 marker_delay = prev_delay
+                is_uncancel = (
+                    prev_status == STATUS_CANCELLED and new_status != STATUS_CANCELLED
+                )
 
-                if new_rank > prev_rank:
+                if new_rank > prev_rank or is_uncancel:
                     if prev_status == STATUS_DELAYED:
                         delayed -= 1
                     elif prev_status == STATUS_ON_TIME:
@@ -1281,23 +1414,28 @@ class GTFSRTDataHarvester:
                     marker_status = new_status
                     marker_delay = new_delay
                     should_update_cache = True
-                elif new_delay > prev_delay:
+                elif prev_status != STATUS_CANCELLED and new_delay > prev_delay:
                     total_delay_seconds += new_delay - prev_delay
                     marker_status = prev_status
                     marker_delay = new_delay
                     should_update_cache = True
 
             if should_update_cache:
+                marker = self._build_cached_trip_marker(marker_status, marker_delay)
                 try:
-                    await self._cache.set(
-                        cache_key,
-                        self._build_cached_trip_marker(marker_status, marker_delay),
-                        ttl_seconds=_TRIP_MARKER_TTL_SECONDS,
-                    )
+                    for target_key in dict.fromkeys(
+                        (cache_key, primary_key, legacy_key)
+                    ):
+                        await self._cache.set(
+                            target_key,
+                            marker,
+                            ttl_seconds=_TRIP_MARKER_TTL_SECONDS,
+                        )
                 except Exception as write_exc:
                     logger.debug(
-                        "Fallback cache write failed for trip '%s': %s",
+                        "Fallback cache write failed for trip '%s' key '%s': %s",
                         trip_id,
+                        cache_key,
                         write_exc,
                     )
 
@@ -1305,7 +1443,15 @@ class GTFSRTDataHarvester:
 
     def _hash_trip_id(self, trip_id: str) -> str:
         """Create a short hash of trip_id to reduce cache key size."""
-        return hashlib.md5(trip_id.encode(), usedforsecurity=False).hexdigest()[:12]
+        return hashlib.sha256(trip_id.encode()).hexdigest()[:_TRIP_HASH_HEX_LENGTH]
+
+    def _hash_trip_id_legacy(self, trip_id: str) -> str:
+        """Legacy hash used by existing cache keys from prior deployments."""
+        return hashlib.md5(
+            trip_id.encode()
+        ).hexdigest()[  # noqa: S324
+            :_LEGACY_TRIP_HASH_HEX_LENGTH
+        ]
 
     async def _upsert_stats(
         self,

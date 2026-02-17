@@ -10,7 +10,6 @@ Handles fetching, parsing, and storing GTFS-RT data including:
 
 import asyncio
 import logging
-import threading
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Set
 from dataclasses import dataclass
@@ -165,16 +164,16 @@ class GtfsRealtimeService:
     def __init__(self, cache_service: CacheService):
         self.settings = get_settings()
         self.cache = cache_service
-        self._circuit_breaker_lock = threading.Lock()
+        self._circuit_breaker_lock = asyncio.Lock()
         self._circuit_breaker_state = {
             "failures": 0,
             "last_failure": None,
             "state": "CLOSED",  # CLOSED, OPEN, HALF_OPEN
         }
 
-    def _check_circuit_breaker(self) -> bool:
+    async def _check_circuit_breaker(self) -> bool:
         """Check if circuit breaker allows requests"""
-        with self._circuit_breaker_lock:
+        async with self._circuit_breaker_lock:
             state = self._circuit_breaker_state
 
             if state["state"] == "OPEN":
@@ -192,16 +191,16 @@ class GtfsRealtimeService:
 
             return True
 
-    def _record_success(self):
+    async def _record_success(self):
         """Record successful request"""
-        with self._circuit_breaker_lock:
+        async with self._circuit_breaker_lock:
             state = self._circuit_breaker_state
             state["failures"] = 0
             state["state"] = "CLOSED"
 
-    def _record_failure(self):
+    async def _record_failure(self):
         """Record failed request"""
-        with self._circuit_breaker_lock:
+        async with self._circuit_breaker_lock:
             state = self._circuit_breaker_state
             state["failures"] += 1
             state["last_failure"] = datetime.now(timezone.utc)
@@ -222,7 +221,7 @@ class GtfsRealtimeService:
             logger.warning("GTFS-RT bindings not available, skipping fetch")
             return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
 
-        if not self._check_circuit_breaker():
+        if not await self._check_circuit_breaker():
             logger.warning("Circuit breaker OPEN, skipping fetch")
             return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
 
@@ -366,7 +365,7 @@ class GtfsRealtimeService:
                 self._store_with_error_isolation("alerts", self._store_alerts(alerts)),
             )
 
-            self._record_success()
+            await self._record_success()
 
             logger.info(
                 f"Processed feed: {len(trip_updates)} trip updates, "
@@ -381,7 +380,7 @@ class GtfsRealtimeService:
             }
 
         except Exception as e:
-            self._record_failure()
+            await self._record_failure()
             logger.error(f"Failed to fetch and process GTFS-RT feed: {e}")
             return {"trip_updates": 0, "vehicle_positions": 0, "alerts": 0}
 
@@ -391,7 +390,7 @@ class GtfsRealtimeService:
         Consider using fetch_and_process_feed() instead to process all data types at once.
         """
         # Kept for compatibility, but internally inefficient if used alongside others
-        if not GTFS_RT_AVAILABLE or not self._check_circuit_breaker():
+        if not GTFS_RT_AVAILABLE or not await self._check_circuit_breaker():
             return []
 
         try:
@@ -440,16 +439,16 @@ class GtfsRealtimeService:
                                     )
                                 )
             await self._store_trip_updates(trip_updates)
-            self._record_success()
+            await self._record_success()
             return trip_updates
         except Exception as e:
-            self._record_failure()
+            await self._record_failure()
             logger.error(f"Failed to fetch trip updates: {e}")
             return []
 
     async def fetch_vehicle_positions(self) -> List[VehiclePosition]:
         """Fetch and process vehicle positions from GTFS-RT feed (legacy method)."""
-        if not GTFS_RT_AVAILABLE or not self._check_circuit_breaker():
+        if not GTFS_RT_AVAILABLE or not await self._check_circuit_breaker():
             return []
 
         try:
@@ -493,16 +492,16 @@ class GtfsRealtimeService:
                             )
                         )
             await self._store_vehicle_positions(vehicle_positions)
-            self._record_success()
+            await self._record_success()
             return vehicle_positions
         except Exception as e:
-            self._record_failure()
+            await self._record_failure()
             logger.error(f"Failed to fetch vehicle positions: {e}")
             return []
 
     async def fetch_alerts(self) -> List[ServiceAlert]:
         """Fetch and process service alerts from GTFS-RT feed (legacy method)."""
-        if not GTFS_RT_AVAILABLE or not self._check_circuit_breaker():
+        if not GTFS_RT_AVAILABLE or not await self._check_circuit_breaker():
             return []
 
         try:
@@ -565,10 +564,10 @@ class GtfsRealtimeService:
                         )
                     )
             await self._store_alerts(alerts)
-            self._record_success()
+            await self._record_success()
             return alerts
         except Exception as e:
-            self._record_failure()
+            await self._record_failure()
             logger.error(f"Failed to fetch alerts: {e}")
             return []
 

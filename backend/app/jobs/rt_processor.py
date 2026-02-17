@@ -17,6 +17,9 @@ from app.services.gtfs_realtime import GtfsRealtimeService
 
 logger = logging.getLogger(__name__)
 
+_MIN_LOOP_WAIT_SECONDS = 0.1
+_MAX_ERROR_BACKOFF_SECONDS = 30.0
+
 
 class GtfsRealtimeProcessor:
     """Background processor for GTFS-RT data streams"""
@@ -53,7 +56,11 @@ class GtfsRealtimeProcessor:
 
     async def _processing_loop(self):
         """Main processing loop that fetches GTFS-RT data"""
+        base_wait_seconds = self._resolve_base_wait_seconds()
+        consecutive_errors = 0
+
         while not self._shutdown_event.is_set():
+            wait_seconds = base_wait_seconds
             try:
                 if not self.gtfs_service:
                     logger.warning("GTFS-RT service not initialized")
@@ -70,23 +77,42 @@ class GtfsRealtimeProcessor:
                     f"{result.get('vehicle_positions', 0)} vehicle positions, "
                     f"{result.get('alerts', 0)} alerts"
                 )
+                consecutive_errors = 0
 
             except asyncio.CancelledError:
                 logger.info("GTFS-RT processing loop cancelled")
                 break
             except Exception as e:
+                consecutive_errors += 1
+                wait_seconds = min(
+                    base_wait_seconds * (2 ** min(consecutive_errors - 1, 8)),
+                    _MAX_ERROR_BACKOFF_SECONDS,
+                )
                 logger.error(f"Unexpected error in GTFS-RT processing loop: {e}")
 
             # Wait for the next cycle or shutdown
             try:
                 await asyncio.wait_for(
                     self._shutdown_event.wait(),
-                    timeout=self.settings.gtfs_rt_timeout_seconds,
+                    timeout=wait_seconds,
                 )
                 break  # Shutdown event was set
             except asyncio.TimeoutError:
                 # Continue to next iteration
                 continue
+
+    def _resolve_base_wait_seconds(self) -> float:
+        """Return a safe positive loop wait duration."""
+        configured_timeout = float(self.settings.gtfs_rt_timeout_seconds)
+        if configured_timeout > 0:
+            return configured_timeout
+
+        logger.warning(
+            "GTFS-RT timeout %.3fs is non-positive; using %.1fs safety wait to avoid tight-loop spinning",
+            configured_timeout,
+            _MIN_LOOP_WAIT_SECONDS,
+        )
+        return _MIN_LOOP_WAIT_SECONDS
 
 
 @asynccontextmanager
