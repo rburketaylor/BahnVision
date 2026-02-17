@@ -3,10 +3,10 @@
  * A hook for managing auto-refresh functionality with configurable interval
  */
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 interface UseAutoRefreshOptions {
-  callback: () => void
+  callback: () => void | Promise<void>
   enabled?: boolean
   intervalMs?: number
   runOnMount?: boolean
@@ -19,6 +19,27 @@ export function useAutoRefresh({
   runOnMount = true,
 }: UseAutoRefreshOptions) {
   const callbackRef = useRef(callback)
+  const callbackInFlightRef = useRef(false)
+
+  const runCallback = useCallback(() => {
+    if (callbackInFlightRef.current) {
+      return
+    }
+
+    const result = callbackRef.current()
+
+    if (result && typeof result.then === 'function') {
+      callbackInFlightRef.current = true
+      void result.then(
+        () => {
+          callbackInFlightRef.current = false
+        },
+        () => {
+          callbackInFlightRef.current = false
+        }
+      )
+    }
+  }, [])
 
   // Update ref callback in a separate effect to avoid updating during render
   useEffect(() => {
@@ -30,15 +51,15 @@ export function useAutoRefresh({
 
     // Run immediately on mount if requested
     if (runOnMount) {
-      callbackRef.current()
+      runCallback()
     }
 
     const interval = window.setInterval(() => {
-      callbackRef.current()
+      runCallback()
     }, intervalMs)
 
     return () => {
       if (interval) window.clearInterval(interval)
     }
-  }, [enabled, intervalMs, runOnMount])
+  }, [enabled, intervalMs, runOnMount, runCallback])
 }

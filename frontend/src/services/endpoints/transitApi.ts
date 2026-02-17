@@ -23,7 +23,7 @@ import type {
   StationTrendsParams,
 } from '../../types/gtfs'
 import type { IngestionStatus } from '../../types/ingestion'
-import { ApiError, type ApiResponse } from '../apiTypes'
+import type { ApiResponse } from '../apiTypes'
 import { httpClient } from '../httpClient'
 
 /**
@@ -186,14 +186,7 @@ class TransitApiClient {
    * Metrics endpoint (returns plain text)
    */
   async getMetrics(): Promise<string> {
-    const url = `${httpClient.baseUrl}/metrics`
-    const response = await fetch(url)
-
-    if (!response.ok) {
-      throw new ApiError(`Failed to fetch metrics: ${response.statusText}`, response.status)
-    }
-
-    return response.text()
+    return httpClient.requestText('/metrics')
   }
 
   /**
