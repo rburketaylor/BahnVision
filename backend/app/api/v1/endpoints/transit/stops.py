@@ -73,6 +73,13 @@ class _StopLikeAdapter:
     wheelchair_boarding: Any = 0
 
 
+def _get_nearby_bucket_precision(radius_meters: int) -> int:
+    """Choose cache bucket precision based on requested radius."""
+    if radius_meters <= 250:
+        return 4
+    return 3
+
+
 async def _get_station_stats_from_live_snapshot(
     stop_id: str,
     cache: CacheService,
@@ -278,11 +285,15 @@ async def get_nearby_stops(
     # Set cache header for GTFS stop data
     set_transit_cache_header(response)
 
-    # Bucket coordinates to reduce cache key cardinality
-    # Using ~100m precision (0.001 degrees ≈ 111m at equator)
-    lat_bucket = round(latitude, 3)
-    lon_bucket = round(longitude, 3)
-    cache_key = f"nearby_stops:{lat_bucket}:{lon_bucket}:{radius_meters}:{limit}"
+    # Bucket coordinates to reduce cache key cardinality.
+    # Use finer precision for very small radii to avoid cache misses near boundaries.
+    bucket_precision = _get_nearby_bucket_precision(radius_meters)
+    lat_bucket = round(latitude, bucket_precision)
+    lon_bucket = round(longitude, bucket_precision)
+    cache_key = (
+        f"nearby_stops:{bucket_precision}:{lat_bucket}:{lon_bucket}:"
+        f"{radius_meters}:{limit}"
+    )
 
     # Try cache first
     try:
@@ -396,6 +407,8 @@ async def get_station_stats(
     cache: CacheService = Depends(get_cache_service),
 ) -> StationStats:
     """Get station statistics including cancellation and delay rates."""
+    effective_time_range = time_range
+
     # Handle live mode - use snapshot cache as primary source
     if time_range == "live":
         stats = await _get_station_stats_from_live_snapshot(
@@ -407,11 +420,11 @@ async def get_station_stats(
             set_stats_cache_header(response)
             return stats
         # Fall through to database query with "1h" as fallback
-        time_range = "1h"
+        effective_time_range = "1h"
 
     stats = await stats_service.get_station_stats(
         stop_id,
-        time_range,
+        effective_time_range,
         include_network_averages=include_network_averages,
     )
 

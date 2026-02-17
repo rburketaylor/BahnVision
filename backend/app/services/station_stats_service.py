@@ -39,6 +39,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PERFORMANCE_SCORE_MAX = 100.0
+_PERFORMANCE_CANCELLATION_WEIGHT = 400.0
+_PERFORMANCE_DELAY_WEIGHT = 100.0
+
 
 class StationStatsService:
     """Service for station-specific statistics and trends.
@@ -230,7 +234,9 @@ class StationStatsService:
             # Weight: cancellations are more impactful than delays
             performance_score = max(
                 0,
-                100 - (overall_cancellation_rate * 400) - (overall_delay_rate * 100),
+                _PERFORMANCE_SCORE_MAX
+                - (overall_cancellation_rate * _PERFORMANCE_CANCELLATION_WEIGHT)
+                - (overall_delay_rate * _PERFORMANCE_DELAY_WEIGHT),
             )
 
             stats = StationStats(

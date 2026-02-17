@@ -431,6 +431,31 @@ class TestGTFSScheduleService:
         assert stops == []
 
     @pytest.mark.asyncio
+    async def test_get_nearby_stops_uses_stable_lon_delta_near_equator(
+        self, service, mock_session
+    ):
+        """Test lon bounds stay narrow for near-zero latitudes."""
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(
+                scalars=MagicMock(
+                    return_value=MagicMock(all=MagicMock(return_value=[]))
+                )
+            )
+        )
+
+        await service.get_nearby_stops(lat=0.0001, lon=11.0, radius_km=1.0)
+
+        stmt = mock_session.execute.call_args.args[0]
+        params = stmt.compile().params
+        lon_bounds = sorted(
+            value
+            for value in params.values()
+            if isinstance(value, float) and 9.0 < value < 13.0
+        )
+        assert len(lon_bounds) == 2
+        assert (lon_bounds[1] - lon_bounds[0]) < 0.1
+
+    @pytest.mark.asyncio
     async def test_get_route_details(self, service, mock_session):
         """Test getting route details."""
         mock_route = MagicMock()

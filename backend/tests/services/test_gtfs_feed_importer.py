@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import polars as pl
 import pytest
 
-from app.services.gtfs_feed import GTFSFeedImporter, _clean_value
+from app.services.gtfs_feed import GTFSFeedImporter, _clean_value, _ConnectionContext
 
 
 def _make_settings(tmp_path: Path, *, unlogged: bool = False):
@@ -1047,6 +1047,14 @@ class TestGTFSFeedImporterNetworkAndPersistence:
 
             # Verify the connection was closed
             sa_conn.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_connection_context_exit_is_safe_without_connection(self):
+        """_ConnectionContext.__aexit__ tolerates missing connection state."""
+        ctx = _ConnectionContext(engine=MagicMock())
+        await ctx.__aexit__(None, None, None)
+        assert ctx._sa_conn is None
+        assert ctx._asyncpg_conn is None
 
 
 class TestGTFSFeedImporterCsvBatchCompatibility:

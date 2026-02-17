@@ -27,6 +27,8 @@ router = APIRouter()
 
 # Cache name for metrics
 _CACHE_TRANSIT_DEPARTURES = "transit_departures"
+_STOP_ID_PATTERN = r"^[A-Za-z0-9:_\-.]+$"
+_STOP_ID_MAX_LENGTH = 128
 
 
 def _departure_info_to_response(dep: DepartureInfo) -> TransitDeparture:
@@ -72,6 +74,8 @@ async def get_departures(
         str,
         Query(
             min_length=1,
+            max_length=_STOP_ID_MAX_LENGTH,
+            pattern=_STOP_ID_PATTERN,
             description="GTFS stop_id to get departures for.",
         ),
     ],

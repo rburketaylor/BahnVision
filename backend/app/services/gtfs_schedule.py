@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
@@ -288,7 +289,8 @@ class GTFSScheduleService:
         """Find stops within radius of given coordinates."""
         # Simple bounding box query (for more accurate distance, use PostGIS)
         lat_delta = radius_km / 111.0  # Approximate km to degrees
-        lon_delta = radius_km / (111.0 * abs(lat)) if lat != 0 else radius_km / 111.0
+        safe_cos_lat = max(abs(math.cos(math.radians(lat))), 0.01)
+        lon_delta = radius_km / (111.0 * safe_cos_lat)
 
         stmt = (
             select(GTFSStop)

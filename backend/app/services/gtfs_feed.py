@@ -39,7 +39,10 @@ class _ConnectionContext:
         return self._asyncpg_conn
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self._sa_conn.close()
+        if self._sa_conn is not None:
+            await self._sa_conn.close()
+            self._sa_conn = None
+            self._asyncpg_conn = None
 
 
 def _clean_value(val):
