@@ -55,6 +55,14 @@ class TestGTFSStopModel:
         assert stop.parent_station == "de:09162:6"
         assert stop.platform_code == "1"
 
+    def test_gtfs_stop_parent_station_has_self_referential_fk(self):
+        parent_station_col = GTFSStop.__table__.c.parent_station
+        assert len(parent_station_col.foreign_keys) == 1
+
+        fk = next(iter(parent_station_col.foreign_keys))
+        assert fk.target_fullname == "gtfs_stops.stop_id"
+        assert fk.ondelete == "SET NULL"
+
     def test_gtfs_stop_location_type_default(self):
         """Test that location_type defaults correctly.
 

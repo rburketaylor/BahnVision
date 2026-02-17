@@ -21,6 +21,8 @@ class TransitStop(BaseModel):
     zone_id: str | None = Field(None, description="Fare zone identifier")
     wheelchair_boarding: int = Field(
         0,
+        ge=0,
+        le=2,
         description="Wheelchair accessibility: 0=unknown, 1=accessible, 2=not accessible",
     )
 
@@ -35,9 +37,12 @@ class TransitRoute(BaseModel):
     )
     route_type: int = Field(
         ...,
+        ge=0,
+        le=1702,
         description=(
             "GTFS route_type: 0=Tram, 1=Metro/Subway, 2=Rail, 3=Bus, "
-            "4=Ferry, 5=Cable car, 6=Gondola, 7=Funicular"
+            "4=Ferry, 5=Cable car, 6=Gondola, 7=Funicular "
+            "(and GTFS extended values up to 1702)"
         ),
     )
     color: str | None = Field(None, description="Route color as hex (e.g., 'FF0000')")

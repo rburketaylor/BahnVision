@@ -28,7 +28,10 @@ class GTFSStop(Base):
     stop_lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
     stop_lon: Mapped[float | None] = mapped_column(Numeric(9, 6))
     location_type: Mapped[int | None] = mapped_column(SmallInteger, default=0)
-    parent_station: Mapped[str | None] = mapped_column(String(64))
+    parent_station: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("gtfs_stops.stop_id", ondelete="SET NULL"),
+    )
     platform_code: Mapped[str | None] = mapped_column(String(16))
     feed_id: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(

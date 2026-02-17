@@ -118,30 +118,27 @@ class TransitDataRepository:
     async def upsert_transit_line(
         self, payload: TransitLinePayload
     ) -> models.TransitLine | None:
-        stmt = insert(models.TransitLine).values(
+        insert_stmt = insert(models.TransitLine).values(
             line_id=payload.line_id,
             transport_mode=payload.transport_mode,
             operator=payload.operator,
             description=payload.description,
             color_hex=payload.color_hex,
         )
-        stmt = stmt.on_conflict_do_nothing(index_elements=[models.TransitLine.line_id])
-        await self._session.execute(stmt)
-        transit_line = await self._session.get(models.TransitLine, payload.line_id)
-        if transit_line is None:
-            # If insert skipped (existing row), update mutable columns.
-            await self._session.execute(
-                update(models.TransitLine)
-                .where(models.TransitLine.line_id == payload.line_id)
-                .values(
-                    transport_mode=payload.transport_mode,
-                    operator=payload.operator,
-                    description=payload.description,
-                    color_hex=payload.color_hex,
-                )
-            )
-            transit_line = await self._session.get(models.TransitLine, payload.line_id)
-        return transit_line
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[models.TransitLine.line_id],
+            set_={
+                "transport_mode": insert_stmt.excluded.transport_mode,
+                "operator": insert_stmt.excluded.operator,
+                "description": insert_stmt.excluded.description,
+                "color_hex": insert_stmt.excluded.color_hex,
+            },
+        ).returning(models.TransitLine.line_id)
+        result = await self._session.execute(upsert_stmt)
+        line_id = result.scalar_one_or_none()
+        if line_id is None:
+            return None
+        return await self._session.get(models.TransitLine, line_id)
 
     async def create_ingestion_run(
         self,
@@ -271,8 +268,10 @@ class TransitDataRepository:
                 models.DepartureWeatherLink.weather_id,
             ]
         )
-        await self._session.execute(stmt)
-        return len(rows)
+        result = await self._session.execute(
+            stmt.returning(models.DepartureWeatherLink.id)
+        )
+        return len(list(result.scalars()))
 
     async def fetch_recent_departures(
         self,
@@ -327,7 +326,6 @@ class StationRepository:
         station_result = await self._session.execute(select_stmt)
         station = station_result.scalar_one()
 
-        await self._session.commit()
         return station
 
     async def upsert_stations(
@@ -389,7 +387,6 @@ class StationRepository:
             result = await self._session.execute(select_stmt)
             stations.extend(result.scalars().all())
 
-        await self._session.commit()
         return stations
 
     async def get_station_by_id(self, station_id: str) -> models.Station | None:

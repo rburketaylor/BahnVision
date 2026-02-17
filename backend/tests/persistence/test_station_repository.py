@@ -74,3 +74,31 @@ async def test_search_and_delete_behaviors(db_session):
     assert await repo.delete_station("de:09162:2") is True
     assert await repo.count_stations() == 2
     assert await repo.delete_station("does-not-exist") is False
+
+
+@pytest.mark.asyncio
+async def test_upsert_station_respects_external_transaction(db_session):
+    repo = StationRepository(db_session)
+    first = _build_station_payload(100, name="Tx First")
+    second = _build_station_payload(101, name="Tx Second")
+
+    await repo.upsert_station(first)
+    await repo.upsert_station(second)
+    assert await repo.count_stations() == 2
+
+    await db_session.rollback()
+    db_session.expire_all()
+    assert await repo.count_stations() == 0
+
+
+@pytest.mark.asyncio
+async def test_upsert_stations_respects_external_transaction(db_session):
+    repo = StationRepository(db_session)
+    payloads = [_build_station_payload(200), _build_station_payload(201)]
+
+    await repo.upsert_stations(payloads)
+    assert await repo.count_stations() == 2
+
+    await db_session.rollback()
+    db_session.expire_all()
+    assert await repo.count_stations() == 0
