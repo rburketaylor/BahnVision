@@ -4,6 +4,7 @@ Tests for the heatmap endpoint.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +21,34 @@ from app.services.heatmap_cache import (
 )
 from app.services.heatmap_service import resolve_max_points
 from tests.api.conftest import CacheScenario
+
+
+@contextmanager
+def _heatmap_test_client(fake_cache, fake_gtfs_schedule):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api.v1.endpoints import heatmap as heatmap_endpoint
+    from tests.api.conftest import FakeAsyncSession
+
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.include_router(heatmap_endpoint.router, prefix="/api/v1/heatmap")
+    app.dependency_overrides[heatmap_endpoint.get_cache_service] = lambda: fake_cache
+    app.dependency_overrides[heatmap_endpoint.get_gtfs_schedule] = lambda: (
+        fake_gtfs_schedule
+    )
+    app.dependency_overrides[heatmap_endpoint.get_session] = lambda: FakeAsyncSession()
+
+    original_enabled = limiter.enabled
+    limiter.enabled = False
+
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        limiter.enabled = original_enabled
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -103,6 +132,52 @@ def test_heatmap_cancellations_cache_miss(api_client, fake_cache, fake_gtfs_sche
     validated = HeatmapResponse.model_validate(data)
     # Fake session returns empty results, so data_points will be empty
     assert validated.summary.total_stations == 0
+
+
+def test_heatmap_cancellations_lock_timeout_returns_503(api_client, fake_cache):
+    """Lock timeouts should surface as retriable 503 errors."""
+    fake_cache.set_lock_timeout(True)
+
+    response = api_client.get("/api/v1/heatmap/cancellations")
+    assert response.status_code == 503
+    assert response.headers.get("X-Cache-Status") == "miss-timeout"
+
+
+def test_heatmap_cancellations_cache_write_failure_sets_header(
+    api_client, fake_cache, monkeypatch
+):
+    """Write failures after fresh generation should be reflected in cache headers."""
+
+    async def _failing_set_json(*_args, **_kwargs):
+        raise RuntimeError("cache write failed")
+
+    monkeypatch.setattr(fake_cache, "set_json", _failing_set_json)
+    response = api_client.get("/api/v1/heatmap/cancellations")
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "miss-write-failed"
+
+
+def test_heatmap_cancellations_http_exception_passthrough(
+    fake_cache, fake_gtfs_schedule, monkeypatch
+):
+    """Heatmap endpoint should not mask HTTPException raised during generation."""
+    from fastapi import HTTPException
+    from app.api.v1.endpoints import heatmap as heatmap_endpoint
+
+    async def _raise_http(self, *_args, **_kwargs):
+        raise HTTPException(status_code=418, detail="teapot")
+
+    monkeypatch.setattr(
+        heatmap_endpoint.HeatmapService,
+        "get_cancellation_heatmap",
+        _raise_http,
+    )
+
+    with _heatmap_test_client(fake_cache, fake_gtfs_schedule) as client:
+        response = client.get("/api/v1/heatmap/cancellations")
+    assert response.status_code == 418
+    assert response.json()["detail"] == "teapot"
 
 
 def test_heatmap_cancellations_invalid_cache_payload_falls_back_to_fresh_data(
@@ -330,6 +405,116 @@ def test_heatmap_overview_cache_key_normalizes_transport_modes(api_client, fake_
     response = api_client.get("/api/v1/heatmap/overview?transport_modes= ubahn , bus ")
     assert response.status_code == 200
     assert response.headers.get("X-Cache-Status") == "hit"
+
+
+def test_heatmap_overview_http_exception_passthrough(
+    fake_cache, fake_gtfs_schedule, monkeypatch
+):
+    """Overview endpoint should not mask HTTPException raised during generation."""
+    from fastapi import HTTPException
+    from app.api.v1.endpoints import heatmap as heatmap_endpoint
+
+    async def _raise_http(self, *_args, **_kwargs):
+        raise HTTPException(status_code=418, detail="teapot")
+
+    monkeypatch.setattr(
+        heatmap_endpoint.HeatmapService,
+        "get_heatmap_overview",
+        _raise_http,
+    )
+
+    with _heatmap_test_client(fake_cache, fake_gtfs_schedule) as client:
+        response = client.get("/api/v1/heatmap/overview")
+    assert response.status_code == 418
+    assert response.json()["detail"] == "teapot"
+
+
+def test_heatmap_overview_lock_timeout_returns_503(api_client, fake_cache):
+    """Overview misses should also honor single-flight lock timeouts."""
+    fake_cache.set_lock_timeout(True)
+
+    response = api_client.get("/api/v1/heatmap/overview")
+    assert response.status_code == 503
+    assert response.headers.get("X-Cache-Status") == "miss-timeout"
+
+
+def test_heatmap_overview_lock_timeout_returns_cached_response(
+    fake_cache, fake_gtfs_schedule, monkeypatch
+):
+    """Lock timeouts should return a cached response if another worker filled it."""
+    cache_key = heatmap_overview_cache_key(
+        time_range=None,
+        transport_modes=None,
+        bucket_width_minutes=60,
+        metrics="both",
+    )
+    cached_payload = {
+        "time_range": {"from": "2025-01-01T00:00:00Z", "to": "2025-01-01T01:00:00Z"},
+        "points": [],
+        "summary": {
+            "total_stations": 1,
+            "total_departures": 10,
+            "total_cancellations": 1,
+            "overall_cancellation_rate": 0.1,
+            "total_delays": 0,
+            "overall_delay_rate": 0.0,
+            "most_affected_station": None,
+            "most_affected_line": None,
+        },
+        "total_impacted_stations": 0,
+    }
+
+    cache_reads = 0
+    original_get_json = fake_cache.get_json
+
+    async def _get_json(key: str):
+        nonlocal cache_reads
+        if key == cache_key:
+            cache_reads += 1
+            return cached_payload if cache_reads > 1 else None
+        return await original_get_json(key)
+
+    monkeypatch.setattr(fake_cache, "get_json", _get_json)
+    fake_cache.set_lock_timeout(True)
+
+    with _heatmap_test_client(fake_cache, fake_gtfs_schedule) as client:
+        response = client.get("/api/v1/heatmap/overview")
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "hit"
+    assert cache_reads == 2
+
+
+def test_heatmap_overview_cache_write_failure_sets_header(
+    api_client, fake_cache, monkeypatch
+):
+    """Overview responses should expose cache write failures in headers."""
+
+    async def _failing_set_json(*_args, **_kwargs):
+        raise RuntimeError("cache write failed")
+
+    monkeypatch.setattr(fake_cache, "set_json", _failing_set_json)
+    response = api_client.get("/api/v1/heatmap/overview")
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Cache-Status") == "miss-write-failed"
+
+
+@pytest.mark.asyncio
+async def test_refresh_task_registry_deduplicates_per_cache_key():
+    """Refresh registry should only allow one in-flight task per key."""
+    from app.api.v1.endpoints import heatmap as heatmap_endpoint
+
+    cache_key = "heatmap:refresh:dedupe"
+
+    try:
+        assert await heatmap_endpoint._try_mark_refresh_in_flight(cache_key) is True
+        assert await heatmap_endpoint._try_mark_refresh_in_flight(cache_key) is False
+    finally:
+        await heatmap_endpoint._clear_refresh_in_flight(cache_key)
+
+    assert await heatmap_endpoint._try_mark_refresh_in_flight(cache_key) is True
+    await heatmap_endpoint._clear_refresh_in_flight(cache_key)
 
 
 def test_heatmap_cancellations_with_time_range(

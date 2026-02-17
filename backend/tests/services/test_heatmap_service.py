@@ -524,6 +524,35 @@ class TestHeatmapService:
         assert summary.total_cancellations == 1
         assert summary.total_delays == 2
 
+    @pytest.mark.asyncio
+    async def test_hourly_route_filter_is_canonicalized_by_transport_group(self):
+        """Hourly SQL filter should match daily transport-group semantics."""
+        session = FakeAsyncSession(row_sets=[[]])
+        service = HeatmapService(
+            FakeGTFSScheduleService(), FakeCache(), session=session
+        )
+
+        points = await service._aggregate_station_data_from_db(
+            route_type_filter=[0],  # one TRAM subtype
+            from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            to_time=datetime(2025, 1, 1, 1, tzinfo=timezone.utc),
+            bucket_width_minutes=60,
+            max_points=100,
+        )
+
+        assert points == []
+        assert session.executed_statements
+        compiled_params = session.executed_statements[0].compile().params
+        route_filter_values = [
+            value
+            for value in compiled_params.values()
+            if isinstance(value, (list, tuple, set))
+        ]
+        assert any(
+            set([0, 5, 6, 7, 11, 900]).issubset(set(values))
+            for values in route_filter_values
+        )
+
 
 class TestCalculateSummary:
     """Tests for summary calculation."""

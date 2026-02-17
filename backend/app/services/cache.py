@@ -218,17 +218,22 @@ class SingleFlightLock:
         lock_key = f"{key}:lock"
         deadline = time.monotonic() + wait_timeout
         acquired = False
+        should_release_lock = False
 
         try:
             while time.monotonic() < deadline:
                 try:
-                    acquired = await self._client.set(
-                        lock_key, "1", nx=True, ex=max(1, int(lock_ttl_seconds))
+                    acquired = bool(
+                        await self._client.set(
+                            lock_key, "1", nx=True, ex=max(1, int(lock_ttl_seconds))
+                        )
                     )
                     if acquired:
+                        should_release_lock = True
                         break
                 except Exception:
-                    # If Valkey is unavailable, allow the operation to proceed
+                    # Degrade open when Valkey is unavailable: bypass single-flight
+                    # instead of failing request availability.
                     acquired = True
                     break
 
@@ -237,7 +242,7 @@ class SingleFlightLock:
             yield acquired
 
         finally:
-            if acquired:
+            if should_release_lock:
                 try:
                     await self._client.delete(lock_key)
                 except Exception:
@@ -262,6 +267,7 @@ class CacheService:
     """
 
     _STALE_SUFFIX = ":stale"
+    _FALLBACK_CLEANUP_INTERVAL_SECONDS = 60.0
 
     def __init__(self, client: valkey.Valkey) -> None:
         self._client = client
@@ -269,6 +275,7 @@ class CacheService:
         self._circuit_breaker = CircuitBreaker(self._config)
         self._fallback = FallbackCache()
         self._single_flight = SingleFlightLock(client)
+        self._next_fallback_cleanup_at = 0.0
 
     async def get(self, key: str) -> str | None:
         """Retrieve a raw string value from the cache.
@@ -488,7 +495,7 @@ class CacheService:
         await self._fallback.set(key, encoded, effective_ttl)
         if effective_stale_ttl is not None:
             await self._fallback.set(stale_key, encoded, effective_stale_ttl)
-        await self._fallback.cleanup_expired()
+        await self._maybe_cleanup_fallback()
 
     async def delete(self, key: str, *, remove_stale: bool = False) -> None:
         """Remove a cache entry, optionally clearing the stale backup."""
@@ -506,7 +513,7 @@ class CacheService:
         await self._fallback.delete(key)
         if remove_stale:
             await self._fallback.delete(stale_key)
-        await self._fallback.cleanup_expired()
+        await self._maybe_cleanup_fallback()
 
     @asynccontextmanager
     async def single_flight(
@@ -554,6 +561,14 @@ class CacheService:
 
         result = await _set()
         return result is not None
+
+    async def _maybe_cleanup_fallback(self) -> None:
+        """Run fallback cleanup periodically to avoid per-write overhead."""
+        now = time.monotonic()
+        if now < self._next_fallback_cleanup_at:
+            return
+        self._next_fallback_cleanup_at = now + self._FALLBACK_CLEANUP_INTERVAL_SECONDS
+        await self._fallback.cleanup_expired()
 
 
 # =============================================================================

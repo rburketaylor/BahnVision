@@ -31,6 +31,7 @@ from app.persistence.models import (
     RealtimeStationStatsDaily,
 )
 from app.services.cache import CacheService
+from app.services.daily_aggregation_service import should_use_daily_summary
 from app.services.gtfs_schedule import GTFSScheduleService
 
 if TYPE_CHECKING:
@@ -59,9 +60,6 @@ MAX_DATA_POINTS = 10000
 # Data density control
 MIN_CANCELLATION_RATE = 0.01  # 1% minimum
 MIN_DEPARTURES = 10  # Minimum departures to be significant
-
-# Daily summary threshold (days)
-_DAILY_SUMMARY_THRESHOLD_DAYS = 3
 
 # Spatial stratification for heatmap coverage
 # Grid cell size in degrees (~0.1° ≈ 10km at Germany's latitude)
@@ -116,6 +114,26 @@ def _transport_types_for_route_filter(
         if any(route_type in route_type_filter for route_type in route_types):
             selected.add(transport_type)
     return selected
+
+
+def _canonicalize_route_type_filter(
+    route_type_filter: list[int] | None,
+) -> list[int] | None:
+    """Normalize route filter to complete transport-type route groups."""
+    if not route_type_filter:
+        return None
+
+    selected_transport_types = _transport_types_for_route_filter(route_type_filter)
+    if selected_transport_types is None:
+        return None
+
+    if not selected_transport_types:
+        return list(dict.fromkeys(route_type_filter))
+
+    normalized_filter: list[int] = []
+    for transport_type in sorted(selected_transport_types):
+        normalized_filter.extend(TRANSPORT_TO_ROUTE_TYPES.get(transport_type, []))
+    return list(dict.fromkeys(normalized_filter))
 
 
 # Transport type name mapping for display
@@ -488,6 +506,7 @@ class HeatmapService:
             )
 
         try:
+            route_type_filter = _canonicalize_route_type_filter(route_type_filter)
             from app.models.gtfs import GTFSStop
 
             # Convert datetime to date for daily table queries
@@ -753,12 +772,11 @@ class HeatmapService:
                 "Heatmap aggregation requires an active database session"
             )
 
+        route_type_filter = _canonicalize_route_type_filter(route_type_filter)
+
         # Use daily summaries for large time ranges (>= 3 days)
-        if (to_time - from_time).days >= _DAILY_SUMMARY_THRESHOLD_DAYS:
-            logger.info(
-                "Using daily summaries for time range >= %d days",
-                _DAILY_SUMMARY_THRESHOLD_DAYS,
-            )
+        if should_use_daily_summary(from_time, to_time):
+            logger.info("Using daily summaries for time range at/above threshold")
             return await self._aggregate_from_daily_stats(
                 route_type_filter, from_time, to_time, max_points=max_points
             )
@@ -1022,11 +1040,13 @@ class HeatmapService:
         if not self._session:
             raise RuntimeError("Heatmap overview requires an active database session")
 
+        route_type_filter = _canonicalize_route_type_filter(route_type_filter)
+
         from app.models.gtfs import GTFSStop
         from app.models.heatmap import HeatmapPointLight
 
         # Use daily summaries for large time ranges
-        if (to_time - from_time).days >= _DAILY_SUMMARY_THRESHOLD_DAYS:
+        if should_use_daily_summary(from_time, to_time):
             return await self._get_all_impacted_stations_light_daily(
                 route_type_filter, from_time, to_time, metrics=metrics
             )
@@ -1110,6 +1130,8 @@ class HeatmapService:
         """
         if not self._session:
             raise RuntimeError("Heatmap overview requires an active database session")
+
+        route_type_filter = _canonicalize_route_type_filter(route_type_filter)
 
         from app.models.gtfs import GTFSStop
         from app.models.heatmap import HeatmapPointLight
@@ -1282,8 +1304,10 @@ class HeatmapService:
                 "Network summary calculation requires an active database session"
             )
 
+        route_type_filter = _canonicalize_route_type_filter(route_type_filter)
+
         # Use daily summaries for large time ranges
-        if (to_time - from_time).days >= _DAILY_SUMMARY_THRESHOLD_DAYS:
+        if should_use_daily_summary(from_time, to_time):
             return await self._calculate_network_summary_from_db_daily(
                 from_time=from_time,
                 to_time=to_time,
@@ -1376,6 +1400,7 @@ class HeatmapService:
                 "Network summary calculation requires an active database session"
             )
 
+        route_type_filter = _canonicalize_route_type_filter(route_type_filter)
         from_date = from_time.date()
         to_date = to_time.date()
 
@@ -1492,6 +1517,8 @@ class HeatmapService:
             raise RuntimeError(
                 "Most affected line calculation requires an active database session"
             )
+
+        route_type_filter = _canonicalize_route_type_filter(route_type_filter)
 
         stmt = (
             select(

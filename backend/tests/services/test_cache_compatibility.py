@@ -4,6 +4,7 @@ Test cache service functionality including circuit breaker, single-flight locks,
 
 import asyncio
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -114,6 +115,72 @@ class TestCacheService:
                 pass
         except TimeoutError:
             pytest.fail("Single-flight lock should not timeout in this test")
+
+    @pytest.mark.asyncio
+    async def test_single_flight_timeout_does_not_release_existing_lock(
+        self, cache_service, fake_valkey
+    ):
+        """A worker that never acquired the lock must not release it."""
+        test_key = "single_flight_timeout"
+        await fake_valkey.set(f"{test_key}:lock", "1", ex=30, nx=True)
+
+        with pytest.raises(TimeoutError):
+            async with cache_service.single_flight(
+                test_key, ttl_seconds=5, wait_timeout=0.02, retry_delay=0.01
+            ):
+                pass
+
+        assert await fake_valkey.get(f"{test_key}:lock") == "1"
+
+    @pytest.mark.asyncio
+    async def test_single_flight_valkey_failure_does_not_attempt_release(self):
+        """Valkey acquisition failures should bypass locking without delete calls."""
+
+        class FailingLockClient:
+            def __init__(self) -> None:
+                self.delete_calls = 0
+
+            async def set(self, *args, **kwargs):
+                raise RuntimeError("valkey unavailable")
+
+            async def delete(self, *args):
+                self.delete_calls += 1
+
+            async def get(self, key: str):
+                return None
+
+        client = FailingLockClient()
+        cache_service = CacheService(client)  # type: ignore[arg-type]
+
+        entered = False
+        async with cache_service.single_flight(
+            "single_flight_valkey_error",
+            ttl_seconds=5,
+            wait_timeout=0.02,
+            retry_delay=0.01,
+        ):
+            entered = True
+
+        assert entered
+        assert client.delete_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_set_json_throttles_fallback_cleanup(
+        self, cache_service, monkeypatch
+    ):
+        """Fallback cleanup should be periodic, not on every write."""
+        now = 1000.0
+        monkeypatch.setattr("app.services.cache.time.monotonic", lambda: now)
+        cleanup_mock = AsyncMock()
+        cache_service._fallback.cleanup_expired = cleanup_mock  # type: ignore[method-assign]
+
+        await cache_service.set_json("cleanup-1", {"value": 1}, ttl_seconds=30)
+        await cache_service.set_json("cleanup-2", {"value": 2}, ttl_seconds=30)
+        assert cleanup_mock.await_count == 1
+
+        now += cache_service._FALLBACK_CLEANUP_INTERVAL_SECONDS + 0.1
+        await cache_service.set_json("cleanup-3", {"value": 3}, ttl_seconds=30)
+        assert cleanup_mock.await_count == 2
 
     @pytest.mark.asyncio
     async def test_deletion_behavior(self, cache_service):

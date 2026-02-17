@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import cast
@@ -58,15 +59,17 @@ class HeatmapCacheWarmer:
         self._settings: Settings = get_settings()
         self._cache = cache_service
         self._lock = asyncio.Lock()
+        self._trigger_lock = threading.Lock()
         self._task: asyncio.Task | None = None
 
     def trigger(self, *, reason: str) -> None:
         """Schedule a warmup run if one isn't already running."""
         if not self._settings.heatmap_cache_warmup_enabled:
             return
-        if self._task is not None and not self._task.done():
-            return
-        self._task = asyncio.create_task(self._warmup(reason=reason))
+        with self._trigger_lock:
+            if self._task is not None and not self._task.done():
+                return
+            self._task = asyncio.create_task(self._warmup(reason=reason))
 
     async def shutdown(self) -> None:
         """Cancel any in-flight warmup task and wait for it to finish."""
@@ -117,75 +120,81 @@ class HeatmapCacheWarmer:
         return targets
 
     async def _warmup(self, *, reason: str) -> None:
-        async with self._lock:
-            if not self._settings.heatmap_cache_warmup_enabled:
-                return
+        current_task = asyncio.current_task()
+        try:
+            async with self._lock:
+                if not self._settings.heatmap_cache_warmup_enabled:
+                    return
 
-            targets = self._build_targets()
-            ttl_seconds = self._settings.heatmap_cache_ttl_seconds
-            stale_ttl_seconds = self._settings.heatmap_cache_stale_ttl_seconds
+                targets = self._build_targets()
+                ttl_seconds = self._settings.heatmap_cache_ttl_seconds
+                stale_ttl_seconds = self._settings.heatmap_cache_stale_ttl_seconds
 
-            started_at = time.monotonic()
-            logger.info(
-                "Heatmap cache warmup started (%s): %d variants",
-                reason,
-                len(targets),
-            )
-
-            try:
-                async with AsyncSessionFactory() as session:
-                    from app.services.gtfs_schedule import GTFSScheduleService
-
-                    gtfs_schedule = GTFSScheduleService(session)
-                    service = HeatmapService(
-                        gtfs_schedule, self._cache, session=session
-                    )
-
-                    warmed = 0
-                    for target in targets:
-                        try:
-                            if target.is_overview:
-                                # Use overview method for overview targets
-                                overview_result = await service.get_heatmap_overview(
-                                    time_range=target.time_range,
-                                    transport_modes=target.transport_modes,
-                                    bucket_width_minutes=target.bucket_width_minutes,
-                                    metrics=target.metrics,
-                                )
-                                await self._cache.set_json(
-                                    target.cache_key,
-                                    overview_result.model_dump(mode="json"),
-                                    ttl_seconds=ttl_seconds,
-                                    stale_ttl_seconds=stale_ttl_seconds,
-                                )
-                            else:
-                                # Use regular method for regular targets
-                                heatmap_result = await service.get_cancellation_heatmap(
-                                    time_range=target.time_range,
-                                    transport_modes=target.transport_modes,
-                                    bucket_width_minutes=target.bucket_width_minutes,
-                                    max_points=target.max_points,
-                                )
-                                await self._cache.set_json(
-                                    target.cache_key,
-                                    heatmap_result.model_dump(mode="json"),
-                                    ttl_seconds=ttl_seconds,
-                                    stale_ttl_seconds=stale_ttl_seconds,
-                                )
-                            warmed += 1
-                        except Exception:
-                            logger.exception(
-                                "Heatmap cache warmup failed for key '%s'",
-                                target.cache_key,
-                            )
-
-                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                started_at = time.monotonic()
                 logger.info(
-                    "Heatmap cache warmup finished (%s): %d/%d variants in %dms",
+                    "Heatmap cache warmup started (%s): %d variants",
                     reason,
-                    warmed,
                     len(targets),
-                    elapsed_ms,
                 )
-            except Exception:
-                logger.exception("Heatmap cache warmup failed (%s)", reason)
+
+                try:
+                    async with AsyncSessionFactory() as session:
+                        from app.services.gtfs_schedule import GTFSScheduleService
+
+                        gtfs_schedule = GTFSScheduleService(session)
+                        service = HeatmapService(
+                            gtfs_schedule, self._cache, session=session
+                        )
+
+                        warmed = 0
+                        for target in targets:
+                            try:
+                                if target.is_overview:
+                                    # Use overview method for overview targets
+                                    overview_result = await service.get_heatmap_overview(
+                                        time_range=target.time_range,
+                                        transport_modes=target.transport_modes,
+                                        bucket_width_minutes=target.bucket_width_minutes,
+                                        metrics=target.metrics,
+                                    )
+                                    await self._cache.set_json(
+                                        target.cache_key,
+                                        overview_result.model_dump(mode="json"),
+                                        ttl_seconds=ttl_seconds,
+                                        stale_ttl_seconds=stale_ttl_seconds,
+                                    )
+                                else:
+                                    # Use regular method for regular targets
+                                    heatmap_result = await service.get_cancellation_heatmap(
+                                        time_range=target.time_range,
+                                        transport_modes=target.transport_modes,
+                                        bucket_width_minutes=target.bucket_width_minutes,
+                                        max_points=target.max_points,
+                                    )
+                                    await self._cache.set_json(
+                                        target.cache_key,
+                                        heatmap_result.model_dump(mode="json"),
+                                        ttl_seconds=ttl_seconds,
+                                        stale_ttl_seconds=stale_ttl_seconds,
+                                    )
+                                warmed += 1
+                            except Exception:
+                                logger.exception(
+                                    "Heatmap cache warmup failed for key '%s'",
+                                    target.cache_key,
+                                )
+
+                    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                    logger.info(
+                        "Heatmap cache warmup finished (%s): %d/%d variants in %dms",
+                        reason,
+                        warmed,
+                        len(targets),
+                        elapsed_ms,
+                    )
+                except Exception:
+                    logger.exception("Heatmap cache warmup failed (%s)", reason)
+        finally:
+            with self._trigger_lock:
+                if self._task is current_task:
+                    self._task = None
