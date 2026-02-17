@@ -1,14 +1,96 @@
 # Codebase Logic Bugs and Issues Analysis
 
-**Date:** 2026-02-15  
-**Scope:** Backend services, API endpoints, data models, background jobs, and frontend components  
-**Total Issues Found:** 90+ (8 Critical, 25 High, 40+ Medium/Low)
+**Date:** 2026-02-15 (original)  
+**Verification Pass:** 2026-02-16  
+**Scope:** Backend services, API endpoints, data models, background jobs, and frontend components
 
 ---
 
 ## Executive Summary
 
 This analysis identifies subtle logic bugs, race conditions, and architectural issues across the BahnVision codebase. The issues range from critical race conditions that can cause data corruption to minor inconsistencies in error handling.
+
+### Verification Notes (2026-02-16)
+
+This document was triaged against the current repository state on 2026-02-16.
+
+- Incorrect/outdated claims were removed to avoid future confusion.
+- Remaining items are either confirmed issues (reproducible from source) or explicitly framed as suggestions/trade-offs.
+
+---
+
+## Execution Tracker (Added 2026-02-16)
+
+**Execution plan:** `docs/plans/logic-bugs-remediation-plan.md`  
+**Status values:** `Todo` / `In progress` / `Done` / `Deferred`
+
+### Numbered Findings Tracker
+
+|  ID | Finding (short)                                             | Severity | Owner | Status   | Notes                                                                                                 |
+| --: | ----------------------------------------------------------- | -------- | ----- | -------- | ----------------------------------------------------------------------------------------------------- |
+|   1 | Cache single-flight lock Valkey failure                     | CRITICAL | A     | Done     | Lock acquisition failure now fails closed (no false acquire).                                         |
+|   2 | GTFS import lock TOCTOU race                                | CRITICAL | B     | Done     | Import-lock checks consolidated and distributed acquire made atomic with NX.                          |
+|   3 | `threading.Lock` used in async context                      | CRITICAL | B     | Done     | Circuit-breaker lock moved to `asyncio.Lock` and call paths made async-safe.                          |
+|   4 | Repository internal `commit()` breaks transactions          | CRITICAL | C     | Done     | Internal commits removed from station repository upserts; callers own transaction boundary.           |
+|   5 | Missing single-flight lock in `/overview`                   | CRITICAL | A     | Done     | `/overview` now uses single-flight + cache recheck under lock.                                        |
+|   6 | Coordinate calc division-by-near-zero risk                  | HIGH     | D     | Done     | Longitude delta now derived from clamped cosine latitude factor.                                      |
+|   8 | Status classification ignores negative delays               | HIGH     | B     | Done     | Delay classification now normalizes negatives to on-time threshold behavior.                          |
+|   9 | Zero/negative timeout can cause tight loop                  | HIGH     | D     | Done     | Processing loop clamps to safe minimum timeout.                                                       |
+|  10 | Heatmap warmup task creation race                           | HIGH     | D     | Done     | Trigger path now lock-protected; task pointer cleanup made deterministic.                             |
+|  13 | Heatmap exception handling masks HTTP errors                | HIGH     | A     | Done     | Explicit `TimeoutError` -> 503 and `HTTPException` passthrough added.                                 |
+|  15 | Inconsistent `stop_id` validation (query vs path)           | HIGH     | F     | Done     | Query `stop_id` now enforces same regex + length constraints.                                         |
+|  16 | `useAutoRefresh` reentrancy guard (suggestion)              | MEDIUM   | E     | Done     | Async overlap guard added for callback execution.                                                     |
+|  18 | Departures row key includes realtime timestamp (suggestion) | LOW      | E     | Deferred | Out of owned files and currently no row-local state regression.                                       |
+|  19 | `getMetrics()` bypasses `httpClient`                        | HIGH     | E     | Done     | `getMetrics()` now uses centralized `httpClient.requestText()`.                                       |
+|  20 | Daily summary threshold uses `.days` truncation             | MEDIUM   | D     | Done     | Threshold now uses total-seconds based helper.                                                        |
+|  21 | Route type filter logic differs hourly vs daily             | MEDIUM   | D     | Done     | Route filters now canonicalized across hourly/daily paths.                                            |
+|  22 | Cache cleanup called on every set                           | MEDIUM   | A     | Done     | Fallback cleanup throttled to periodic execution.                                                     |
+|  23 | Lua script TTL literal hardcoded (keep aligned)             | MEDIUM   | B     | Done     | Lua fallback TTL now generated from Python TTL constant.                                              |
+|  24 | Trip hash too short (collision risk)                        | MEDIUM   | B     | Done     | Hash upgraded to SHA-256 with longer prefix.                                                          |
+|  25 | Cancelled aggregation monotonic (`or`)                      | MEDIUM   | B     | Done     | Aggregation now supports uncancel transitions and consistent marker updates.                          |
+|  26 | Single-flight releases even when not acquired               | MEDIUM   | A     | Done     | Release now only occurs when lock was actually acquired.                                              |
+|  27 | Non-atomic delete-then-insert aggregation                   | MEDIUM   | D     | Done     | Daily aggregation wrapped in transaction/nested transaction context.                                  |
+|  28 | No backoff on processing errors                             | MEDIUM   | D     | Done     | Exponential error backoff added to RT loop.                                                           |
+|  29 | Import lock check opens file every call                     | MEDIUM   | B     | Done     | Probe handle reused across checks.                                                                    |
+|  30 | Missing FK constraint for `parent_station`                  | MEDIUM   | C     | Done     | ORM FK added and Alembic migration `add_gtfs_parent_station_fk` created.                              |
+|  32 | Silent conflict handling hides data issues                  | MEDIUM   | C     | Done     | Conflict handling changed to upsert/update and explicit insert-count behavior.                        |
+|  33 | Missing GTFS constraints on Pydantic ints                   | MEDIUM   | C     | Done     | `wheelchair_boarding` and `route_type` bounds added.                                                  |
+|  34 | Cache write failure not reflected in headers                | MEDIUM   | A     | Done     | Heatmap endpoints now emit `X-Cache-Status: miss-write-failed` on cache write failure.                |
+|  35 | Heatmap services initialized per refresh task               | MEDIUM   | A     | Done     | Per-key refresh dedupe prevents overlapping refresh task creation.                                    |
+|  38 | Improve `httpClient` error diagnostics (suggestion)         | MEDIUM   | E     | Done     | Added request context diagnostics + non-JSON error detail extraction.                                 |
+|  39 | Confirm retry policy for status code 0                      | MEDIUM   | E     | Done     | Existing policy retained and now covered by explicit test.                                            |
+|  40 | Query key normalization (suggestion)                        | MEDIUM   | E     | Deferred | TanStack structural hashing already handles object keys; broader change deferred as low-value risk.   |
+|  46 | Time range parameter mutation                               | LOW      | F     | Done     | Endpoint now uses `effective_time_range` instead of mutating input parameter.                         |
+|  47 | Coordinate bucketing precision trade-off                    | LOW      | F     | Done     | Added adaptive nearby cache bucket precision by radius.                                               |
+|  48 | Missing `max_length` for `stop_id`                          | LOW      | F     | Done     | Added `max_length=128` for query `stop_id`.                                                           |
+|  49 | Error response shape variation                              | LOW      | F     | Deferred | Standardizing all endpoint error payloads is broader API-contract work; no immediate client breakage. |
+|  51 | Hardcoded bucket width assumption                           | LOW      | D     | Done     | Daily aggregation source bucket width is now configurable input.                                      |
+|  52 | Performance score magic numbers                             | LOW      | D     | Done     | Extracted weights/constants to named module-level constants.                                          |
+|  53 | Exception group syntax requires Python 3.11+                | LOW      | D     | Deferred | Runtime baseline is already Python 3.11+ (current CI/dev image uses 3.12+).                           |
+|  54 | Optional memoization                                        | LOW      | E     | Deferred | No demonstrated render-performance issue in affected components.                                      |
+|  55 | Optional exit animations                                    | LOW      | E     | Deferred | Pure UX enhancement; deferred to dedicated design pass.                                               |
+|  56 | Optional error styling                                      | LOW      | E     | Deferred | No active form UX bug requiring immediate styling change.                                             |
+|  64 | Duplicate component locations                               | LOW      | E     | Deferred | Structural cleanup deferred to avoid mixed-scope refactor.                                            |
+
+### Type/LSP Findings Tracker (Non-numbered follow-ups)
+
+These are static-analysis findings; treat them as **triage items** until confirmed runtime-affecting.
+
+|  ID | File                                              | Finding (short)                           | Owner | Status   | Notes                                                                                        |
+| --: | ------------------------------------------------- | ----------------------------------------- | ----- | -------- | -------------------------------------------------------------------------------------------- |
+|  T1 | `backend/app/jobs/gtfs_scheduler.py`              | SQLAlchemy truthiness typing artifact     | D     | Deferred | Runtime behavior verified; static typing artifact only in current usage.                     |
+|  T2 | `backend/app/services/gtfs_feed.py`               | Possible `None` attribute typing artifact | D     | Done     | Connection-context close path now null-guarded.                                              |
+|  T3 | `backend/app/services/gtfs_realtime_harvester.py` | Awaitable/None attribute typing issues    | B     | Deferred | Not reproduced as runtime bug during this remediation pass; keep as typing-triage follow-up. |
+|  T4 | `backend/app/services/transit_data.py`            | Column vs value typing issues             | D     | Deferred | Treated as SQLAlchemy/LSP false positives in current query result flow.                      |
+
+### Decision Log (2026-02-16 Execution)
+
+- Deferred `#18` because the proposed key-stability change is in a non-owned component path and no current row-local state bug was observed.
+- Deferred `#40` because TanStack Query already value-hashes object keys; normalization would be low-value churn without a concrete bug.
+- Deferred `#49` because error-shape standardization is a cross-endpoint API-contract effort and was not required to fix a current regression.
+- Deferred `#53` because supported runtime already satisfies Python 3.11+ requirements.
+- Deferred `#54/#55/#56/#64` as optional UX/structure work without evidence of correctness impact.
+- Deferred `T1/T3/T4` as static-analysis artifacts pending dedicated typing cleanup.
 
 ---
 
@@ -92,18 +174,9 @@ Unlike the `/cancellations` endpoint which uses `cache.single_flight()`, the `/o
 **File:** `backend/app/services/gtfs_schedule.py:291`  
 **Severity:** HIGH
 
-While there's a guard for `lat != 0`, floating-point precision could still cause issues. More critically, `abs(lat)` close to zero produces extremely large `lon_delta`.
+While there's a guard for `lat != 0`, `abs(lat)` near zero produces extremely large `lon_delta`. This is likely irrelevant for typical Germany latitudes, but it is brittle if used elsewhere.
 
 **Recommendation:** Add a minimum threshold for `lat` (e.g., `max(abs(lat), 0.01)`).
-
----
-
-#### 7. Stale Data Risk on Upsert Operations
-
-**File:** `backend/app/persistence/repositories.py:116,321-328`  
-**Severity:** HIGH
-
-The select after flush may not guarantee reading the just-upserted row in all transaction isolation scenarios.
 
 ---
 
@@ -134,24 +207,6 @@ Check-then-act pattern on `_task` is not atomic. Multiple rapid calls to `trigge
 
 ---
 
-#### 11. Stale Lock from Crash
-
-**File:** `backend/app/services/gtfs_import_lock.py:28-29,81-101`  
-**Severity:** HIGH
-
-The file lock at `/tmp/bahnvision_gtfs_import.lock` is not automatically cleaned up on crash, blocking GTFS imports until manual intervention.
-
----
-
-#### 12. Inconsistent Lock State Between Cache and File
-
-**File:** `backend/app/services/gtfs_import_lock.py:57-79`  
-**Severity:** HIGH
-
-The `is_import_in_progress()` checks multiple mechanisms in sequence, but they can become inconsistent.
-
----
-
 ### API Endpoints
 
 #### 13. Incorrect Exception Handling Masking HTTP Exceptions
@@ -160,15 +215,6 @@ The `is_import_in_progress()` checks multiple mechanisms in sequence, but they c
 **Severity:** HIGH
 
 Any exception (including validation errors, database connection errors) is caught and wrapped in a generic 500 error, masking important error details.
-
----
-
-#### 14. Incorrect Error Type for Missing Stats
-
-**File:** `backend/app/api/v1/endpoints/transit/stops.py:418-419`  
-**Severity:** HIGH
-
-Raises `station_not_found` when stats are not available, but a station may exist but have no stats data for the requested time range.
 
 ---
 
@@ -183,30 +229,21 @@ The query parameter `stop_id` lacks the pattern validation that the path paramet
 
 ### Frontend
 
-#### 16. Race Condition in useAutoRefresh Hook
+#### 16. No Reentrancy Guard in useAutoRefresh Hook (Suggestion)
 
 **File:** `frontend/src/hooks/useAutoRefresh.ts:28-43`  
-**Severity:** HIGH
+**Severity:** MEDIUM
 
-The hook may trigger the callback immediately on mount even when rapidly disabled/re-enabled, causing overlapping executions.
-
----
-
-#### 17. Race Condition in Recent Searches Update
-
-**File:** `frontend/src/components/features/station/StationSearch.tsx:189-199`  
-**Severity:** HIGH
-
-`handleSelect` updates localStorage and immediately reads it back. If localStorage fails silently, the state and storage become out of sync.
+`useAutoRefresh` calls `callback` on mount (optional) and then on an interval, but does not prevent a previous callback execution from overlapping the next tick. This is only a problem if the callback triggers work that must not overlap (e.g., async fetch without deduplication).
 
 ---
 
-#### 18. Missing Key Stability in DeparturesBoard
+#### 18. DeparturesBoard Key Includes `realtime_departure` (Suggestion)
 
 **File:** `frontend/src/components/features/station/DeparturesBoard.tsx:16-25`  
-**Severity:** HIGH
+**Severity:** LOW
 
-The `getDepartureKey` function uses `realtime_departure` in the key. If this value changes, React treats it as a different element and remounts instead of updating.
+The `getDepartureKey` function includes `realtime_departure` in the key. If this value changes, React treats it as a different element and remounts instead of updating. This is usually fine (no preserved row state), but if row-local state is added later, consider using a more stable key.
 
 ---
 
@@ -257,7 +294,7 @@ The hourly and daily summary paths apply route type filtering differently (SQL v
 **File:** `backend/app/services/gtfs_realtime_harvester.py:80-178`  
 **Severity:** MEDIUM
 
-The Lua script embeds the TTL value as a string literal that won't update if the Python constant changes.
+The Lua script contains a numeric fallback TTL literal, but the effective TTL is passed in via ARGV. If the fallback value is meant to mirror the Python constant, keep them aligned.
 
 ---
 
@@ -326,15 +363,6 @@ This opens, locks, unlocks, and closes a file every time `is_import_in_progress(
 
 ---
 
-#### 31. Deprecated datetime.utcnow() Usage
-
-**File:** `backend/app/models/gtfs.py:32-33`  
-**Severity:** MEDIUM
-
-Uses deprecated `datetime.utcnow` (Python 3.12+ deprecation warning). Should use `datetime.now(timezone.utc)`.
-
----
-
 #### 32. Silent Conflict Handling May Hide Data Issues
 
 **File:** `backend/app/persistence/repositories.py:267-274`  
@@ -360,7 +388,7 @@ Uses deprecated `datetime.utcnow` (Python 3.12+ deprecation warning). Should use
 **File:** `backend/app/api/v1/endpoints/heatmap.py:705-713`  
 **Severity:** MEDIUM
 
-No `X-Cache-Status` header is set when cache write fails, inconsistent with other endpoints.
+Cache write failures are logged but not reflected in response headers. The endpoint still sets `X-Cache-Status=miss`, so clients cannot distinguish “miss then cached” vs “miss with cache write failure”.
 
 ---
 
@@ -373,95 +401,32 @@ A new `GTFSScheduleService` and `HeatmapService` are created for each background
 
 ---
 
-#### 36. Race Condition in Limiter Initialization
-
-**File:** `backend/app/api/v1/shared/rate_limit.py:24-83`  
-**Severity:** MEDIUM
-
-In a multi-worker environment, there's a race condition where multiple workers could simultaneously initialize the limiter.
-
----
-
-#### 37. Potential None Access on Harvester Status
-
-**File:** `backend/app/api/v1/endpoints/ingestion.py:128-139`  
-**Severity:** MEDIUM
-
-If `harvester.get_status()` returns `None`, the code will crash on `status.get()`.
-
----
-
 ### Frontend
 
-#### 38. Error Information Loss in httpClient
+#### 38. Improve httpClient Error Diagnostics (Suggestion)
 
 **File:** `frontend/src/services/httpClient.ts:50,85-88`  
 **Severity:** MEDIUM
 
-When parsing JSON fails, the actual error response body is lost. Original error stack trace is lost in network failures.
+The client prioritizes returning a structured `ApiError`. If richer diagnostics are desired (for debugging production failures), consider capturing raw response text when JSON parsing fails and preserving original errors as a `cause`.
 
 ---
 
-#### 39. Incorrect Retry Logic for Status Code 0
+#### 39. Confirm Retry Policy for Status Code 0 (Suggestion)
 
 **File:** `frontend/src/hooks/useStationSearch.ts:21-33`  
 **Severity:** MEDIUM
 
-Network failures (status 0) are retried, but this is inconsistent with documented intent of "don't retry client errors."
+The hook retries “status 0” network failures while not retrying most 4xx errors. This is a reasonable policy; confirm it matches the intended UX and backend load expectations.
 
 ---
 
-#### 40. Missing Query Key Normalization
+#### 40. Query Key Normalization (Suggestion)
 
 **File:** `frontend/src/hooks/useHeatmap.ts:23`  
 **Severity:** MEDIUM
 
-Query keys include the raw `params` object with undefined values that change reference on each render, causing unnecessary cache lookups.
-
----
-
-#### 41. Potential Duplicate Requests on Rapid stopId Changes
-
-**File:** `frontend/src/hooks/useStationStats.ts:34-49`  
-**Severity:** MEDIUM
-
-If `stopId` changes rapidly, multiple in-flight requests may complete and update cache in unpredictable order.
-
----
-
-#### 42. Missing Dependency in Keyboard Handler
-
-**File:** `frontend/src/components/features/heatmap/HeatmapSearchOverlay.tsx:42-60`  
-**Severity:** MEDIUM
-
-The `handleClose` function is not memoized with `useCallback`, meaning a new function is created on every render but the effect only re-runs when `isExpanded` changes.
-
----
-
-#### 43. Keyboard Shortcut Interference
-
-**File:** `frontend/src/components/features/heatmap/HeatmapSearchOverlay.tsx:48-55`  
-**Severity:** MEDIUM
-
-The 'S' key shortcut doesn't check for `e.shiftKey`, interfering with typing uppercase 'S'.
-
----
-
-#### 44. Stale Closure in Popup Close Handler
-
-**File:** `frontend/src/components/features/heatmap/MapLibreHeatmap.tsx:570-590`  
-**Severity:** MEDIUM
-
-The popup's close handler captures refs at creation time. There's a potential race condition where the popup close event fires after the component has started unmounting.
-
----
-
-#### 45. Missing Cleanup for Pending Animation Frame
-
-**File:** `frontend/src/components/features/heatmap/MapLibreHeatmap.tsx:1095-1106`  
-**Severity:** MEDIUM
-
-If the component unmounts during the `requestAnimationFrame` callback execution, the `showPopup` function might still execute with null refs.
+Query keys include the raw `params` object. TanStack Query hashes keys by value, but normalizing the key to stable primitives (and stripping undefineds) can make behavior clearer and avoid surprises when params objects are constructed differently.
 
 ---
 
@@ -470,27 +435,19 @@ If the component unmounts during the `requestAnimationFrame` callback execution,
 ### Backend
 
 46. **Time Range Parameter Mutation** (`stops.py:410`) - Mutates `time_range` parameter from "live" to "1h"
-47. **Coordinate Bucketing Precision Loss** (`stops.py:283-284`) - Uses 3 decimal places without accounting for latitude
+47. **Coordinate Bucketing Precision Trade-off** (`stops.py:283-284`) - Uses 3 decimal places for cache bucketing (intentional simplification)
 48. **Missing max_length for stop_id** (`departures.py:71-77`)
-49. **Inconsistent Error Response Format** (`health.py:69-77`)
-50. **Unused Dependency Parameter** (`ingestion.py:72`)
-51. **Hardcoded Bucket Width Assumption** (`daily_aggregation_service.py:115,152`)
-52. **Performance Score Magic Numbers** (`station_stats_service.py:231-234`)
-53. **Exception Group Syntax Only Works in Python 3.11+** (`gtfs_feed.py:136-141`)
+49. **Error Response Shape Variation** (`health.py:69-77`) - Failure responses include extra `errors` fields; standardize only if clients need a fixed schema
+50. **Hardcoded Bucket Width Assumption** (`daily_aggregation_service.py:115,152`)
+51. **Performance Score Magic Numbers** (`station_stats_service.py:231-234`)
+52. **Exception Group Syntax Only Works in Python 3.11+** (`gtfs_feed.py:136-141`)
 
 ### Frontend
 
-54. **Missing useCallback for Event Handlers** (`HeatmapControls.tsx:64-82`)
-55. **Imprecise Transport Mode Logic** (`HeatmapControls.tsx:237-239`)
-56. **Missing useMemo for Computed Values** (`HeatmapLegend.tsx:26-76`)
-57. **Keyboard Navigation Edge Case** (`StationSearch.tsx:161-176`)
-58. **Missing Throttling on Input Change** (`StationSearch.tsx:201-207`)
-59. **Imprecise Type Guard** (`StationSearch.tsx:124`)
-60. **Incorrect Prop Naming Convention** (`DeparturesBoard.tsx:52-56`)
-61. **Missing Animation Exit Classes** (`dialog.tsx:16-17`)
-62. **Missing Error State Styling** (`select.tsx:10-27`)
-63. **Missing TabPanel Role** (`tabs.tsx:37-50`)
-64. **Duplicate Component Locations** - `components/heatmap/` vs `components/features/heatmap/`
+54. **Optional Memoization** (`HeatmapControls.tsx`, `HeatmapLegend.tsx`) - Consider `useCallback`/`useMemo` only if renders become expensive
+55. **Optional Exit Animations** (`dialog.tsx`) - Add explicit exit animation classes if desired
+56. **Optional Error Styling** (`select.tsx`) - Add error styles if forms need it
+57. **Duplicate Component Locations** - `components/heatmap/` vs `components/features/heatmap/`
 
 ---
 
@@ -507,10 +464,9 @@ If the component unmounts during the `requestAnimationFrame` callback execution,
 ### Short-term (High)
 
 6. Implement backoff strategies for error loops
-7. Add staleness detection to file locks
-8. Fix cache stampede behavior when Valkey is down
-9. Add size limits to fallback cache
-10. Fix race conditions in frontend hooks
+7. Fix cache stampede behavior when Valkey is down
+8. Add size limits to fallback cache
+9. Add reentrancy guards where needed (frontend/background jobs)
 
 ### Medium-term
 
@@ -519,25 +475,6 @@ If the component unmounts during the `requestAnimationFrame` callback execution,
 13. Add proper fallback for exception groups
 14. Optimize cleanup frequency in cache service
 15. Document magic numbers in calculations
-
----
-
-## Files Most Affected
-
-| File                                                           | Critical | High | Medium | Total |
-| -------------------------------------------------------------- | -------- | ---- | ------ | ----- |
-| `backend/app/services/cache.py`                                | 1        | 2    | 1      | 4     |
-| `backend/app/services/gtfs_realtime_harvester.py`              | 1        | 3    | 2      | 6     |
-| `backend/app/persistence/repositories.py`                      | 1        | 1    | 5      | 7     |
-| `backend/app/api/v1/endpoints/heatmap.py`                      | 1        | 2    | 2      | 5     |
-| `backend/app/services/gtfs_realtime.py`                        | 1        | 1    | 0      | 2     |
-| `backend/app/services/gtfs_import_lock.py`                     | 0        | 2    | 1      | 3     |
-| `backend/app/jobs/heatmap_cache_warmup.py`                     | 0        | 1    | 2      | 3     |
-| `backend/app/jobs/rt_processor.py`                             | 0        | 1    | 1      | 2     |
-| `frontend/src/components/features/heatmap/MapLibreHeatmap.tsx` | 0        | 0    | 5      | 5     |
-| `frontend/src/components/features/station/StationSearch.tsx`   | 0        | 1    | 4      | 5     |
-| `frontend/src/hooks/useAutoRefresh.ts`                         | 0        | 1    | 0      | 1     |
-| `frontend/src/services/httpClient.ts`                          | 0        | 1    | 1      | 2     |
 
 ---
 
@@ -553,7 +490,7 @@ If the component unmounts during the `requestAnimationFrame` callback execution,
 
 ## Existing Type Errors and LSP Issues
 
-The following type errors were detected by the Language Server Protocol (LSP) during file operations. These indicate potential runtime issues or incorrect type handling:
+The following type errors were detected by the Language Server Protocol (LSP) during file operations. These are static-analysis findings; verify them against runtime behavior before treating them as production bugs.
 
 ### Backend Type Errors
 
@@ -566,7 +503,7 @@ The following type errors were detected by the Language Server Protocol (LSP) du
 Method __bool__ for type "ColumnElement[bool]" returns type "NoReturn" rather than "bool"
 ```
 
-**Issue:** SQLAlchemy ColumnElement[bool] cannot be used directly in boolean contexts. This indicates improper handling of SQLAlchemy column comparisons in conditional statements.
+**Note:** This appears to be a typing artifact (ORM attributes vs SQLAlchemy expressions). Confirm the code path is using actual model instances, not `ColumnElement`s, before changing logic.
 
 ---
 
@@ -575,7 +512,7 @@ Method __bool__ for type "ColumnElement[bool]" returns type "NoReturn" rather th
 **File:** `backend/app/services/gtfs_feed.py:42:29`  
 **Error:** `"close" is not a known attribute of "None"`
 
-**Issue:** Code attempts to call `.close()` on an object that can be None, indicating missing null checks before method calls.
+**Note:** This is often a typing artifact from “initialized to None, later assigned”. Confirm whether the attribute can be `None` at the call site.
 
 ---
 
@@ -588,10 +525,7 @@ Method __bool__ for type "ColumnElement[bool]" returns type "NoReturn" rather th
 - Line 1011: `"object" is not awaitable` - Attempting to await a non-coroutine object
 - Line 1378: `"copy_to_table" is not a known attribute of "None"` - Calling method on potentially None object
 
-**Issues:**
-
-- Async/await mismatches where non-async functions are being awaited
-- Missing null checks before calling methods on potentially None database connections
+**Note:** These frequently come from incomplete type stubs for third-party async clients and connections. Validate the concrete types returned in this code path before changing logic.
 
 ---
 
@@ -606,14 +540,7 @@ Argument of type "Column[int]" cannot be assigned to parameter "x" of type "Conv
 Argument of type "Column[Decimal]" cannot be assigned to parameter "x" of type "ConvertibleToFloat"
 ```
 
-**Issues:**
-
-- Attempting to use SQLAlchemy Column objects directly in Python numeric operations
-- Missing proper column value extraction (e.g., using `.scalar()`, `.first()`, or accessing `.data`)
-- Decimal/Float conversion type mismatches
-- Line 586: `Variable not allowed in type expression` - Invalid type annotation syntax
-
-**Recommendation:** These indicate runtime bugs where column definitions are being used instead of query results. Code likely needs to execute queries and extract values before performing numeric operations.
+**Note:** ORM instance attribute typing can look like `Column[...]` to the LSP. Confirm whether these are real `Column` objects or loaded values from query results.
 
 ---
 
@@ -629,22 +556,25 @@ Argument of type "Column[Decimal]" cannot be assigned to parameter "x" of type "
 ### Frontend
 
 1. **Mixed Import Paths:** Duplicate component structures in `components/heatmap/` and `components/features/heatmap/`
-2. **Accessibility Gaps:** Missing ARIA attributes on dynamic components
-3. **Error Boundary Coverage:** Some async operations lack error boundary integration
+2. **Accessibility Audit (Suggestion):** Confirm dynamic components have appropriate keyboard/ARIA behavior
+3. **Error Boundary Audit (Suggestion):** Confirm async UI flows surface failures consistently
 
 ---
 
-## Compilation/Type Safety Priority
+## Removed Incorrect/Outdated Items (2026-02-16)
 
-| Priority | Issue Type              | Count | Impact          |
-| -------- | ----------------------- | ----- | --------------- |
-| Critical | None attribute access   | 3     | Runtime crashes |
-| Critical | Awaitable mismatches    | 2     | Runtime errors  |
-| High     | Column type conversions | 7     | Data corruption |
-| Medium   | Invalid conditionals    | 1     | Logic errors    |
-| Low      | Type expression issues  | 1     | Linting noise   |
+The following items were removed from the main list because the claim was not supported by the current codebase (or the referenced file/line did not match the described behavior):
+
+- #7 (stale read after flush on upsert)
+- #11 (stale import lock from crash)
+- #12 (inconsistent import lock state)
+- #14 (missing stats raises station_not_found)
+- #17 (recent searches localStorage race)
+- #31 (datetime.utcnow usage in `backend/app/models/gtfs.py`)
+- #36 (limiter initialization race)
+- #37 (harvester status None crash)
+- #41-45 (frontend race/cleanup claims in hooks and MapLibre components)
 
 ---
 
-_Generated by comprehensive codebase analysis using multi-agent exploration_
-_Updated with LSP-detected type errors_
+_Originally generated by automated analysis; corrected and triaged on 2026-02-16 by manual source inspection._
