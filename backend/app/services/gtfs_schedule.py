@@ -110,6 +110,9 @@ class GTFSScheduleService:
         weekday_col = _get_weekday_column(c, weekday)
 
         # 1. Get services active by calendar (range + weekday)
+        # We explicitly cast the literal(0) to SmallInteger to match the type of
+        # GTFSCalendarDate.exception_type, ensuring compatibility with strict
+        # UNION ALL type checking in PostgreSQL.
         stmt_cal = select(
             c.service_id, cast(literal(0), SmallInteger).label("exception_type")
         ).where(
