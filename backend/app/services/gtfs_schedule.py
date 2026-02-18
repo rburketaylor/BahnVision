@@ -3,7 +3,7 @@ import math
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
-from sqlalchemy import select, or_, literal, union_all
+from sqlalchemy import select, or_, literal, union_all, cast, SmallInteger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -110,8 +110,11 @@ class GTFSScheduleService:
         weekday_col = _get_weekday_column(c, weekday)
 
         # 1. Get services active by calendar (range + weekday)
-        # Use literal(0) for exception_type to indicate standard calendar service
-        stmt_cal = select(c.service_id, literal(0).label("exception_type")).where(
+        # Use literal(0) cast to SmallInteger for exception_type to indicate standard calendar service
+        # and ensure type compatibility with GTFSCalendarDate.exception_type in UNION ALL
+        stmt_cal = select(
+            c.service_id, cast(literal(0), SmallInteger).label("exception_type")
+        ).where(
             c.start_date <= query_date,
             c.end_date >= query_date,
             weekday_col == True,  # noqa: E712
