@@ -6,6 +6,18 @@
 
 ---
 
+## Verification Status (2026-02-17)
+
+- [x] Phase 0 tracker + decision log exists in `docs/plans/logic-bugs-analysis.md`.
+- [x] Phases 1-4 item outcomes are recorded as `Done` or `Deferred` in `docs/plans/logic-bugs-analysis.md`.
+- [x] Phase 5 type/LSP triage outcomes are recorded (`T1`-`T4`).
+- [ ] Phase 6 full-regression revalidation is only partially verified in this pass.
+- [x] Frontend regression gate passed in this verification run: `cd frontend && npm run test -- --run` (234 passed).
+- [x] Targeted backend regression suites passed in this verification run: `pytest backend/tests/api/v1/shared/test_rate_limit.py backend/tests/services/test_gtfs_realtime_harvester.py -q` (36 passed).
+- [ ] Full backend gate `pytest backend/tests -m "not integration"` was started but did not return a completion result in this verification run.
+
+---
+
 ## Coordination Rules (Avoiding Conflicts)
 
 1. **Single owner per file.** Only the assigned subagent edits an owned file.

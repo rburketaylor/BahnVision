@@ -5,6 +5,20 @@
 
 ---
 
+## Verification Status (2026-02-17)
+
+- [x] Baseline prerequisites are present: `/metrics` export (`backend/app/api/metrics.py`), request ID middleware (`backend/app/main.py`), and Playwright setup (`frontend/playwright.config.ts`).
+- [x] `Server-Timing` support exists in heatmap endpoints (`backend/app/api/v1/endpoints/heatmap.py`), but not as global API middleware.
+- [ ] Phase 0 scaffolding is not implemented (`perf/README.md` and `perf/schema/` are missing).
+- [ ] Phase 1 request-level API metrics/middleware is not implemented (`backend/app/core/metrics.py` has no `bahnvision_api_request_*` metrics; `backend/app/main.py` has no request-timing middleware).
+- [ ] Phase 2 frontend correlation/event buffer is not implemented (`frontend/src/services/httpClient.ts` does not generate outbound `X-Request-Id` values or emit `window.__bahnvisionPerf` NDJSON-ready events).
+- [ ] Phase 3 perf Playwright pipeline is not implemented (existing E2E specs are mock-driven and no perf artifact writer exists under `perf/runs/`).
+- [ ] Phase 4 Prometheus window exporter is not implemented (`scripts/perf/` is missing).
+- [ ] Phase 5 bottleneck summarizer is not implemented (no `top_bottlenecks.json` generator exists).
+- [ ] Phase 6 optional tracing export pipeline is not implemented (no run-window trace export artifacts/scripts found).
+
+---
+
 ## Problem Statement
 
 We want a repeatable way to answer, with data:
