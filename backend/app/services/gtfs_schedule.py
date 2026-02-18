@@ -3,7 +3,7 @@ import math
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, literal, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -100,8 +100,7 @@ class GTFSScheduleService:
         """Get active service_ids for a specific date.
 
         Combines calendar range/weekday checks with calendar_dates exceptions
-        to return a flat list of valid service_ids. This avoids complex joins
-        in the main departures query.
+        using a single UNION ALL query to reduce database round-trips.
         """
         weekday = query_date.strftime("%A").lower()
 
@@ -111,7 +110,8 @@ class GTFSScheduleService:
         weekday_col = _get_weekday_column(c, weekday)
 
         # 1. Get services active by calendar (range + weekday)
-        stmt_cal = select(c.service_id).where(
+        # Use literal(0) for exception_type to indicate standard calendar service
+        stmt_cal = select(c.service_id, literal(0).label("exception_type")).where(
             c.start_date <= query_date,
             c.end_date >= query_date,
             weekday_col == True,  # noqa: E712
@@ -120,18 +120,25 @@ class GTFSScheduleService:
         # 2. Get exceptions for today
         stmt_cd = select(cd.service_id, cd.exception_type).where(cd.date == query_date)
 
-        # Execute queries
-        cal_result = await self.session.execute(stmt_cal)
-        active_cal = set(cal_result.scalars().all())
+        # Combine with UNION ALL
+        stmt = union_all(stmt_cal, stmt_cd)
 
-        cd_result = await self.session.execute(stmt_cd)
-        exceptions = cd_result.all()  # List of (service_id, exception_type)
+        # Execute query
+        result = await self.session.execute(stmt)
+        rows = result.all()
 
-        # Apply exceptions
-        added = {row.service_id for row in exceptions if row.exception_type == 1}
-        removed = {row.service_id for row in exceptions if row.exception_type == 2}
+        active_services = set()
+        removed_services = set()
 
-        return list((active_cal - removed) | added)
+        for service_id, exception_type in rows:
+            if exception_type == 1:  # Added service
+                active_services.add(service_id)
+            elif exception_type == 2:  # Removed service
+                removed_services.add(service_id)
+            elif exception_type == 0:  # Standard calendar service
+                active_services.add(service_id)
+
+        return list((active_services - removed_services))
 
     async def get_stop_departures(
         self,
