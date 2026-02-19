@@ -213,12 +213,8 @@ class TestDepartureInfoSerialization:
 
         assert result.schedule_relationship == ScheduleRelationship.CANCELED
 
-    def test_from_dict_mutates_input_for_performance(self):
-        """Test that from_dict modifies the input dictionary in-place for performance.
-
-        The from_dict method is optimized to assume ownership of the input dict,
-        avoiding a copy. This test verifies that mutation occurs as expected.
-        """
+    def test_from_dict_does_not_mutate_input(self):
+        """Test that from_dict does not modify the input dictionary."""
         data = {
             "trip_id": "trip1",
             "route_id": "route1",
@@ -231,12 +227,14 @@ class TestDepartureInfoSerialization:
             "schedule_relationship": "SCHEDULED",
             "alerts": [],
         }
+        original_schedule_relationship = data["schedule_relationship"]
+        original_scheduled_departure = data["scheduled_departure"]
 
         DepartureInfo.from_dict(data)
 
-        # Input IS mutated (optimization)
-        assert isinstance(data["schedule_relationship"], ScheduleRelationship)
-        assert isinstance(data["scheduled_departure"], datetime)
+        # Input should not be mutated
+        assert data["schedule_relationship"] == original_schedule_relationship
+        assert data["scheduled_departure"] == original_scheduled_departure
 
     def test_to_dict_handles_none_optional_fields(self):
         """Test that to_dict handles None optional fields correctly."""
