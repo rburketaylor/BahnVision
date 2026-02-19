@@ -167,11 +167,11 @@ class DepartureInfo:
     def from_dict(data: Dict) -> "DepartureInfo":
         """Create from dictionary handling type conversions.
 
-        Note: This method creates a shallow copy of the input dict to avoid
-        mutating the caller's data.
+        Note: This method modifies the input dict in-place for performance.
+        Input data should be from a source that doesn't require preservation (e.g. json.loads).
         """
-        # Copy to avoid mutating the input
-        data = data.copy()
+        # Optimization: Skip copy() since input typically comes from fresh JSON deserialization
+        # data = data.copy()
 
         # Convert string to enum
         if "schedule_relationship" in data:
@@ -245,7 +245,8 @@ class RouteInfo:
     @staticmethod
     def from_dict(data: Dict) -> "RouteInfo":
         """Create from dictionary handling type conversions."""
-        data = data.copy()
+        # Optimization: Skip copy()
+        # data = data.copy()
 
         # Reconstruct ServiceAlert objects
         if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert is not None:
@@ -302,7 +303,8 @@ class StopInfo:
     @staticmethod
     def from_dict(data: Dict) -> "StopInfo":
         """Create from dictionary handling type conversions."""
-        data = data.copy()
+        # Optimization: Skip copy()
+        # data = data.copy()
 
         if data.get("upcoming_departures"):
             data["upcoming_departures"] = [
@@ -313,7 +315,8 @@ class StopInfo:
         if data.get("alerts") and GTFS_REALTIME_AVAILABLE and ServiceAlert is not None:
             alerts = []
             for alert_data in data["alerts"]:
-                alert_data = alert_data.copy()
+                # Optimization: Skip copy()
+                # alert_data = alert_data.copy()
                 if "affected_routes" in alert_data:
                     alert_data["affected_routes"] = set(alert_data["affected_routes"])
                 if "affected_stops" in alert_data:
