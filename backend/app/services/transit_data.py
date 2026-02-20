@@ -65,7 +65,9 @@ class ScheduleRelationship(Enum):
     CANCELED = "CANCELED"
 
 
-@dataclass(slots=True)  # Optimization: Use slots to reduce memory usage for high-volume objects
+@dataclass(
+    slots=True
+)  # Optimization: Use slots to reduce memory usage for high-volume objects
 class DepartureInfo:
     """Combined departure information with real-time updates"""
 
@@ -202,7 +204,9 @@ class DepartureInfo:
         return DepartureInfo(**data)
 
 
-@dataclass(slots=True)  # Optimization: Use slots to reduce memory usage for high-volume objects
+@dataclass(
+    slots=True
+)  # Optimization: Use slots to reduce memory usage for high-volume objects
 class RouteInfo:
     """Route information with real-time status"""
 
@@ -256,7 +260,9 @@ class RouteInfo:
         return RouteInfo(**data)
 
 
-@dataclass(slots=True)  # Optimization: Use slots to reduce memory usage for high-volume objects
+@dataclass(
+    slots=True
+)  # Optimization: Use slots to reduce memory usage for high-volume objects
 class StopInfo:
     """Stop information with real-time status"""
 
