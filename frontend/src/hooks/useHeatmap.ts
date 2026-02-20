@@ -13,14 +13,41 @@ interface UseHeatmapOptions {
   autoRefresh?: boolean
 }
 
+function normalizeHeatmapQueryKeyParams(params: HeatmapParams): HeatmapParams {
+  const normalized: HeatmapParams = {}
+
+  if (params.time_range !== undefined) {
+    normalized.time_range = params.time_range
+  }
+
+  if (params.bucket_width !== undefined) {
+    normalized.bucket_width = params.bucket_width
+  }
+
+  if (params.zoom !== undefined) {
+    normalized.zoom = params.zoom
+  }
+
+  if (params.max_points !== undefined) {
+    normalized.max_points = params.max_points
+  }
+
+  if (Array.isArray(params.transport_modes) && params.transport_modes.length > 0) {
+    normalized.transport_modes = [...new Set(params.transport_modes)].sort()
+  }
+
+  return normalized
+}
+
 export function useHeatmap(params: HeatmapParams = {}, options: UseHeatmapOptions = {}) {
   const { enabled = true, autoRefresh = true } = options
   const isLive = params.time_range === 'live'
   const refetchIntervalMs = isLive ? 60 * 1000 : 5 * 60 * 1000
   const staleTimeMs = isLive ? 30 * 1000 : 5 * 60 * 1000
+  const normalizedQueryKeyParams = normalizeHeatmapQueryKeyParams(params)
 
   return useQuery({
-    queryKey: ['heatmap', 'cancellations', params],
+    queryKey: ['heatmap', 'cancellations', normalizedQueryKeyParams],
     queryFn: async () => {
       const response = await apiClient.getHeatmapData(params)
 

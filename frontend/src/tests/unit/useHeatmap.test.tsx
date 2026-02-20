@@ -181,6 +181,49 @@ describe('useHeatmap', () => {
     })
   })
 
+  it('normalizes equivalent params into the same query key', async () => {
+    mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
+
+    const firstParams = {
+      time_range: '24h' as const,
+      transport_modes: ['TRAM' as const, 'BUS' as const],
+      zoom: 8,
+      max_points: undefined,
+    }
+    const secondParams = {
+      zoom: 8,
+      time_range: '24h' as const,
+      transport_modes: ['BUS' as const, 'TRAM' as const, 'BUS' as const],
+    }
+
+    const first = renderHook(() => useHeatmap(firstParams), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(first.result.current.isSuccess).toBe(true)
+    })
+
+    const second = renderHook(() => useHeatmap(secondParams), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(second.result.current.isSuccess).toBe(true)
+    })
+
+    expect(mockGetHeatmapData).toHaveBeenCalledTimes(1)
+
+    const normalizedQuery = queryClient.getQueryCache().find({
+      queryKey: [
+        'heatmap',
+        'cancellations',
+        { time_range: '24h', transport_modes: ['BUS', 'TRAM'], zoom: 8 },
+      ],
+    })
+    expect(normalizedQuery).toBeDefined()
+  })
+
   it('uses 5 minute stale time for historical ranges', async () => {
     mockGetHeatmapData.mockResolvedValue({ data: mockHeatmapResponse })
 
