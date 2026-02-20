@@ -43,7 +43,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)  # Optimization: Use slots to reduce memory usage for high-volume objects
 class TripUpdate:
     """Processed trip update data"""
 
@@ -74,7 +74,7 @@ class TripUpdate:
         }
 
 
-@dataclass
+@dataclass(slots=True)  # Optimization: Use slots to reduce memory usage for high-volume objects
 class VehiclePosition:
     """Processed vehicle position data"""
 
@@ -105,7 +105,7 @@ class VehiclePosition:
         }
 
 
-@dataclass
+@dataclass(slots=True)  # Optimization: Use slots to reduce memory usage for high-volume objects
 class ServiceAlert:
     """Processed service alert data"""
 
