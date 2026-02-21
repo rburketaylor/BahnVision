@@ -85,7 +85,9 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('switches to Ingestion tab', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
+    await expect(ingestionTab).toBeVisible()
+    await ingestionTab.click()
 
     await expect(page.getByText('GTFS Static Feed')).toBeVisible()
     await expect(page.getByText('Realtime Harvester')).toBeVisible()
@@ -94,7 +96,9 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('shows feed record counts on Ingestion tab', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
+    await expect(ingestionTab).toBeVisible()
+    await ingestionTab.click()
 
     // Verify counts are displayed using the same constants as the mock
     const stopCount = MOCK_GTFS_FEED.stop_count.toLocaleString()
@@ -109,7 +113,9 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('switches to Performance tab', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await page.getByRole('button', { name: /Performance/ }).click()
+    const performanceTab = page.getByRole('button', { name: /Performance/ })
+    await expect(performanceTab).toBeVisible()
+    await performanceTab.click()
 
     await expect(page.getByText('Cache Performance')).toBeVisible()
     await expect(page.getByText('Performance Targets')).toBeVisible()
@@ -163,7 +169,9 @@ test.describe('Monitoring Page - Error States', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
+    await expect(ingestionTab).toBeVisible()
+    await ingestionTab.click()
 
     // Should show error state
     await expect(page.getByText(/Failed to load ingestion status/)).toBeVisible()
@@ -182,7 +190,9 @@ test.describe('Monitoring Page - Refresh', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Performance/ }).click()
+    const performanceTab = page.getByRole('button', { name: /Performance/ })
+    await expect(performanceTab).toBeVisible()
+    await performanceTab.click()
 
     const refreshButton = page.getByRole('button', { name: /Refresh/ })
     await expect(refreshButton).toBeVisible()
@@ -202,7 +212,9 @@ test.describe('Monitoring Page - Refresh', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Performance/ }).click()
+    const performanceTab = page.getByRole('button', { name: /Performance/ })
+    await expect(performanceTab).toBeVisible()
+    await performanceTab.click()
 
     const autoRefreshButton = page.getByRole('button', { name: /Auto-refreshing/ })
     await expect(autoRefreshButton).toBeVisible()
