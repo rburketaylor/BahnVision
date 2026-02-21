@@ -36,6 +36,7 @@ def test_ready_endpoint_returns_ready(api_client):
     assert data["status"] == "ready"
     assert data["checks"]["database"] == "ok"
     assert data["checks"]["cache"] == "ok"
+    assert data["errors"] == {}
 
 
 def test_ready_endpoint_returns_503_when_db_unavailable(api_client):
@@ -54,6 +55,7 @@ def test_ready_endpoint_returns_503_when_db_unavailable(api_client):
     assert data["status"] == "not_ready"
     assert data["checks"]["database"] == "error"
     assert data["checks"]["cache"] == "ok"
+    assert "database" in data["errors"]
 
 
 def test_ready_endpoint_returns_503_when_cache_unavailable(api_client):
@@ -72,3 +74,4 @@ def test_ready_endpoint_returns_503_when_cache_unavailable(api_client):
     assert data["status"] == "not_ready"
     assert data["checks"]["database"] == "ok"
     assert data["checks"]["cache"] == "error"
+    assert "cache" in data["errors"]

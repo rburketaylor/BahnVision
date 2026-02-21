@@ -42,7 +42,8 @@ Dependency readiness probe for database and cache.
   "checks": {
     "database": "ok",
     "cache": "ok"
-  }
+  },
+  "errors": {}
 }
 ```
 
