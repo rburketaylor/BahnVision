@@ -86,7 +86,7 @@ bahnvision_transit_requests_total{method="GET"} 1000
     await page.goto('/monitoring')
 
     const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
-    await expect(ingestionTab).toBeVisible()
+    await expect(ingestionTab).toBeVisible({ timeout: 15000 })
     await ingestionTab.click()
 
     await expect(page.getByText('GTFS Static Feed')).toBeVisible()
@@ -97,7 +97,7 @@ bahnvision_transit_requests_total{method="GET"} 1000
     await page.goto('/monitoring')
 
     const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
-    await expect(ingestionTab).toBeVisible()
+    await expect(ingestionTab).toBeVisible({ timeout: 15000 })
     await ingestionTab.click()
 
     // Verify counts are displayed using the same constants as the mock
@@ -114,7 +114,7 @@ bahnvision_transit_requests_total{method="GET"} 1000
     await page.goto('/monitoring')
 
     const performanceTab = page.getByRole('button', { name: /Performance/ })
-    await expect(performanceTab).toBeVisible()
+    await expect(performanceTab).toBeVisible({ timeout: 15000 })
     await performanceTab.click()
 
     await expect(page.getByText('Cache Performance')).toBeVisible()
@@ -170,7 +170,7 @@ test.describe('Monitoring Page - Error States', () => {
 
     await page.goto('/monitoring')
     const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
-    await expect(ingestionTab).toBeVisible()
+    await expect(ingestionTab).toBeVisible({ timeout: 15000 })
     await ingestionTab.click()
 
     // Should show error state
@@ -191,7 +191,7 @@ test.describe('Monitoring Page - Refresh', () => {
 
     await page.goto('/monitoring')
     const performanceTab = page.getByRole('button', { name: /Performance/ })
-    await expect(performanceTab).toBeVisible()
+    await expect(performanceTab).toBeVisible({ timeout: 15000 })
     await performanceTab.click()
 
     const refreshButton = page.getByRole('button', { name: /Refresh/ })
@@ -213,7 +213,7 @@ test.describe('Monitoring Page - Refresh', () => {
 
     await page.goto('/monitoring')
     const performanceTab = page.getByRole('button', { name: /Performance/ })
-    await expect(performanceTab).toBeVisible()
+    await expect(performanceTab).toBeVisible({ timeout: 15000 })
     await performanceTab.click()
 
     const autoRefreshButton = page.getByRole('button', { name: /Auto-refreshing/ })

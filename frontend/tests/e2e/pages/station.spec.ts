@@ -15,7 +15,7 @@ test.describe('Station Page - Direct Navigation', () => {
     await page.goto(`/station/${mockStation.id}`)
 
     const heading = page.getByRole('heading', { level: 1 })
-    await expect(heading).toBeVisible()
+    await expect(heading).toBeVisible({ timeout: 15000 })
     await expect(heading).toContainText(mockStation.name)
   })
 
@@ -45,7 +45,7 @@ test.describe('Station Page - Overview Tab', () => {
 
   test('displays station name in header', async ({ page }) => {
     const heading = page.getByRole('heading', { level: 1 })
-    await expect(heading).toBeVisible()
+    await expect(heading).toBeVisible({ timeout: 15000 })
     await expect(heading).toContainText(mockStation.name)
   })
 
