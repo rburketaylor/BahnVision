@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { ThemeProvider } from '../../contexts/ThemeContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -176,6 +176,18 @@ function getMockMapInstance(): MockedMapInstance {
   return instance
 }
 
+async function emitMapEvent(map: MockedMapInstance, event: string, ...args: unknown[]) {
+  await act(async () => {
+    map._emit(event, ...args)
+  })
+}
+
+async function emitPopupEvent(popup: { _emit?: (event: string) => void }, event: string) {
+  await act(async () => {
+    popup._emit?.(event)
+  })
+}
+
 describe('MapLibreHeatmap Component', () => {
   const originalMatchMedia = window.matchMedia
 
@@ -264,8 +276,8 @@ describe('MapLibreHeatmap Component', () => {
     })
 
     const map = getMockMapInstance()
-    map._emit('load')
-    map._emit('style.load')
+    await emitMapEvent(map, 'load')
+    await emitMapEvent(map, 'style.load')
 
     expect(map.addSource).toHaveBeenCalledWith('heatmap-data', expect.any(Object))
     expect(map.addLayer).toHaveBeenCalled()
@@ -293,7 +305,7 @@ describe('MapLibreHeatmap Component', () => {
     )
     const map = getMockMapInstance()
     map.getZoom.mockReturnValue(6)
-    map._emit('load')
+    await emitMapEvent(map, 'load')
 
     expect(map.easeTo).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -326,7 +338,7 @@ describe('MapLibreHeatmap Component', () => {
     )
     const map = getMockMapInstance()
     map.getZoom.mockReturnValue(14)
-    map._emit('load')
+    await emitMapEvent(map, 'load')
 
     expect(map.easeTo).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -372,8 +384,8 @@ describe('MapLibreHeatmap Component', () => {
       expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
     )
     const map = getMockMapInstance()
-    map._emit('load')
-    map._emit('style.load')
+    await emitMapEvent(map, 'load')
+    await emitMapEvent(map, 'style.load')
 
     const feature = {
       type: 'Feature',
@@ -397,7 +409,7 @@ describe('MapLibreHeatmap Component', () => {
       }
     )
 
-    map._emit('click:unclustered-point', { point: { x: 10, y: 10 } })
+    await emitMapEvent(map, 'click:unclustered-point', { point: { x: 10, y: 10 } })
 
     // The click should call onStationSelect with the station ID
     expect(onStationSelect).toHaveBeenCalledWith('de:09162:1')
@@ -424,7 +436,7 @@ describe('MapLibreHeatmap Component', () => {
       expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
     )
     const map = getMockMapInstance()
-    map._emit('load')
+    await emitMapEvent(map, 'load')
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset map view' }))
     expect(localStorage.getItem('bahnvision-heatmap-view-v1')).toBeNull()
@@ -446,8 +458,8 @@ describe('MapLibreHeatmap Component', () => {
       expect((maplibregl as unknown as { Map: { mock: unknown } }).Map).toHaveBeenCalledTimes(1)
     )
     const map = getMockMapInstance()
-    map._emit('load')
-    map._emit('style.load')
+    await emitMapEvent(map, 'load')
+    await emitMapEvent(map, 'style.load')
 
     // Click to toggle theme from light to dark
     fireEvent.click(screen.getByRole('button', { name: 'Toggle theme' }))
@@ -517,7 +529,7 @@ describe('MapLibreHeatmap Component', () => {
       maplibregl as unknown as { Popup: { mock: { instances: Array<Record<string, unknown>> } } }
     ).Popup.mock.instances.at(-1) as { _emit?: (event: string) => void } | undefined
     expect(popupInstance?._emit).toBeTypeOf('function')
-    popupInstance!._emit!('close')
+    await emitPopupEvent(popupInstance!, 'close')
 
     // Immediately switch to another station before the close handler's async cleanup runs.
     rerender(

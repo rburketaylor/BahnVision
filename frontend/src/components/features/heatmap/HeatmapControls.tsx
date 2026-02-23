@@ -3,7 +3,7 @@
  * Time range selector and transport mode filters for the heatmap
  */
 
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect, useMemo, useCallback } from 'react'
 import { Check, Clock3, Filter, PauseCircle, RadioTower } from 'lucide-react'
 import type { TransportType } from '../../../types/api'
 import type { TimeRangePreset, HeatmapEnabledMetrics } from '../../../types/heatmap'
@@ -35,7 +35,7 @@ const TRANSPORT_MODES: { value: TransportType; label: string }[] = [
 
 const TIME_RANGES: TimeRangePreset[] = ['live', '1h', '6h', '24h', '7d', '30d']
 
-export function HeatmapControls({
+export const HeatmapControls = memo(function HeatmapControls({
   timeRange,
   onTimeRangeChange,
   selectedTransportModes,
@@ -54,54 +54,90 @@ export function HeatmapControls({
     return () => clearInterval(interval)
   }, [])
 
-  const formatLastUpdated = (isoTimestamp: string) => {
-    const parsed = Date.parse(isoTimestamp)
-    if (Number.isNaN(parsed)) return 'unknown'
-    const seconds = Math.floor((now - parsed) / 1000)
-    if (seconds < 60) return 'just now'
-    const minutes = Math.floor(seconds / 60)
-    return `${minutes}m ago`
-  }
+  const formatLastUpdated = useCallback(
+    (isoTimestamp: string) => {
+      const parsed = Date.parse(isoTimestamp)
+      if (Number.isNaN(parsed)) return 'unknown'
+      const seconds = Math.floor((now - parsed) / 1000)
+      if (seconds < 60) return 'just now'
+      const minutes = Math.floor(seconds / 60)
+      return `${minutes}m ago`
+    },
+    [now]
+  )
 
-  const toggleTransportMode = (mode: TransportType) => {
-    if (selectedTransportModes.includes(mode)) {
-      onTransportModesChange(selectedTransportModes.filter(m => m !== mode))
-    } else {
-      onTransportModesChange([...selectedTransportModes, mode])
-    }
-  }
+  const selectedTransportSet = useMemo(
+    () => new Set<TransportType>(selectedTransportModes),
+    [selectedTransportModes]
+  )
 
-  const selectAllModes = () => {
+  const toggleTransportMode = useCallback(
+    (mode: TransportType) => {
+      if (selectedTransportSet.has(mode)) {
+        onTransportModesChange(selectedTransportModes.filter(m => m !== mode))
+      } else {
+        onTransportModesChange([...selectedTransportModes, mode])
+      }
+    },
+    [selectedTransportModes, selectedTransportSet, onTransportModesChange]
+  )
+
+  const selectAllModes = useCallback(() => {
     onTransportModesChange(TRANSPORT_MODES.map(m => m.value))
-  }
+  }, [onTransportModesChange])
 
-  const toggleMetric = (metric: keyof HeatmapEnabledMetrics) => {
-    const newEnabled = { ...enabledMetrics, [metric]: !enabledMetrics[metric] }
-    if (!newEnabled.cancellations && !newEnabled.delays) {
-      return
+  const toggleMetric = useCallback(
+    (metric: keyof HeatmapEnabledMetrics) => {
+      const newEnabled = { ...enabledMetrics, [metric]: !enabledMetrics[metric] }
+      if (!newEnabled.cancellations && !newEnabled.delays) {
+        return
+      }
+      onEnabledMetricsChange(newEnabled)
+    },
+    [enabledMetrics, onEnabledMetricsChange]
+  )
+
+  const activeMetricLabels = useMemo(
+    () =>
+      (
+        [
+          enabledMetrics.cancellations ? HEATMAP_METRIC_LABELS.cancellations : null,
+          enabledMetrics.delays ? HEATMAP_METRIC_LABELS.delays : null,
+        ] as const
+      ).filter((metric): metric is string => metric !== null),
+    [enabledMetrics.cancellations, enabledMetrics.delays]
+  )
+
+  const isTransportFiltered = useMemo(
+    () =>
+      selectedTransportModes.length > 0 && selectedTransportModes.length < TRANSPORT_MODES.length,
+    [selectedTransportModes.length]
+  )
+
+  const activeTransportLabels = useMemo(
+    () =>
+      TRANSPORT_MODES.filter(mode => selectedTransportSet.has(mode.value)).map(mode => mode.label),
+    [selectedTransportSet]
+  )
+
+  const activeFilterChips = useMemo(
+    () => [
+      `Time: ${TIME_RANGE_LABELS[timeRange]}`,
+      `Metrics: ${activeMetricLabels.length > 0 ? activeMetricLabels.join(' + ') : 'None'}`,
+      isTransportFiltered
+        ? `Transport: ${activeTransportLabels.join(', ')}`
+        : 'Transport: All types',
+      ...(timeRange === 'live' ? [`Refresh: ${autoRefresh ? 'Auto' : 'Paused'}`] : []),
+    ],
+    [timeRange, activeMetricLabels, isTransportFiltered, activeTransportLabels, autoRefresh]
+  )
+
+  const snapshotUpdatedLabel = useMemo(() => {
+    if (timeRange !== 'live' || !snapshotUpdatedAt) {
+      return null
     }
-    onEnabledMetricsChange(newEnabled)
-  }
-
-  const activeMetricLabels = (
-    [
-      enabledMetrics.cancellations ? HEATMAP_METRIC_LABELS.cancellations : null,
-      enabledMetrics.delays ? HEATMAP_METRIC_LABELS.delays : null,
-    ] as const
-  ).filter((metric): metric is string => metric !== null)
-
-  const isTransportFiltered =
-    selectedTransportModes.length > 0 && selectedTransportModes.length < TRANSPORT_MODES.length
-  const activeTransportLabels = TRANSPORT_MODES.filter(mode =>
-    selectedTransportModes.includes(mode.value)
-  ).map(mode => mode.label)
-
-  const activeFilterChips = [
-    `Time: ${TIME_RANGE_LABELS[timeRange]}`,
-    `Metrics: ${activeMetricLabels.length > 0 ? activeMetricLabels.join(' + ') : 'None'}`,
-    isTransportFiltered ? `Transport: ${activeTransportLabels.join(', ')}` : 'Transport: All types',
-    ...(timeRange === 'live' ? [`Refresh: ${autoRefresh ? 'Auto' : 'Paused'}`] : []),
-  ]
+    return formatLastUpdated(snapshotUpdatedAt)
+  }, [timeRange, snapshotUpdatedAt, formatLastUpdated])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -135,10 +171,10 @@ export function HeatmapControls({
           </Tooltip>
         </div>
 
-        {timeRange === 'live' && snapshotUpdatedAt && (
+        {snapshotUpdatedLabel && (
           <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-small text-muted-foreground">
             <Clock3 className="h-3.5 w-3.5" />
-            Snapshot updated {formatLastUpdated(snapshotUpdatedAt)}
+            Snapshot updated {snapshotUpdatedLabel}
             {autoRefresh && ' • Auto-refresh on'}
           </div>
         )}
@@ -265,7 +301,7 @@ export function HeatmapControls({
           <div className="flex flex-wrap gap-2">
             {TRANSPORT_MODES.map(mode => {
               const isSelected =
-                selectedTransportModes.length === 0 || selectedTransportModes.includes(mode.value)
+                selectedTransportModes.length === 0 || selectedTransportSet.has(mode.value)
               return (
                 <Tooltip key={mode.value}>
                   <TooltipTrigger asChild>
@@ -295,4 +331,4 @@ export function HeatmapControls({
       </div>
     </TooltipProvider>
   )
-}
+})

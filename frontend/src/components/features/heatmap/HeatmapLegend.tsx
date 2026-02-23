@@ -3,7 +3,7 @@
  * Displays color intensity legend for cancellation/delay impact.
  */
 
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { HeatmapEnabledMetrics } from '../../../types/heatmap'
 import { DARK_HEATMAP_CONFIG, LIGHT_HEATMAP_CONFIG } from '../../../types/heatmap'
 import { useTheme } from '../../../contexts/ThemeContext'
@@ -19,21 +19,36 @@ interface LegendItem {
   value: string
 }
 
-export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendProps) {
+export const HeatmapLegend = memo(function HeatmapLegend({
+  className = '',
+  enabledMetrics,
+}: HeatmapLegendProps) {
   const { resolvedTheme } = useTheme()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
 
-  const config = resolvedTheme === 'dark' ? DARK_HEATMAP_CONFIG : LIGHT_HEATMAP_CONFIG
-  const stops = Object.entries(config.gradient)
-    .map(([k, v]) => [Number(k), v] as const)
-    .filter(([k]) => !Number.isNaN(k))
-    .sort((a, b) => a[0] - b[0])
+  const config = useMemo(
+    () => (resolvedTheme === 'dark' ? DARK_HEATMAP_CONFIG : LIGHT_HEATMAP_CONFIG),
+    [resolvedTheme]
+  )
 
-  const gradientCss = `linear-gradient(to right, ${stops
-    .map(([k, v]) => `${v} ${Math.round(k * 100)}%`)
-    .join(', ')})`
+  const stops = useMemo(
+    () =>
+      Object.entries(config.gradient)
+        .map(([k, v]) => [Number(k), v] as const)
+        .filter(([k]) => !Number.isNaN(k))
+        .sort((a, b) => a[0] - b[0]),
+    [config.gradient]
+  )
 
-  const getLegendItems = (): LegendItem[] => {
+  const gradientCss = useMemo(
+    () =>
+      `linear-gradient(to right, ${stops
+        .map(([k, v]) => `${v} ${Math.round(k * 100)}%`)
+        .join(', ')})`,
+    [stops]
+  )
+
+  const legendItems = useMemo<LegendItem[]>(() => {
     const swatches =
       resolvedTheme === 'dark'
         ? ['#2dd4bf', '#0ea5e9', '#f59e0b', '#ef4444']
@@ -61,11 +76,9 @@ export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendP
       { color: swatches[2], label: 'High', value: '5-10%' },
       { color: swatches[3], label: 'Severe', value: '>10%' },
     ]
-  }
+  }, [resolvedTheme, enabledMetrics.cancellations, enabledMetrics.delays])
 
-  const legendItems = getLegendItems()
-
-  const getTitle = () => {
+  const title = useMemo(() => {
     if (enabledMetrics.cancellations && enabledMetrics.delays) {
       return 'Combined Intensity'
     }
@@ -73,11 +86,11 @@ export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendP
       return 'Delay Intensity'
     }
     return 'Cancellation Intensity'
-  }
+  }, [enabledMetrics.cancellations, enabledMetrics.delays])
 
   return (
     <div className={`rounded-md border border-border bg-card p-4 ${className}`}>
-      <h3 className="mb-3 text-h3 text-foreground">{getTitle()}</h3>
+      <h3 className="mb-3 text-h3 text-foreground">{title}</h3>
 
       <div className="relative mb-2">
         <div className="h-4 w-full rounded-sm shadow-inner" style={{ background: gradientCss }} />
@@ -118,4 +131,4 @@ export function HeatmapLegend({ className = '', enabledMetrics }: HeatmapLegendP
       </div>
     </div>
   )
-}
+})
