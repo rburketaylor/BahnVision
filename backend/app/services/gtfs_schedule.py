@@ -20,23 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScheduledDeparture:
-    """Represents a scheduled departure from a stop with concrete datetimes.
-
-    Optimization: Uses __slots__ to reduce memory overhead for high-frequency objects.
-    """
-
-    __slots__ = (
-        "departure_time",
-        "trip_headsign",
-        "route_short_name",
-        "route_long_name",
-        "route_type",
-        "route_color",
-        "stop_name",
-        "trip_id",
-        "route_id",
-        "arrival_time",
-    )
+    """Represents a scheduled departure from a stop with concrete datetimes."""
 
     def __init__(
         self,
