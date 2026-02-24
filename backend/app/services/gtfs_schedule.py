@@ -75,19 +75,11 @@ def _get_weekday_column(calendar: Any, weekday: str):
     This returns the SQLAlchemy column object, not a string,
     allowing safe use in query construction without string interpolation.
     """
-    weekday_attrs = {
-        "monday": calendar.monday,
-        "tuesday": calendar.tuesday,
-        "wednesday": calendar.wednesday,
-        "thursday": calendar.thursday,
-        "friday": calendar.friday,
-        "saturday": calendar.saturday,
-        "sunday": calendar.sunday,
-    }
-    column = weekday_attrs.get(weekday)
-    if column is None:
+    # Optimization: Use getattr directly instead of creating a dictionary
+    try:
+        return getattr(calendar, weekday)
+    except AttributeError:
         raise ValueError(f"Invalid weekday: {weekday}")
-    return column
 
 
 class GTFSScheduleService:
