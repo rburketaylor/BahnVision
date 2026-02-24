@@ -65,8 +65,7 @@ class ScheduleRelationship(Enum):
     CANCELED = "CANCELED"
 
 
-# Optimization: Use slots=True to reduce memory usage as many instances are created
-@dataclass(slots=True)
+@dataclass
 class DepartureInfo:
     """Combined departure information with real-time updates"""
 
@@ -203,8 +202,7 @@ class DepartureInfo:
         return DepartureInfo(**data)
 
 
-# Optimization: Use slots=True to reduce memory usage as many instances are created
-@dataclass(slots=True)
+@dataclass
 class RouteInfo:
     """Route information with real-time status"""
 
@@ -258,8 +256,7 @@ class RouteInfo:
         return RouteInfo(**data)
 
 
-# Optimization: Use slots=True to reduce memory usage as many instances are created
-@dataclass(slots=True)
+@dataclass
 class StopInfo:
     """Stop information with real-time status"""
 
