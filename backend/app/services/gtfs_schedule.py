@@ -1,7 +1,6 @@
 import logging
 import math
 from datetime import datetime, time, timedelta, timezone, date
-from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from sqlalchemy import select, or_
@@ -20,25 +19,32 @@ from app.models.gtfs import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
 class ScheduledDeparture:
     """Represents a scheduled departure from a stop with concrete datetimes."""
 
-    departure_time: datetime
-    trip_headsign: str
-    route_short_name: str
-    route_long_name: str
-    route_type: int
-    route_color: Optional[str]
-    stop_name: str
-    trip_id: str
-    route_id: str
-    arrival_time: Optional[datetime] = None
-
-    def __post_init__(self):
-        # Handle default behavior from original __init__
-        if self.arrival_time is None:
-            self.arrival_time = self.departure_time
+    def __init__(
+        self,
+        departure_time: datetime,
+        trip_headsign: str,
+        route_short_name: str,
+        route_long_name: str,
+        route_type: int,
+        route_color: Optional[str],
+        stop_name: str,
+        trip_id: str,
+        route_id: str,
+        arrival_time: Optional[datetime] = None,
+    ):
+        self.departure_time = departure_time
+        self.trip_headsign = trip_headsign
+        self.route_short_name = route_short_name
+        self.route_long_name = route_long_name
+        self.route_type = route_type
+        self.route_color = route_color
+        self.stop_name = stop_name
+        self.trip_id = trip_id
+        self.route_id = route_id
+        self.arrival_time = arrival_time or departure_time
 
     @classmethod
     def from_row(cls, row) -> "ScheduledDeparture":
