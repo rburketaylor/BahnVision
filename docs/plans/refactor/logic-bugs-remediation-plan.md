@@ -1,311 +1,265 @@
-# Logic Bugs Remediation Plan (Execution + Subagent Ownership)
+# Logic Bugs Remediation Plan (Deferred Backlog + Handoff Contract)
 
-**Date:** 2026-02-16  
-**Source:** `docs/plans/logic-bugs-analysis.md`  
-**Goal:** Implement (or explicitly defer with rationale) every item listed in the analysis, with regression tests and any necessary docs/API/client updates.
-
----
-
-## Verification Status (2026-02-17)
-
-- [x] Phase 0 tracker + decision log exists in `docs/plans/logic-bugs-analysis.md`.
-- [x] Phases 1-4 item outcomes are recorded as `Done` or `Deferred` in `docs/plans/logic-bugs-analysis.md`.
-- [x] Phase 5 type/LSP triage outcomes are recorded (`T1`-`T4`).
-- [ ] Phase 6 full-regression revalidation is only partially verified in this pass.
-- [x] Frontend regression gate passed in this verification run: `cd frontend && npm run test -- --run` (234 passed).
-- [x] Targeted backend regression suites passed in this verification run: `pytest backend/tests/api/v1/shared/test_rate_limit.py backend/tests/services/test_gtfs_realtime_harvester.py -q` (36 passed).
-- [ ] Full backend gate `pytest backend/tests -m "not integration"` was started but did not return a completion result in this verification run.
+**Date:** 2026-02-25  
+**Source:** `docs/plans/refactor/logic-bugs-analysis.md`  
+**Primary goal:** Resolve remaining deferred logic-bug findings (implement or explicitly defer with strong rationale), then hand implementation back for review.
 
 ---
 
-## Coordination Rules (Avoiding Conflicts)
+## Read First
 
-1. **Single owner per file.** Only the assigned subagent edits an owned file.
-2. **Cross-cutting changes are coordinated.** If an item requires changes across owned files, owners coordinate via the integrator and sequence changes to avoid merge churn.
-3. **Docs tracker is integrator-owned.** Only the integrator updates status tracking in the analysis doc (or a follow-up tracker section).
+This plan supersedes the older phase-based execution sequence that assumed many critical/high items were still open.
 
----
+Current reality:
 
-## Subagents and Owned Files
+- Most critical/high findings are already closed.
+- Remaining work is mostly deferred low/medium items plus typing triage.
+- Current environment may block frontend and mypy verification unless dependencies are restored.
 
-Each file below has exactly one owner subagent. Other subagents may read these files but treat them as read-only.
-
-### Integrator (coordination + final validation)
-
-**Owns**
-
-- `docs/plans/logic-bugs-analysis.md`
-- `docs/plans/logic-bugs-remediation-plan.md`
-
-**Responsibilities**
-
-- Convert analysis items into a tracked checklist (Done/Deferred + rationale).
-- Maintain a “decision log” for items marked as _Suggestion/Trade-off_.
-- Resolve cross-agent sequencing and integration issues.
-- Run final regression/test pass and ensure “Definition of Done” is met.
+Do not reopen already-completed items unless a regression is proven by test failure or reproducible behavior.
 
 ---
 
-### Subagent A — Backend Cache + Heatmap Endpoints (shared semantics)
+## Current Baseline (Verified 2026-02-25)
 
-**Owns**
-
-- `backend/app/services/cache.py`
-- `backend/app/api/v1/endpoints/heatmap.py`
-
-**Primary items (from analysis)**
-
-- Critical: #1, #5
-- High: #13
-- Medium: #22, #26, #34, #35
-
-**Why grouped**
-
-- Cache single-flight behavior and heatmap endpoints interact directly (locking, cache headers, and error handling).
+- Numbered findings: `35 Done / 8 Deferred`
+- Type triage findings: `1 Done / 3 Deferred`
+- Backend regression (`pytest backend/tests -m "not integration"`): PASS
+- Frontend tests (`npm run test -- --run`): blocked in this environment (invalid/incomplete local Vitest install)
+- Backend mypy gate: blocked in this environment (`mypy` not installed in active venv)
 
 ---
 
-### Subagent B — Backend GTFS Realtime/Harvester + Import Lock
+## Preflight Checklist (Required Before Any Code Changes)
 
-**Owns**
+1. Activate environment
+   - `source .dev-env`
+2. Confirm clean baseline branch
+   - `git status --short`
+3. Verify backend baseline still passes
+   - `pytest backend/tests -m "not integration"`
+4. Verify frontend tooling integrity
+   - `cd frontend && npm ls vitest --depth=0`
+   - If invalid/missing, run dependency restore in a network-enabled environment before continuing.
+5. Verify mypy availability for T-items
+   - `python3 -m mypy --version`
 
-- `backend/app/services/gtfs_realtime_harvester.py`
-- `backend/app/services/gtfs_realtime.py`
-- `backend/app/services/gtfs_import_lock.py`
-
-**Primary items (from analysis)**
-
-- Critical: #2, #3
-- High: #8
-- Medium: #23, #24, #25, #29
-
-**Why grouped**
-
-- Concurrency/locking and realtime harvesting semantics are tightly coupled and easier to validate together.
+If steps 4 or 5 fail, continue only with tasks that do not require those gates, and document the exact blocker in handoff.
 
 ---
 
-### Subagent C — Backend Persistence + Models (DB/schema correctness)
+## Ownership and Scope Rules
 
-**Owns**
-
-- `backend/app/persistence/repositories.py`
-- `backend/app/models/gtfs.py`
-- `backend/app/models/transit.py`
-- `backend/alembic/` (migrations)
-- `backend/alembic.ini`
-
-**Primary items (from analysis)**
-
-- Critical: #4
-- Medium: #30, #32, #33
-
-**Notes**
-
-- Any schema-affecting changes must include an Alembic migration and be called out explicitly.
+- Modify only files required for the targeted finding IDs.
+- Keep changes atomic by finding ID where feasible.
+- Add/adjust tests in the same PR/commit group as the logic change.
+- Update `docs/plans/refactor/logic-bugs-analysis.md` tracker status and notes for every touched finding ID.
 
 ---
 
-### Subagent D — Backend Jobs + Aggregation/Service Logic
+## Work Packages
 
-**Owns**
+### WP1: #18 Stable departure row keys (Low)
 
-- `backend/app/jobs/gtfs_scheduler.py`
-- `backend/app/jobs/rt_processor.py`
-- `backend/app/jobs/heatmap_cache_warmup.py`
-- `backend/app/services/daily_aggregation_service.py`
-- `backend/app/services/gtfs_feed.py`
-- `backend/app/services/heatmap_service.py`
-- `backend/app/services/gtfs_schedule.py`
-- `backend/app/services/station_stats_service.py`
-- `backend/app/services/transit_data.py`
+**Goal**
 
-**Primary items (from analysis)**
+Remove avoidable row remount risk in departures rendering by stabilizing row keys across real-time timestamp changes.
 
-- High: #6, #9, #10
-- Medium: #20, #21, #27, #28
-- Low (only if encountered in owned files): #51, #52
+**Files**
 
-**Why grouped**
+- `frontend/src/components/features/station/DeparturesBoard.tsx`
+- `frontend/src/tests/unit/DeparturesBoard.test.tsx`
 
-- Operational loops, backoff behavior, and aggregation correctness are best validated in one cohesive workstream.
+**Implementation guidance**
 
----
+1. Replace key derivation so it does not depend on mutable `realtime_departure`.
+2. Keep key uniqueness deterministic for duplicate departures (same trip/stop/route edge cases).
+3. Prefer stable domain identifiers first (`trip_id`, `stop_id`, `route_id`, scheduled/departure sequence signal).
 
-### Subagent E — Frontend Hooks + Services
+**Acceptance criteria**
 
-**Owns**
-
-- `frontend/src/services/endpoints/transitApi.ts`
-- `frontend/src/services/httpClient.ts`
-- `frontend/src/hooks/useAutoRefresh.ts`
-- Any frontend component files _only if_ they are changed to address the owned items (avoid incidental refactors).
-
-**Primary items (from analysis)**
-
-- Medium: #16, #38, #39, #40
-- High: #19
-- Low: #18, #54, #55, #56, #64
-
-**Notes**
-
-- “Suggestion” items should be either implemented (low risk) or explicitly deferred with rationale.
+- No reliance on mutable realtime timestamps in list key generation.
+- Existing sort/render behavior remains unchanged.
+- Updated tests cover key stability behavior.
 
 ---
 
-### Optional Subagent F — Transit API Endpoints (recommended if we want strict ownership)
+### WP2: #40 Normalize heatmap query keys (Medium, suggestion)
 
-**Owns**
+**Goal**
+
+Use canonical query-key construction in `useHeatmap` to reduce ambiguity and future cache-key drift.
+
+**Files**
+
+- `frontend/src/hooks/useHeatmap.ts`
+- `frontend/src/tests/unit/useHeatmap.test.tsx`
+
+**Implementation guidance**
+
+1. Introduce a tiny key-normalization helper local to the hook (or shared helper if already present).
+2. Normalize only what matters:
+   - omit `undefined` fields,
+   - normalize array order where semantically order-insensitive (e.g. transport modes),
+   - keep explicit primitives.
+3. Keep API call behavior unchanged (`apiClient.getHeatmapData(params)` remains semantically identical).
+4. Update tests that currently assert raw object identity in query keys.
+
+**Acceptance criteria**
+
+- Equivalent params produce equivalent query keys.
+- Existing query behavior and refresh intervals remain unchanged.
+- Tests validate canonicalized key shape.
+
+---
+
+### WP3: #49 Standardize readiness error shape (Low)
+
+**Goal**
+
+Make `/ready` response schema consistent enough for strict clients.
+
+**Files**
 
 - `backend/app/api/v1/endpoints/health.py`
-- `backend/app/api/v1/endpoints/transit/departures.py`
-- `backend/app/api/v1/endpoints/transit/stops.py`
+- `backend/tests/api/v1/test_health.py`
+- Optional docs if API contract text exists under `backend/docs/`.
 
-**Primary items (from analysis)**
+**Implementation guidance**
 
-- High: #15
-- Low: #46, #47, #49
-- Low: #48
+1. Choose one stable contract and apply consistently:
+   - either always include `errors` (empty `{}` on success), or
+   - document explicit `errors` optionality and enforce via schema/docs.
+2. Prefer minimal contract expansion over breaking changes.
+3. Ensure status codes and existing readiness semantics stay unchanged.
 
-**Alternative**
+**Acceptance criteria**
 
-- If fewer subagents are preferred, assign this file to Subagent A (endpoints-focused) and keep Subagent C limited to persistence/models/migrations.
-
----
-
-## Execution Phases (Sequenced to Reduce Risk)
-
-### Phase 0 — Tracker setup (Integrator)
-
-**Outcomes**
-
-- Add a simple status tracker for every numbered item in `docs/plans/logic-bugs-analysis.md`: `Todo / In progress / Done / Deferred`.
-- Create a small decision log for “Suggestion/Trade-off” items.
+- Success and failure payloads follow documented schema rules.
+- Health endpoint tests cover both success and failure shapes explicitly.
 
 ---
 
-### Phase 1 — Critical fixes first (A, B, C)
+### WP4: #64 Canonical heatmap component path strategy (Low)
 
-**Subagent A**
+**Goal**
 
-- Fix cache single-flight lock behavior under Valkey failures (#1) and lock release correctness (#26).
-- Add single-flight locking to `/overview` endpoint (#5).
-- Fix heatmap exception handling so HTTP exceptions aren’t masked (#13).
+Resolve long-term duplicate path ambiguity between:
 
-**Subagent B**
+- `frontend/src/components/heatmap/*` (legacy compatibility layer)
+- `frontend/src/components/features/heatmap/*` (canonical implementation)
 
-- Address TOCTOU import-lock race (#2).
-- Replace `threading.Lock` usage in async context with `asyncio.Lock` and adjust call sites (#3).
+**Files**
 
-**Subagent C**
+- `frontend/src/components/heatmap/*`
+- `frontend/src/components/features/heatmap/*`
+- Any imports touched during migration
 
-- Remove internal commits from repository methods and update callers so transactions compose properly (#4).
+**Implementation options**
 
-**Acceptance gate**
+1. **Recommended now:** Keep compatibility shims but enforce canonical imports for new/edited code.
+2. **Optional full cleanup:** Migrate all imports to canonical path and remove legacy layer in one coordinated pass.
 
-- Backend unit tests pass: `pytest backend/tests -m "not integration"`.
+**Acceptance criteria**
 
----
-
-### Phase 2 — High severity (D, E, A, B)
-
-**Subagent D**
-
-- Guard against 0/negative timeout tight-loop CPU spinning (#9).
-- Add backoff on unexpected processing errors to reduce hammering (#28).
-- Fix warmup task creation race / reentrancy (#10).
-
-**Subagent B**
-
-- Fix negative delay classification (early arrivals) (#8).
-
-**Subagent A**
-
-- Address heatmap cache write failure reporting semantics (#34) and service initialization patterns (#35), if still relevant after Phase 1 refactors.
-
-**Subagent E**
-
-- Replace raw `fetch()` in `getMetrics()` with centralized `httpClient` (#19).
-- Decide and implement a reentrancy guard in `useAutoRefresh` if overlap can occur (#16).
-
-**Acceptance gates**
-
-- Frontend tests pass: `cd frontend && npm run test -- --run`.
-- Backend job-loop tests cover timeout/backoff paths where feasible.
+- A documented path policy exists in code comments or contributing docs.
+- If full cleanup is attempted, no stale imports remain.
 
 ---
 
-### Phase 3 — Medium severity + schema correctness (D, B, C, A, E)
+### WP5: T1/T3/T4 Typing triage closure pass
 
-**Subagent D**
+**Goal**
 
-- Fix daily summary threshold logic to avoid `.days` truncation (#20).
-- Align route type filtering logic between hourly/daily paths (#21).
-- Make daily aggregation atomic (avoid delete-then-insert data loss) (#27).
+Determine whether remaining type findings are real runtime risks or static-analysis artifacts; close findings accordingly.
 
-**Subagent A**
+**Files**
 
-- Reduce overhead from cache cleanup frequency (#22).
+- `backend/app/jobs/gtfs_scheduler.py` (T1)
+- `backend/app/services/gtfs_realtime_harvester.py` (T3)
+- `backend/app/services/transit_data.py` (T4)
+- related tests as needed
 
-**Subagent B**
+**Implementation guidance**
 
-- Align Lua TTL fallback literal with effective TTL source-of-truth (#23).
-- Increase hash length / reduce collision risk (#24).
-- Fix cancelled aggregation semantics to allow “uncancel” when appropriate (#25).
-- Reduce repeated file open/lock checks in import-lock status (#29).
+1. Run mypy in a fully provisioned environment.
+2. For each finding, classify:
+   - `Runtime-affecting` -> fix code and add regression test.
+   - `Typing artifact` -> add narrowly-scoped type annotations/casts/comments (avoid behavior changes).
+3. Avoid broad refactors in this pass.
 
-**Subagent C**
+**Acceptance criteria**
 
-- Add missing FK constraint for `parent_station` with Alembic migration (#30).
-- Review conflict handling that may hide data issues (#32).
-- Add GTFS-spec constraints to Pydantic models where appropriate (#33).
-
-**Subagent E**
-
-- Improve `httpClient` diagnostics (capture raw text on JSON parse failure; preserve cause) (#38).
-- Confirm/adjust retry policy for status code 0 behavior (#39).
-- Normalize query keys where it meaningfully reduces surprises (#40).
-
-**Acceptance gates**
-
-- Backend typecheck (if used in CI) stays clean: `mypy --config-file backend/mypy.ini backend/app`.
-- Frontend lint + typecheck pass: `cd frontend && npm run lint` and `cd frontend && npm run type-check`.
+- Each T-item marked Done or Deferred with concrete evidence.
+- If deferred, include explicit revisit trigger.
 
 ---
 
-### Phase 4 — Low severity + explicit “Suggestion” decisions (Integrator + relevant owners)
+### WP6: Decision-only items (#53, #54, #55, #56)
 
-**Outcomes**
+**Goal**
 
-- For each remaining low severity and “Suggestion” item: implement if low risk; otherwise mark Deferred with a concrete revisit criterion.
+Close decision debt with explicit criteria (implement now vs defer intentionally).
 
----
+**Default recommendation**
 
-### Phase 5 — Type/LSP issues validation (Integrator + owners)
+- Keep deferred unless there is a direct product/perf/accessibility requirement in scope.
 
-**Outcomes**
+**Required output**
 
-- Re-run real project checks (mypy/TS) and only fix issues that are confirmed runtime-affecting (not ORM typing artifacts).
-- Document any confirmed-artifact findings in the tracker to prevent repeated churn.
-
----
-
-### Phase 6 — Final regression + optional stress testing (Integrator)
-
-**Minimum checks**
-
-- `pytest backend/tests`
-- `cd frontend && npm run test -- --run`
-
-**Optional (time/environment permitting)**
-
-- `cd frontend && npm run test:e2e`
-- Add/extend concurrency tests for cache single-flight behavior and Valkey-down scenarios.
+- For each ID, record one of:
+  - `Done` with concrete change and tests, or
+  - `Deferred` with explicit reopen trigger and owner.
 
 ---
 
-## Definition of Done
+## Regression and Validation Gates
 
-- Every numbered item in `docs/plans/logic-bugs-analysis.md` is marked **Done** or **Deferred** with a short rationale and a clear revisit criterion for deferrals.
-- Each **Done** item has a regression test (or a documented reason why a test is impractical).
-- Backend + frontend tests/type/lint commands pass per repository guidelines.
+Run what the environment allows; document blockers precisely.
+
+### Required backend gates
+
+1. `pytest backend/tests -m "not integration"`
+2. If backend files changed significantly: `pytest backend/tests`
+
+### Required frontend gates (if tooling available)
+
+1. `cd frontend && npm run test -- --run`
+2. `cd frontend && npm run lint`
+3. `cd frontend && npm run type-check`
+
+### Optional but recommended
+
+1. `cd frontend && npm run test:e2e`
+2. `pre-commit run --all-files`
+
+---
+
+## Required Handoff Package (Strict)
+
+When implementation is complete, provide all of the following:
+
+1. **Finding status matrix**
+   - One line per targeted ID: `ID | Status | What changed | Why`
+2. **File change inventory**
+   - Exact paths changed, grouped by finding ID.
+3. **Test evidence**
+   - Commands run and pass/fail summary numbers.
+   - Explicitly list blocked commands and root cause.
+4. **Risk notes**
+   - Any behavior changes with user-visible impact.
+5. **Follow-up list**
+   - Remaining deferred items and concrete reopen triggers.
+
+If any finding remains ambiguous, do not claim completion; mark it deferred with clear rationale.
+
+---
+
+## Definition of Done for This Remediation Pass
+
+- Every currently deferred finding is either:
+  - implemented and tested (`Done`), or
+  - intentionally deferred with explicit reopen criteria.
+- Analysis tracker is updated in `docs/plans/refactor/logic-bugs-analysis.md`.
+- Validation evidence is attached in handoff notes.
+- No unrelated refactors are bundled into this pass.
