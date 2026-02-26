@@ -43,7 +43,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass
 class TripUpdate:
     """Processed trip update data"""
 
@@ -74,7 +74,7 @@ class TripUpdate:
         }
 
 
-@dataclass(slots=True)
+@dataclass
 class VehiclePosition:
     """Processed vehicle position data"""
 
@@ -105,7 +105,7 @@ class VehiclePosition:
         }
 
 
-@dataclass(slots=True)
+@dataclass
 class ServiceAlert:
     """Processed service alert data"""
 
