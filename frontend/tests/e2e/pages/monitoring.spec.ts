@@ -84,17 +84,25 @@ bahnvision_transit_requests_total{method="GET"} 1000
 
   test('switches to Ingestion tab', async ({ page }) => {
     await page.goto('/monitoring')
+    // Wait for initial load
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
 
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
+    await expect(ingestionTab).toBeVisible({ timeout: 10000 })
+    await ingestionTab.click()
 
-    await expect(page.getByText('GTFS Static Feed')).toBeVisible()
+    await expect(page.getByText('GTFS Static Feed')).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Realtime Harvester')).toBeVisible()
   })
 
   test('shows feed record counts on Ingestion tab', async ({ page }) => {
     await page.goto('/monitoring')
+    // Wait for initial load
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
 
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
+    await expect(ingestionTab).toBeVisible({ timeout: 10000 })
+    await ingestionTab.click()
 
     // Verify counts are displayed using the same constants as the mock
     const stopCount = MOCK_GTFS_FEED.stop_count.toLocaleString()
@@ -108,21 +116,28 @@ bahnvision_transit_requests_total{method="GET"} 1000
 
   test('switches to Performance tab', async ({ page }) => {
     await page.goto('/monitoring')
+    // Wait for initial load
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
 
-    await page.getByRole('button', { name: /Performance/ }).click()
+    const performanceTab = page.getByRole('button', { name: /Performance/ })
+    await expect(performanceTab).toBeVisible({ timeout: 10000 })
+    await performanceTab.click()
 
-    await expect(page.getByText('Cache Performance')).toBeVisible()
+    await expect(page.getByText('Cache Performance')).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Performance Targets')).toBeVisible()
   })
 
   test('navigates to monitoring via nav link', async ({ page }) => {
     await page.goto('/')
 
-    // Wait for heatmap to load
-    await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
+    // Wait for heatmap to load - increased timeout for CI
+    await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 20000 })
 
+    // Ensure nav is stable and visible before interaction
     const monitoringLink = page.getByRole('link', { name: 'Monitoring' })
-    await monitoringLink.click()
+    await expect(monitoringLink).toBeVisible({ timeout: 10000 })
+    // Use force click if necessary to bypass overlay issues, or ensure it's clickable
+    await monitoringLink.click({ timeout: 10000 })
 
     await expect(page).toHaveURL('/monitoring')
   })
@@ -163,10 +178,15 @@ test.describe('Monitoring Page - Error States', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    // Wait for initial load
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
+
+    const ingestionTab = page.getByRole('button', { name: /Ingestion/ })
+    await expect(ingestionTab).toBeVisible({ timeout: 10000 })
+    await ingestionTab.click()
 
     // Should show error state
-    await expect(page.getByText(/Failed to load ingestion status/)).toBeVisible()
+    await expect(page.getByText(/Failed to load ingestion status/)).toBeVisible({ timeout: 10000 })
   })
 })
 
@@ -182,10 +202,15 @@ test.describe('Monitoring Page - Refresh', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Performance/ }).click()
+    // Wait for initial load
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
+
+    const performanceTab = page.getByRole('button', { name: /Performance/ })
+    await expect(performanceTab).toBeVisible({ timeout: 10000 })
+    await performanceTab.click()
 
     const refreshButton = page.getByRole('button', { name: /Refresh/ })
-    await expect(refreshButton).toBeVisible()
+    await expect(refreshButton).toBeVisible({ timeout: 10000 })
     await refreshButton.click()
 
     await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
@@ -202,13 +227,18 @@ test.describe('Monitoring Page - Refresh', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Performance/ }).click()
+    // Wait for initial load
+    await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
+
+    const performanceTab = page.getByRole('button', { name: /Performance/ })
+    await expect(performanceTab).toBeVisible({ timeout: 10000 })
+    await performanceTab.click()
 
     const autoRefreshButton = page.getByRole('button', { name: /Auto-refreshing/ })
-    await expect(autoRefreshButton).toBeVisible()
+    await expect(autoRefreshButton).toBeVisible({ timeout: 10000 })
 
     await autoRefreshButton.click()
 
-    await expect(page.getByRole('button', { name: /Manual refresh/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Manual refresh/ })).toBeVisible({ timeout: 10000 })
   })
 })

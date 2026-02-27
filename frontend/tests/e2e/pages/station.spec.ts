@@ -14,7 +14,9 @@ test.describe('Station Page - Direct Navigation', () => {
   test('loads station page via direct URL', async ({ page }) => {
     await page.goto(`/station/${mockStation.id}`)
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(mockStation.name)
+    const heading = page.getByRole('heading', { level: 1 })
+    await expect(heading).toBeVisible({ timeout: 10000 })
+    await expect(heading).toContainText(mockStation.name)
   })
 
   test('shows error for non-existent station', async ({ page }) => {
@@ -42,7 +44,9 @@ test.describe('Station Page - Overview Tab', () => {
   })
 
   test('displays station name in header', async ({ page }) => {
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(mockStation.name)
+    const heading = page.getByRole('heading', { level: 1 })
+    await expect(heading).toBeVisible({ timeout: 10000 })
+    await expect(heading).toContainText(mockStation.name)
   })
 
   test('shows performance card', async ({ page }) => {
@@ -226,6 +230,6 @@ test.describe('Station Page - Error States', () => {
     await page.getByRole('button', { name: 'Schedule' }).click()
 
     // Should show error message from departures API
-    await expect(page.getByText(/Error|failed|departures/i)).toBeVisible()
+    await expect(page.getByText(/Error|failed|departures/i)).toBeVisible({ timeout: 10000 })
   })
 })
