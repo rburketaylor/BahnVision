@@ -14,7 +14,9 @@ test.describe('Station Page - Direct Navigation', () => {
   test('loads station page via direct URL', async ({ page }) => {
     await page.goto(`/station/${mockStation.id}`)
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(mockStation.name)
+    await expect(page.getByRole('heading', { level: 3, name: mockStation.name })).toContainText(
+      mockStation.name
+    )
   })
 
   test('shows error for non-existent station', async ({ page }) => {
@@ -42,7 +44,9 @@ test.describe('Station Page - Overview Tab', () => {
   })
 
   test('displays station name in header', async ({ page }) => {
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(mockStation.name)
+    await expect(page.getByRole('heading', { level: 3, name: mockStation.name })).toContainText(
+      mockStation.name
+    )
   })
 
   test('shows performance card', async ({ page }) => {
@@ -205,7 +209,9 @@ test.describe('Station Page - Error States', () => {
 
     // Should show error state or station name still loads from other data
     await expect(
-      page.getByText(/error|failed|couldn't load/i).or(page.getByRole('heading', { level: 1 }))
+      page
+        .getByText(/error|failed|couldn't load/i)
+        .or(page.getByRole('heading', { level: 3, name: mockStation.name }))
     ).toBeVisible()
   })
 
