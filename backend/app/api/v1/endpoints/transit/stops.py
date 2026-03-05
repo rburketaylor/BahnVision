@@ -63,7 +63,8 @@ StopIdPathParam = Annotated[
 ]
 
 
-@dataclass
+# Optimization: Using slots=True eliminates __dict__ overhead for lower memory usage with frequently created instances
+@dataclass(slots=True)
 class _StopLikeAdapter:
     stop_id: Any
     stop_name: Any
