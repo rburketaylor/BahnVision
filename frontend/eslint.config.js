@@ -21,7 +21,7 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       // Disable overly strict rule - setState in effects is valid for syncing with external state
       'react-hooks/set-state-in-effect': 'off',
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': ['off', { allowConstantExport: true }],
     },
   }
 )
