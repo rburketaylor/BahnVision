@@ -1,0 +1,3 @@
+## 2025-03-05 - Adding __slots__ to high-traffic dataclasses for memory optimization
+**Learning:** `__dict__` overhead in Python dataclasses can consume significant memory, especially for objects that are instantiated frequently in large numbers, such as `DepartureInfo`, `TripUpdate`, `VehiclePosition`, and `ServiceAlert` during transit data streaming. Using `slots=True` in `@dataclass` eliminates this overhead and provides substantial memory savings.
+**Action:** When defining dataclasses for high-traffic data objects or data streaming, default to using `@dataclass(slots=True)` to optimize memory usage and performance. Always document these optimizations with comments to explain the rationale.
