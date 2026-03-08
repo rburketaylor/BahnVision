@@ -65,7 +65,8 @@ class ScheduleRelationship(Enum):
     CANCELED = "CANCELED"
 
 
-@dataclass
+# Optimization: use slots=True to reduce memory overhead and eliminate __dict__ allocation
+@dataclass(slots=True)
 class DepartureInfo:
     """Combined departure information with real-time updates"""
 
@@ -202,7 +203,8 @@ class DepartureInfo:
         return DepartureInfo(**data)
 
 
-@dataclass
+# Optimization: use slots=True to reduce memory overhead and eliminate __dict__ allocation
+@dataclass(slots=True)
 class RouteInfo:
     """Route information with real-time status"""
 
@@ -256,7 +258,8 @@ class RouteInfo:
         return RouteInfo(**data)
 
 
-@dataclass
+# Optimization: use slots=True to reduce memory overhead and eliminate __dict__ allocation
+@dataclass(slots=True)
 class StopInfo:
     """Stop information with real-time status"""
 

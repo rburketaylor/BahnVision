@@ -265,7 +265,8 @@ def calculate_heatmap_summary(
     )
 
 
-@dataclass
+# Optimization: use slots=True to reduce memory overhead and eliminate __dict__ allocation
+@dataclass(slots=True)
 class StopInfo:
     """Simple stop info for heatmap generation."""
 
