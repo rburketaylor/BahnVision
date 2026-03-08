@@ -62,3 +62,7 @@ backend/coverage.xml
 
 # Git worktrees (isolated development workspaces)
 .worktrees/
+
+# Local-only docs (developer private notes)
+docs/local/*
+!docs/local/README.md
