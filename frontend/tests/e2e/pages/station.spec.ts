@@ -72,14 +72,14 @@ test.describe('Station Page - Tab Navigation', () => {
   })
 
   test('can switch to Trends tab', async ({ page }) => {
-    const trendsTab = page.getByRole('button', { name: 'Trends' })
+    const trendsTab = page.getByRole('tab', { name: 'Trends' })
     await trendsTab.click()
 
     await expect(page).toHaveURL(/tab=trends/)
   })
 
   test('can switch to Schedule tab', async ({ page }) => {
-    const scheduleTab = page.getByRole('button', { name: 'Schedule' })
+    const scheduleTab = page.getByRole('tab', { name: 'Schedule' })
     await scheduleTab.click()
 
     // Should show departures board
@@ -88,18 +88,18 @@ test.describe('Station Page - Tab Navigation', () => {
 
   test('can return to Overview tab', async ({ page }) => {
     // Go to Schedule first
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
     await expect(page).toHaveURL(/tab=schedule/)
 
     // Then back to Overview
-    await page.getByRole('button', { name: 'Overview' }).click()
+    await page.getByRole('tab', { name: 'Overview' }).click()
 
     // Should show overview content (Performance card is visible)
     await expect(page.getByText('Cancellation Rate')).toBeVisible()
   })
 
   test('preserves tab state in URL', async ({ page }) => {
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
 
     // URL should include tab parameter
     await expect(page).toHaveURL(/tab=schedule/)
@@ -110,7 +110,7 @@ test.describe('Station Page - Schedule Tab', () => {
   test.beforeEach(async ({ page }) => {
     await setupStationMocks(page)
     await page.goto(`/station/${mockStation.id}`)
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
   })
 
   test('displays departure list', async ({ page }) => {
@@ -141,7 +141,7 @@ test.describe('Station Page - Schedule Tab', () => {
     })
 
     await page.reload()
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
 
     await expect(page.getByText(/0 departures|no departures/i)).toBeVisible()
   })
@@ -160,7 +160,7 @@ test.describe('Station Page - Schedule Tab', () => {
     })
 
     await page.reload()
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
 
     // Should show 1 departure (the cancelled one)
     await expect(page.getByText(/1 departure/i)).toBeVisible()
@@ -172,7 +172,7 @@ test.describe('Station Page - Trends Tab', () => {
   test.beforeEach(async ({ page }) => {
     await setupStationMocks(page)
     await page.goto(`/station/${mockStation.id}`)
-    await page.getByRole('button', { name: 'Trends' }).click()
+    await page.getByRole('tab', { name: 'Trends' }).click()
   })
 
   test('navigates to trends tab', async ({ page }) => {
@@ -225,7 +225,7 @@ test.describe('Station Page - Error States', () => {
     })
 
     await page.goto(`/station/${mockStation.id}`)
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
 
     // Should show error message from departures API
     await expect(page.getByText(/Error|failed|departures/i)).toBeVisible()
