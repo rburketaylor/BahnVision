@@ -65,7 +65,9 @@ class ScheduleRelationship(Enum):
     CANCELED = "CANCELED"
 
 
-@dataclass
+# Optimization: Using slots=True eliminates instance __dict__ overhead,
+# saving ~280 bytes per object which is significant for large departure lists.
+@dataclass(slots=True)
 class DepartureInfo:
     """Combined departure information with real-time updates"""
 
@@ -202,7 +204,9 @@ class DepartureInfo:
         return DepartureInfo(**data)
 
 
-@dataclass
+# Optimization: Using slots=True eliminates instance __dict__ overhead,
+# reducing memory usage when caching multiple routes.
+@dataclass(slots=True)
 class RouteInfo:
     """Route information with real-time status"""
 
@@ -256,7 +260,9 @@ class RouteInfo:
         return RouteInfo(**data)
 
 
-@dataclass
+# Optimization: Using slots=True eliminates instance __dict__ overhead,
+# saving memory for stop lists.
+@dataclass(slots=True)
 class StopInfo:
     """Stop information with real-time status"""
 
