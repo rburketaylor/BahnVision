@@ -205,7 +205,9 @@ test.describe('Station Page - Error States', () => {
 
     // Should show error state or station name still loads from other data
     await expect(
-      page.getByText(/error|failed|couldn't load/i).or(page.getByRole('heading', { level: 3 }).first())
+      page
+        .getByText(/error|failed|couldn't load/i)
+        .or(page.getByRole('heading', { level: 3 }).first())
     ).toBeVisible()
   })
 
