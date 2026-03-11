@@ -5,8 +5,10 @@ from unittest.mock import Mock
 from unittest.mock import patch
 import pytest
 
-from app.services.cache import CircuitBreaker, TTLConfig
+from app.services.cache import CircuitBreaker, TTLConfig, _fast_encoder
 from app.core.config import Settings
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 class TestTTLConfig:
@@ -90,3 +92,38 @@ class TestCircuitBreaker:
         result = breaker.protect(failing)()
         assert result is None
         assert breaker.is_open()
+
+
+class TestFastEncoder:
+    """Tests for the _fast_encoder JSON fallback function."""
+
+    def test_fast_encoder_with_to_dict(self):
+        """Test that objects with a to_dict method use it."""
+
+        class MockObj:
+            def to_dict(self):
+                return {"mock": "data", "value": 42}
+
+        obj = MockObj()
+        result = _fast_encoder(obj)
+        assert result == {"mock": "data", "value": 42}
+
+    def test_fast_encoder_fallback_jsonable_encoder(self):
+        """Test that objects without to_dict fall back to FastAPI's jsonable_encoder."""
+
+        @dataclass
+        class MockDataClass:
+            id: int
+            name: str
+            created_at: datetime
+
+        dt = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        obj = MockDataClass(id=1, name="test", created_at=dt)
+
+        # jsonable_encoder will convert the datetime to an ISO string and the dataclass to a dict
+        result = _fast_encoder(obj)
+        assert result == {
+            "id": 1,
+            "name": "test",
+            "created_at": "2025-01-01T12:00:00+00:00",
+        }
