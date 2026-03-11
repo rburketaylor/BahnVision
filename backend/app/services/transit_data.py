@@ -65,8 +65,9 @@ class ScheduleRelationship(Enum):
     CANCELED = "CANCELED"
 
 
-@dataclass
+@dataclass(slots=True)
 class DepartureInfo:
+    # Optimization: using slots=True eliminates __dict__ overhead for high-traffic objects
     """Combined departure information with real-time updates"""
 
     trip_id: str
@@ -202,7 +203,7 @@ class DepartureInfo:
         return DepartureInfo(**data)
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteInfo:
     """Route information with real-time status"""
 
@@ -256,7 +257,7 @@ class RouteInfo:
         return RouteInfo(**data)
 
 
-@dataclass
+@dataclass(slots=True)
 class StopInfo:
     """Stop information with real-time status"""
 
