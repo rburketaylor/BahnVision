@@ -58,11 +58,11 @@ test.describe('Complete User Journeys', () => {
     await expect(page.getByText('Cancellation Rate')).toBeVisible()
 
     // Switch to Trends
-    await page.getByRole('tab', { name: 'Trends' }).click()
+    await page.getByRole('button', { name: 'Trends' }).click()
     await expect(page).toHaveURL(/tab=trends/)
 
     // Switch to Schedule
-    await page.getByRole('tab', { name: 'Schedule' }).click()
+    await page.getByRole('button', { name: 'Schedule' }).click()
     await expect(page).toHaveURL(/tab=schedule/)
     await expect(page.getByText('Moosach')).toBeVisible()
 
