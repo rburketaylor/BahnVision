@@ -45,24 +45,24 @@ test.describe('Complete User Journeys', () => {
 
     // Verify we're on the station page
     await expect(page).toHaveURL(new RegExp(`/station/${mockStation.id}`))
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3 })).toContainText('Marienplatz')
   })
 
   test('user can explore all station tabs and return home', async ({ page }) => {
     await page.goto(`/station/${mockStation.id}`)
 
     // Wait for station page to load
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 3 })).toBeVisible()
 
     // Overview tab (default) - shows stat cards
     await expect(page.getByText('Cancellation Rate')).toBeVisible()
 
     // Switch to Trends
-    await page.getByRole('button', { name: 'Trends' }).click()
+    await page.getByRole('tab', { name: 'Trends' }).click()
     await expect(page).toHaveURL(/tab=trends/)
 
     // Switch to Schedule
-    await page.getByRole('button', { name: 'Schedule' }).click()
+    await page.getByRole('tab', { name: 'Schedule' }).click()
     await expect(page).toHaveURL(/tab=schedule/)
     await expect(page.getByText('Moosach')).toBeVisible()
 
@@ -78,7 +78,7 @@ test.describe('Complete User Journeys', () => {
   test('user can check system monitoring after viewing stations', async ({ page }) => {
     // View a station first
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3 })).toContainText('Marienplatz')
 
     // Navigate to monitoring
     await page.getByRole('link', { name: 'Monitoring' }).click()
@@ -160,7 +160,7 @@ test.describe('Navigation Flow', () => {
     await expect(page.getByRole('combobox', { name: /station search/i })).toBeVisible()
 
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3 })).toContainText('Marienplatz')
 
     await page.goto('/monitoring')
     await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
