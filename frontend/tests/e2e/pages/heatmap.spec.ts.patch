@@ -1,0 +1,11 @@
+--- frontend/tests/e2e/pages/heatmap.spec.ts
++++ frontend/tests/e2e/pages/heatmap.spec.ts
+@@ -54,7 +54,7 @@
+     await page.goto('/')
+
+     // Click on Stations link in navigation (not "search")
+-    const stationsLink = page.getByRole('link', { name: 'Stations' })
++    const stationsLink = page.getByRole('link', { name: 'Stations' }).first()
+     await stationsLink.click({ force: true })
+
+     await expect(page).toHaveURL('/search')

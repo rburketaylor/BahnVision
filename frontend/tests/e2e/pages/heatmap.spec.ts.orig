@@ -53,8 +53,8 @@ test.describe('Heatmap Page', () => {
     await page.goto('/')
 
     // Click on Stations link in navigation (not "search")
-    const stationsLink = page.getByRole('link', { name: 'Stations' }).first()
-    await stationsLink.click({ force: true })
+    const stationsLink = page.getByRole('link', { name: 'Stations' })
+    await stationsLink.click()
 
     await expect(page).toHaveURL('/search')
   })
