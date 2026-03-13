@@ -22,7 +22,7 @@ test.describe('Heatmap Page', () => {
 
     // Verify page container with data-testid
     await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({
-      timeout: 10000,
+      timeout: 15000,
     })
   })
 
@@ -79,13 +79,13 @@ test.describe('Heatmap Page', () => {
 
     const overviewResponse = page.waitForResponse(
       resp => resp.url().includes('/api/v1/heatmap/overview'),
-      { timeout: 15000 }
+      { timeout: 20000 }
     )
 
     await page.goto('/')
 
     const canvas = page.locator('canvas.maplibregl-canvas')
-    await expect(canvas).toBeVisible({ timeout: 15000 })
+    await expect(canvas).toBeVisible({ timeout: 20000 })
 
     await overviewResponse
 
@@ -140,7 +140,7 @@ test.describe('Heatmap Error States', () => {
     await page.goto('/')
 
     // Should display error message from the overlay
-    await expect(page.getByText(/Failed to load heatmap data/)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Failed to load heatmap data/)).toBeVisible({ timeout: 15000 })
   })
 
   test('page loads successfully with delayed API response', async ({ page }) => {

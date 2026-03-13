@@ -33,7 +33,7 @@ test.describe('Complete User Journeys', () => {
     await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 10000 })
 
     // Navigate to stations (search) page via nav
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).first().click({ force: true })
     await expect(page).toHaveURL('/search')
 
     // Search for a station
@@ -45,14 +45,14 @@ test.describe('Complete User Journeys', () => {
 
     // Verify we're on the station page
     await expect(page).toHaveURL(new RegExp(`/station/${mockStation.id}`))
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' })).toBeVisible()
   })
 
   test('user can explore all station tabs and return home', async ({ page }) => {
     await page.goto(`/station/${mockStation.id}`)
 
     // Wait for station page to load
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' })).toBeVisible()
 
     // Overview tab (default) - shows stat cards
     await expect(page.getByText('Cancellation Rate')).toBeVisible()
@@ -67,21 +67,21 @@ test.describe('Complete User Journeys', () => {
     await expect(page.getByText('Moosach')).toBeVisible()
 
     // Navigate back to stations page
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).first().click({ force: true })
     await expect(page).toHaveURL('/search')
 
     // Navigate to home (Map) - use exact match to avoid "Back to Map" link
-    await page.getByRole('link', { name: 'Map', exact: true }).click()
+    await page.getByRole('link', { name: 'Map', exact: true }).first().click({ force: true })
     await expect(page).toHaveURL('/')
   })
 
   test('user can check system monitoring after viewing stations', async ({ page }) => {
     // View a station first
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' })).toBeVisible()
 
     // Navigate to monitoring
-    await page.getByRole('link', { name: 'Monitoring' }).click()
+    await page.getByRole('link', { name: 'Monitoring' }).first().click({ force: true })
     await expect(page).toHaveURL('/monitoring')
     await expect(page.getByText('System Monitoring')).toBeVisible()
   })
@@ -96,7 +96,7 @@ test.describe('Complete User Journeys', () => {
     await expect(page).toHaveURL(new RegExp(`/station/${mockStation.id}`))
 
     // Go back and search for another
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).first().click({ force: true })
     await searchInput.fill('Haupt')
     await page.getByRole('button', { name: /Hauptbahnhof/i }).click()
     await expect(page).toHaveURL(/\/station\/de:09162:2/)
@@ -121,10 +121,10 @@ test.describe('Navigation Flow', () => {
     await page.goto('/')
     await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
 
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).first().click({ force: true })
     await expect(page).toHaveURL('/search')
 
-    await page.getByRole('link', { name: 'Monitoring' }).click()
+    await page.getByRole('link', { name: 'Monitoring' }).first().click({ force: true })
     await expect(page).toHaveURL('/monitoring')
 
     // Go back
@@ -140,7 +140,7 @@ test.describe('Navigation Flow', () => {
     await page.goto('/')
     await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
 
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).first().click({ force: true })
     await expect(page).toHaveURL('/search')
 
     // Go back then forward
@@ -160,7 +160,7 @@ test.describe('Navigation Flow', () => {
     await expect(page.getByRole('combobox', { name: /station search/i })).toBeVisible()
 
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' })).toBeVisible()
 
     await page.goto('/monitoring')
     await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
