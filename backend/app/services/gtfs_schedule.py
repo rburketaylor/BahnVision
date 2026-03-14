@@ -3,7 +3,7 @@ import math
 from datetime import datetime, time, timedelta, timezone, date
 from typing import Any, List, Optional
 
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, union_all, literal, cast, SmallInteger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -111,7 +111,9 @@ class GTFSScheduleService:
         weekday_col = _get_weekday_column(c, weekday)
 
         # 1. Get services active by calendar (range + weekday)
-        stmt_cal = select(c.service_id).where(
+        stmt_cal = select(
+            c.service_id, cast(literal(0), SmallInteger).label("exception_type")
+        ).where(
             c.start_date <= query_date,
             c.end_date >= query_date,
             weekday_col == True,  # noqa: E712
@@ -120,14 +122,18 @@ class GTFSScheduleService:
         # 2. Get exceptions for today
         stmt_cd = select(cd.service_id, cd.exception_type).where(cd.date == query_date)
 
-        # Execute queries
-        cal_result = await self.session.execute(stmt_cal)
-        active_cal = set(cal_result.scalars().all())
+        # 3. Union them together
+        # Optimization: retrieve active service_ids via a single UNION ALL query
+        # combining gtfs_calendar and gtfs_calendar_dates instead of separate DB calls.
+        stmt_union = union_all(stmt_cal, stmt_cd)
 
-        cd_result = await self.session.execute(stmt_cd)
-        exceptions = cd_result.all()  # List of (service_id, exception_type)
+        # Execute single query
+        result = await self.session.execute(stmt_union)
+        exceptions = result.all()  # List of (service_id, exception_type)
 
-        # Apply exceptions
+        # Apply exceptions (0 = active by calendar, 1 = added exception, 2 = removed exception)
+        active_cal = {row.service_id for row in exceptions if row.exception_type == 0}
+
         added = {row.service_id for row in exceptions if row.exception_type == 1}
         removed = {row.service_id for row in exceptions if row.exception_type == 2}
 
