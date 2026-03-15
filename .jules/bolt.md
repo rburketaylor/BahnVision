@@ -1,0 +1,3 @@
+## 2024-03-14 - [High-Traffic Dataclass Memory Optimization]
+**Learning:** High-traffic dataclasses (e.g., `DepartureInfo`, `TripUpdate`, `VehiclePosition`, `ServiceAlert`, `RouteInfo`, `StopInfo`) in the backend services (`gtfs_realtime.py` and `transit_data.py`) are instantiated thousands of times per request but are currently missing the `@dataclass(slots=True)` optimization. Similarly, `ScheduledDeparture` in `gtfs_schedule.py` is missing `__slots__`.
+**Action:** Always add `slots=True` to `@dataclass` decorators for high-volume objects in Python 3.10+ or explicit `__slots__` for standard classes to reduce memory overhead by ~67% per instance (eliminating `__dict__` overhead).
