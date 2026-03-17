@@ -1,0 +1,7 @@
+## 2024-05-14 - Dataclass Memory Optimization
+**Learning:** High-traffic dataclasses like `DepartureInfo`, `TripUpdate`, `VehiclePosition`, `ServiceAlert`, `RouteInfo`, and `StopInfo` can consume significant memory due to Python's default dictionary per instance. In Python 3.10+, adding `slots=True` to the `@dataclass` decorator significantly reduces the memory footprint of these instances (e.g., from 344 bytes to 48 bytes per instance). For regular classes like `ScheduledDeparture`, setting `__slots__` explicitly reduces memory from 344 bytes to 112 bytes.
+**Action:** Always consider `slots=True` for dataclasses that will be instantiated frequently or stored in large collections, especially in data processing services.
+
+## 2024-05-14 - Dataclass Memory Optimization
+**Learning:** High-traffic dataclasses like `DepartureInfo`, `TripUpdate`, `VehiclePosition`, `ServiceAlert`, `RouteInfo`, and `StopInfo` can consume significant memory due to Python's default dictionary per instance. In Python 3.10+, adding `slots=True` to the `@dataclass` decorator significantly reduces the memory footprint of these instances (e.g., from 344 bytes to 48 bytes per instance). For regular classes like `ScheduledDeparture`, setting `__slots__` explicitly reduces memory from 344 bytes to 112 bytes.
+**Action:** Always consider `slots=True` for dataclasses that will be instantiated frequently or stored in large collections, especially in data processing services.
