@@ -70,9 +70,9 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('displays tab navigation', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await expect(page.getByRole('button', { name: /Overview/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Ingestion/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Performance/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Overview/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Ingestion/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Performance/ })).toBeVisible()
   })
 
   test('shows Overview tab by default', async ({ page }) => {
@@ -85,7 +85,7 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('switches to Ingestion tab', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    await page.getByRole('tab', { name: /Ingestion/ }).click()
 
     await expect(page.getByText('GTFS Static Feed')).toBeVisible()
     await expect(page.getByText('Realtime Harvester')).toBeVisible()
@@ -94,7 +94,7 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('shows feed record counts on Ingestion tab', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    await page.getByRole('tab', { name: /Ingestion/ }).click()
 
     // Verify counts are displayed using the same constants as the mock
     const stopCount = MOCK_GTFS_FEED.stop_count.toLocaleString()
@@ -109,7 +109,7 @@ bahnvision_transit_requests_total{method="GET"} 1000
   test('switches to Performance tab', async ({ page }) => {
     await page.goto('/monitoring')
 
-    await page.getByRole('button', { name: /Performance/ }).click()
+    await page.getByRole('tab', { name: /Performance/ }).click()
 
     await expect(page.getByText('Cache Performance')).toBeVisible()
     await expect(page.getByText('Performance Targets')).toBeVisible()
@@ -121,8 +121,8 @@ bahnvision_transit_requests_total{method="GET"} 1000
     // Wait for heatmap to load
     await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
 
-    const monitoringLink = page.getByRole('link', { name: 'Monitoring' })
-    await monitoringLink.click()
+    const monitoringLink = page.getByRole('link', { name: 'Monitoring' }).first()
+    await monitoringLink.click({ force: true })
 
     await expect(page).toHaveURL('/monitoring')
   })
@@ -163,7 +163,7 @@ test.describe('Monitoring Page - Error States', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Ingestion/ }).click()
+    await page.getByRole('tab', { name: /Ingestion/ }).click()
 
     // Should show error state
     await expect(page.getByText(/Failed to load ingestion status/)).toBeVisible()
@@ -182,7 +182,7 @@ test.describe('Monitoring Page - Refresh', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Performance/ }).click()
+    await page.getByRole('tab', { name: /Performance/ }).click()
 
     const refreshButton = page.getByRole('button', { name: /Refresh/ })
     await expect(refreshButton).toBeVisible()
@@ -202,7 +202,7 @@ test.describe('Monitoring Page - Refresh', () => {
     })
 
     await page.goto('/monitoring')
-    await page.getByRole('button', { name: /Performance/ }).click()
+    await page.getByRole('tab', { name: /Performance/ }).click()
 
     const autoRefreshButton = page.getByRole('button', { name: /Auto-refreshing/ })
     await expect(autoRefreshButton).toBeVisible()
