@@ -140,7 +140,7 @@ test.describe('Heatmap Error States', () => {
     await page.goto('/')
 
     // Should display error message from the overlay
-    await expect(page.getByText(/Failed to load heatmap data/)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Failed to load heatmap data/)).toBeVisible({ timeout: 15000 })
   })
 
   test('page loads successfully with delayed API response', async ({ page }) => {

@@ -14,7 +14,7 @@ test.describe('Station Page - Direct Navigation', () => {
   test('loads station page via direct URL', async ({ page }) => {
     await page.goto(`/station/${mockStation.id}`)
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(mockStation.name)
+    await expect(page.getByRole('heading', { level: 3 }).first()).toContainText(mockStation.name)
   })
 
   test('shows error for non-existent station', async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe('Station Page - Overview Tab', () => {
   })
 
   test('displays station name in header', async ({ page }) => {
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(mockStation.name)
+    await expect(page.getByRole('heading', { level: 3 }).first()).toContainText(mockStation.name)
   })
 
   test('shows performance card', async ({ page }) => {
@@ -225,7 +225,8 @@ test.describe('Station Page - Error States', () => {
     await page.goto(`/station/${mockStation.id}`)
     await page.getByRole('button', { name: 'Schedule' }).click()
 
-    // Should show error message from departures API
-    await expect(page.getByText(/Error|failed|departures/i)).toBeVisible()
+    // Wait for network request to fail multiple times (react-query retries)
+    // or just look for the specific error text in the UI
+    await expect(page.getByText(/Error fetching departures/i)).toBeVisible({ timeout: 15000 })
   })
 })

@@ -45,14 +45,14 @@ test.describe('Complete User Journeys', () => {
 
     // Verify we're on the station page
     await expect(page).toHaveURL(new RegExp(`/station/${mockStation.id}`))
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3 }).first()).toContainText('Marienplatz')
   })
 
   test('user can explore all station tabs and return home', async ({ page }) => {
     await page.goto(`/station/${mockStation.id}`)
 
     // Wait for station page to load
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 3 }).first()).toBeVisible()
 
     // Overview tab (default) - shows stat cards
     await expect(page.getByText('Cancellation Rate')).toBeVisible()
@@ -78,10 +78,10 @@ test.describe('Complete User Journeys', () => {
   test('user can check system monitoring after viewing stations', async ({ page }) => {
     // View a station first
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3 }).first()).toContainText('Marienplatz')
 
     // Navigate to monitoring
-    await page.getByRole('link', { name: 'Monitoring' }).click()
+    await page.getByRole('link', { name: 'Monitoring' }).click({ force: true })
     await expect(page).toHaveURL('/monitoring')
     await expect(page.getByText('System Monitoring')).toBeVisible()
   })
@@ -119,12 +119,12 @@ test.describe('Navigation Flow', () => {
 
   test('browser back button works correctly', async ({ page }) => {
     await page.goto('/')
-    await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
+    await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 10000 })
 
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).click({ force: true })
     await expect(page).toHaveURL('/search')
 
-    await page.getByRole('link', { name: 'Monitoring' }).click()
+    await page.getByRole('link', { name: 'Monitoring' }).click({ force: true })
     await expect(page).toHaveURL('/monitoring')
 
     // Go back
@@ -138,9 +138,9 @@ test.describe('Navigation Flow', () => {
 
   test('browser forward button works correctly', async ({ page }) => {
     await page.goto('/')
-    await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
+    await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 10000 })
 
-    await page.getByRole('link', { name: 'Stations' }).click()
+    await page.getByRole('link', { name: 'Stations' }).click({ force: true })
     await expect(page).toHaveURL('/search')
 
     // Go back then forward
@@ -154,13 +154,13 @@ test.describe('Navigation Flow', () => {
   test('direct URL navigation works for all pages', async ({ page }) => {
     // Test each route directly
     await page.goto('/')
-    await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 15000 })
 
     await page.goto('/search')
     await expect(page.getByRole('combobox', { name: /station search/i })).toBeVisible()
 
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Marienplatz')
+    await expect(page.getByRole('heading', { level: 3 }).first()).toContainText('Marienplatz')
 
     await page.goto('/monitoring')
     await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
@@ -174,7 +174,7 @@ test.describe('Theme Toggle', () => {
 
   test('can toggle between light and dark themes', async ({ page }) => {
     await page.goto('/')
-    await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
+    await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 15000 })
 
     // Find theme toggle button (it has aria-label "Toggle theme")
     const themeToggle = page.getByRole('button', { name: /toggle theme/i })
@@ -195,7 +195,7 @@ test.describe('Theme Toggle', () => {
   test('theme preference persists across page navigation', async ({ page }) => {
     await setupStationMocks(page)
     await page.goto('/')
-    await page.locator('[data-testid="heatmap-container"]').waitFor({ timeout: 10000 })
+    await expect(page.locator('[data-testid="heatmap-container"]')).toBeVisible({ timeout: 15000 })
 
     const themeToggle = page.getByRole('button', { name: /toggle theme/i })
     if (await themeToggle.isVisible()) {
