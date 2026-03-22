@@ -7,7 +7,7 @@ across multiple endpoints to maintain consistency.
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RateLimit:
     """Rate limit configuration for endpoints."""
 
