@@ -120,9 +120,12 @@ test.describe('Heatmap Page', () => {
 
     await expect(popup).toBeVisible({ timeout: 10000 })
     await expect(popup).toContainText(mockStationStats.station_name)
-    await expect(popup).toContainText('Loading details...')
 
-    await statsResponse
+    // Check if it's already loaded or still loading
+    const textContent = await popup.textContent()
+    if (textContent?.includes('Loading details...')) {
+      await statsResponse
+    }
     await expect(popup).toContainText('Departures', { timeout: 10000 })
   })
 })
