@@ -31,4 +31,5 @@ function Badge({ className, variant, shape, ...props }: BadgeProps) {
   return <span className={cn(badgeVariants({ variant, shape }), className)} {...props} />
 }
 
-export { Badge, badgeVariants }
+export { Badge }
+export type { BadgeProps }
