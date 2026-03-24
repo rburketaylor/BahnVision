@@ -63,7 +63,7 @@ StopIdPathParam = Annotated[
 ]
 
 
-@dataclass
+@dataclass(slots=True)
 class _StopLikeAdapter:
     stop_id: Any
     stop_name: Any

@@ -265,7 +265,7 @@ def calculate_heatmap_summary(
     )
 
 
-@dataclass
+@dataclass(slots=True)
 class StopInfo:
     """Simple stop info for heatmap generation."""
 

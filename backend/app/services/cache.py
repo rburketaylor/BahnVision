@@ -22,8 +22,17 @@ from typing import Any, AsyncIterator, Callable, TypeVar
 import valkey.asyncio as valkey
 from fastapi.encoders import jsonable_encoder
 
+
 from app.core.config import get_settings
 from app.core.metrics import record_cache_event
+
+
+def _fast_encoder(obj: Any) -> Any:
+    """Fast encoder that tries to_dict before falling back to jsonable_encoder."""
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    return jsonable_encoder(obj)
+
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -441,7 +450,8 @@ class CacheService:
 
         # Serialize all values to JSON
         serialized = {
-            key: json.dumps(jsonable_encoder(value)) for key, value in items.items()
+            key: json.dumps(value, default=_fast_encoder)
+            for key, value in items.items()
         }
         await self.mset(serialized, ttl_seconds)
 
@@ -481,7 +491,7 @@ class CacheService:
         stale_ttl_seconds: int | None = None,
     ) -> None:
         """Serialize and store a JSON-compatible document."""
-        encoded = json.dumps(jsonable_encoder(value))
+        encoded = json.dumps(value, default=_fast_encoder)
         stale_key = f"{key}{self._STALE_SUFFIX}"
 
         effective_ttl = self._config.get_effective_ttl(ttl_seconds)
