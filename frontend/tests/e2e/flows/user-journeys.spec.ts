@@ -45,7 +45,9 @@ test.describe('Complete User Journeys', () => {
 
     // Verify we're on the station page
     await expect(page).toHaveURL(new RegExp(`/station/${mockStation.id}`))
-    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' }).first()).toContainText('Marienplatz')
+    await expect(
+      page.getByRole('heading', { level: 3, name: 'Marienplatz' }).first()
+    ).toContainText('Marienplatz')
   })
 
   test('user can explore all station tabs and return home', async ({ page }) => {
@@ -78,7 +80,9 @@ test.describe('Complete User Journeys', () => {
   test('user can check system monitoring after viewing stations', async ({ page }) => {
     // View a station first
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' }).first()).toContainText('Marienplatz')
+    await expect(
+      page.getByRole('heading', { level: 3, name: 'Marienplatz' }).first()
+    ).toContainText('Marienplatz')
 
     // Navigate to monitoring
     await page.getByRole('link', { name: 'Monitoring' }).click()
@@ -160,7 +164,9 @@ test.describe('Navigation Flow', () => {
     await expect(page.getByRole('combobox', { name: /station search/i })).toBeVisible()
 
     await page.goto(`/station/${mockStation.id}`)
-    await expect(page.getByRole('heading', { level: 3, name: 'Marienplatz' }).first()).toContainText('Marienplatz')
+    await expect(
+      page.getByRole('heading', { level: 3, name: 'Marienplatz' }).first()
+    ).toContainText('Marienplatz')
 
     await page.goto('/monitoring')
     await expect(page.getByRole('heading', { name: 'System Monitoring' })).toBeVisible()
