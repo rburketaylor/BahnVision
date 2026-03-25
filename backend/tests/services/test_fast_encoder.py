@@ -20,5 +20,16 @@ def test_fast_encoder_with_to_dict():
 def test_fast_encoder_without_to_dict():
     obj = DummyWithoutToDict()
     result = _fast_encoder(obj)
-    # jsonable_encoder converts the object to a dict
     assert result == {"b": 2}
+
+
+def test_fast_encoder_none():
+    assert _fast_encoder(None) is None
+
+
+def test_fast_encoder_list():
+    assert _fast_encoder(["a"]) == ["a"]
+
+
+def test_fast_encoder_dict():
+    assert _fast_encoder({"a": 1}) == {"a": 1}
