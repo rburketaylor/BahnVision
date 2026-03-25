@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def _fast_encoder(obj: Any) -> Any:
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    return jsonable_encoder(obj)
+
+
 # =============================================================================
 # TTL Configuration
 # =============================================================================
@@ -440,8 +446,10 @@ class CacheService:
             return
 
         # Serialize all values to JSON
+        # Optimization: Use fast JSON encoding that prefers to_dict over slow traversal
         serialized = {
-            key: json.dumps(jsonable_encoder(value)) for key, value in items.items()
+            key: json.dumps(value, default=_fast_encoder)
+            for key, value in items.items()
         }
         await self.mset(serialized, ttl_seconds)
 
@@ -481,7 +489,8 @@ class CacheService:
         stale_ttl_seconds: int | None = None,
     ) -> None:
         """Serialize and store a JSON-compatible document."""
-        encoded = json.dumps(jsonable_encoder(value))
+        # Optimization: Use fast JSON encoding that prefers to_dict over slow traversal
+        encoded = json.dumps(value, default=_fast_encoder)
         stale_key = f"{key}{self._STALE_SUFFIX}"
 
         effective_ttl = self._config.get_effective_ttl(ttl_seconds)
