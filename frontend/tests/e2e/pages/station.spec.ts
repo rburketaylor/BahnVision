@@ -228,6 +228,10 @@ test.describe('Station Page - Error States', () => {
     await page.getByRole('button', { name: 'Schedule' }).click()
 
     // Should show error message from departures API
-    await expect(page.getByText(/error|failed|couldn't load|Error fetching/i).or(page.getByRole('heading', { level: 3 }).first())).toBeVisible()
+    await expect(
+      page
+        .getByText(/error|failed|couldn't load|Error fetching/i)
+        .or(page.getByRole('heading', { level: 3 }).first())
+    ).toBeVisible()
   })
 })
