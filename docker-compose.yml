@@ -95,7 +95,7 @@ services:
     mem_limit: 256m
 
   postgres-host-access:
-    image: alpine/socat:1.8.0.3-r2
+    image: alpine/socat:1.8.0.3
     command: ["TCP-LISTEN:5432,fork,reuseaddr", "TCP:postgres:5432"]
     profiles: ["host-access"]
     depends_on:
@@ -108,7 +108,7 @@ services:
     mem_limit: 64m
 
   valkey-host-access:
-    image: alpine/socat:1.8.0.3-r2
+    image: alpine/socat:1.8.0.3
     command: ["TCP-LISTEN:6379,fork,reuseaddr", "TCP:valkey:6379"]
     profiles: ["host-access"]
     depends_on:

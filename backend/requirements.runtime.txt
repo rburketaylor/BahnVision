@@ -2,11 +2,13 @@ fastapi==0.129.0
 uvicorn[standard]==0.40.0
 valkey==6.1.1
 pydantic-settings==2.12.0
+python-dotenv==1.2.2
 prometheus-client==0.24.1
 SQLAlchemy==2.0.46
 alembic==1.18.4
 asyncpg==0.31.0
 httpx==0.28.1
+requests==2.33.0
 opentelemetry-api==1.39.1
 opentelemetry-sdk==1.39.1
 opentelemetry-instrumentation-fastapi==0.60b1

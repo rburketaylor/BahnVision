@@ -14,6 +14,8 @@ RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.runtime.txt
 
 COPY backend/app ./app
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./alembic.ini
 
 # Drop privileges for runtime
 RUN useradd --create-home --uid 1000 appuser \
@@ -27,4 +29,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 USER appuser
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
