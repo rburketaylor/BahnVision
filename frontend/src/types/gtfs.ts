@@ -235,7 +235,7 @@ export function getRouteTypeFromString(routeString: string): GtfsRouteType {
 // ==================== Station Stats Types ====================
 
 /** Time range preset for station stats */
-export type StationStatsTimeRange = '1h' | '6h' | '24h' | '7d' | '30d'
+export type StationStatsTimeRange = 'live' | '1h' | '6h' | '24h' | '7d' | '30d'
 
 /** Trend granularity */
 export type TrendGranularity = 'hourly' | 'daily'

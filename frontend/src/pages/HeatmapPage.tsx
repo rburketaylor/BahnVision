@@ -114,13 +114,10 @@ export default function HeatmapPage() {
     { autoRefresh }
   )
 
-  // Map TimeRangePreset to StationStatsTimeRange (live -> 24h since station stats doesn't support live)
-  const stationStatsTimeRange = timeRange === 'live' ? '24h' : timeRange
-
   // Fetch details on-demand when station is selected
   const { data: stationStats, isLoading: isStationStatsLoading } = useStationStats(
     selectedStationId ?? undefined,
-    stationStatsTimeRange,
+    timeRange,
     {
       enabled: !!selectedStationId,
       // The popup doesn't use network averages, and they can be very expensive for long ranges (7d/30d).
