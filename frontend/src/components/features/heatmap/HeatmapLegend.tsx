@@ -5,8 +5,7 @@
 
 import { memo, useMemo, useState } from 'react'
 import type { HeatmapEnabledMetrics } from '../../../types/heatmap'
-import { DARK_HEATMAP_CONFIG, LIGHT_HEATMAP_CONFIG } from '../../../types/heatmap'
-import { useTheme } from '../../../contexts/ThemeContext'
+import { BVV_POINT_COLOR_STOPS, getBVVMarkerColor } from './markerStyles'
 
 interface HeatmapLegendProps {
   className?: string
@@ -15,6 +14,7 @@ interface HeatmapLegendProps {
 
 interface LegendItem {
   color: string
+  intensity: number
   label: string
   value: string
 }
@@ -23,60 +23,47 @@ export const HeatmapLegend = memo(function HeatmapLegend({
   className = '',
   enabledMetrics,
 }: HeatmapLegendProps) {
-  const { resolvedTheme } = useTheme()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
-
-  const config = useMemo(
-    () => (resolvedTheme === 'dark' ? DARK_HEATMAP_CONFIG : LIGHT_HEATMAP_CONFIG),
-    [resolvedTheme]
-  )
-
-  const stops = useMemo(
-    () =>
-      Object.entries(config.gradient)
-        .map(([k, v]) => [Number(k), v] as const)
-        .filter(([k]) => !Number.isNaN(k))
-        .sort((a, b) => a[0] - b[0]),
-    [config.gradient]
-  )
 
   const gradientCss = useMemo(
     () =>
-      `linear-gradient(to right, ${stops
-        .map(([k, v]) => `${v} ${Math.round(k * 100)}%`)
-        .join(', ')})`,
-    [stops]
+      `linear-gradient(to right, ${BVV_POINT_COLOR_STOPS.map(
+        ({ intensity, color }) => `${color} ${Math.round(intensity * 100)}%`
+      ).join(', ')})`,
+    []
   )
 
   const legendItems = useMemo<LegendItem[]>(() => {
-    const swatches =
-      resolvedTheme === 'dark'
-        ? ['#2dd4bf', '#0ea5e9', '#f59e0b', '#ef4444']
-        : ['#67e8f9', '#38bdf8', '#f59e0b', '#dc2626']
+    let metricItems: Array<Omit<LegendItem, 'color'>>
 
     if (enabledMetrics.cancellations && enabledMetrics.delays) {
-      return [
-        { color: swatches[0], label: 'Low impact', value: '0-5%' },
-        { color: swatches[1], label: 'Moderate impact', value: '5-15%' },
-        { color: swatches[2], label: 'High impact', value: '15-25%' },
-        { color: swatches[3], label: 'Severe', value: '>25%' },
+      metricItems = [
+        { intensity: 0.1, label: 'Low impact', value: '0-5%' },
+        { intensity: 0.4, label: 'Moderate impact', value: '5-15%' },
+        { intensity: 0.7, label: 'High impact', value: '15-25%' },
+        { intensity: 0.9, label: 'Severe', value: '>25%' },
+      ]
+    } else if (enabledMetrics.delays) {
+      metricItems = [
+        { intensity: 0.125, label: 'Low', value: '0-5%' },
+        { intensity: 0.375, label: 'Medium', value: '5-10%' },
+        { intensity: 0.75, label: 'High', value: '10-20%' },
+        { intensity: 0.95, label: 'Severe', value: '>20%' },
+      ]
+    } else {
+      metricItems = [
+        { intensity: 0.1, label: 'Low', value: '0-2%' },
+        { intensity: 0.35, label: 'Medium', value: '2-5%' },
+        { intensity: 0.75, label: 'High', value: '5-10%' },
+        { intensity: 0.95, label: 'Severe', value: '>10%' },
       ]
     }
-    if (enabledMetrics.delays) {
-      return [
-        { color: swatches[0], label: 'Low', value: '0-5%' },
-        { color: swatches[1], label: 'Medium', value: '5-10%' },
-        { color: swatches[2], label: 'High', value: '10-20%' },
-        { color: swatches[3], label: 'Severe', value: '>20%' },
-      ]
-    }
-    return [
-      { color: swatches[0], label: 'Low', value: '0-2%' },
-      { color: swatches[1], label: 'Medium', value: '2-5%' },
-      { color: swatches[2], label: 'High', value: '5-10%' },
-      { color: swatches[3], label: 'Severe', value: '>10%' },
-    ]
-  }, [resolvedTheme, enabledMetrics.cancellations, enabledMetrics.delays])
+
+    return metricItems.map(item => ({
+      ...item,
+      color: getBVVMarkerColor(item.intensity),
+    }))
+  }, [enabledMetrics.cancellations, enabledMetrics.delays])
 
   const title = useMemo(() => {
     if (enabledMetrics.cancellations && enabledMetrics.delays) {
