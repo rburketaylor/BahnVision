@@ -142,22 +142,31 @@ class TestGTFSFeedImporter:
         """Test that feed download creates a local file."""
         with patch("app.services.gtfs_feed.httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
-            mock_response.content = b"fake zip content"
+            mock_response.headers = {"content-length": str(len(b"fake zip content"))}
             mock_response.raise_for_status = MagicMock()
 
+            async def iter_bytes(chunk_size):
+                yield b"fake zip "
+                yield b"content"
+
+            mock_response.aiter_bytes = iter_bytes
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=False)
+
             mock_client_instance = AsyncMock()
-            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.stream = MagicMock(return_value=mock_response)
             mock_client_instance.__aenter__ = AsyncMock(
                 return_value=mock_client_instance
             )
             mock_client_instance.__aexit__ = AsyncMock()
             mock_client.return_value = mock_client_instance
 
-            with patch("builtins.open", MagicMock()):
-                result = await importer._download_feed(mock_settings.gtfs_feed_url)
+            importer.storage_path.mkdir(parents=True, exist_ok=True)
+            result = await importer._download_feed(mock_settings.gtfs_feed_url)
 
-                assert result is not None
-                mock_client_instance.get.assert_called_once()
+            assert result is not None
+            assert result.read_bytes() == b"fake zip content"
+            mock_client_instance.stream.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_truncate_all_tables(self, importer, mock_session):

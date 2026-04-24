@@ -888,17 +888,46 @@ class GTFSFeedImporter:
         """Download GTFS feed ZIP file."""
         filename = f"gtfs_feed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
         feed_path = self.storage_path / filename
+        tmp_path = feed_path.with_suffix(f"{feed_path.suffix}.part")
 
         logger.info(f"Downloading GTFS feed from {feed_url}")
 
+        bytes_downloaded = 0
         async with httpx.AsyncClient(
             timeout=self.settings.gtfs_download_timeout_seconds
         ) as client:
-            response = await client.get(feed_url)
-            response.raise_for_status()
+            try:
+                async with client.stream("GET", feed_url) as response:
+                    response.raise_for_status()
+                    content_length = response.headers.get("content-length")
+                    if content_length:
+                        logger.info(
+                            "GTFS feed response size: %.1f MB",
+                            int(content_length) / 1024 / 1024,
+                        )
 
-            with open(feed_path, "wb") as f:
-                f.write(response.content)
+                    with open(tmp_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
+                            f.write(chunk)
+                            bytes_downloaded += len(chunk)
+            except httpx.TimeoutException:
+                logger.exception(
+                    "Timed out downloading GTFS feed from %s after %.1f MB",
+                    feed_url,
+                    bytes_downloaded / 1024 / 1024,
+                )
+                tmp_path.unlink(missing_ok=True)
+                raise
+            except Exception:
+                logger.exception(
+                    "Failed downloading GTFS feed from %s after %.1f MB",
+                    feed_url,
+                    bytes_downloaded / 1024 / 1024,
+                )
+                tmp_path.unlink(missing_ok=True)
+                raise
+
+        tmp_path.replace(feed_path)
 
         logger.info(f"Downloaded GTFS feed to {feed_path}")
         return feed_path
@@ -918,7 +947,7 @@ class GTFSFeedImporter:
         feed_info = {
             "feed_id": feed_id,
             "feed_url": feed_url,
-            "downloaded_at": datetime.now(timezone.utc),
+            "downloaded_at": datetime.now(timezone.utc).replace(tzinfo=None),
             "feed_start_date": feed_start_date,
             "feed_end_date": feed_end_date,
             "stop_count": stop_count,

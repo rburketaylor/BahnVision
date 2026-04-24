@@ -979,10 +979,20 @@ class TestGTFSFeedImporterNetworkAndPersistence:
         importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
 
         class FakeResponse:
-            content = b"zip-bytes"
+            headers = {"content-length": str(len(b"zip-bytes"))}
 
             def raise_for_status(self):
                 return None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aiter_bytes(self, chunk_size):
+                yield b"zip-"
+                yield b"bytes"
 
         class FakeClient:
             def __init__(self, **_kwargs):
@@ -994,7 +1004,7 @@ class TestGTFSFeedImporterNetworkAndPersistence:
             async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            async def get(self, _url):
+            def stream(self, _method, _url):
                 return FakeResponse()
 
         with patch("app.services.gtfs_feed.httpx.AsyncClient", FakeClient):

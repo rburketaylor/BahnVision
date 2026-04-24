@@ -61,8 +61,8 @@ class GTFSFeedScheduler:
                     logger.info(f"Successfully updated GTFS feed: {feed_id}")
                     break
 
-        except Exception as e:
-            logger.error(f"Failed to update GTFS feed: {e}")
+        except Exception:
+            logger.exception("Failed to update GTFS feed")
 
     async def _check_and_update_feed(self):
         """Check if feed needs updating and update if necessary."""
@@ -128,8 +128,8 @@ class GTFSFeedScheduler:
 
                 break
 
-        except Exception as e:
-            logger.error(f"Failed to check/update GTFS feed: {e}")
+        except Exception:
+            logger.exception("Failed to check/update GTFS feed")
 
     def get_job_info(self) -> dict:
         """Get information about scheduled jobs."""
