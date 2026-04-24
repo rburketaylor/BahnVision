@@ -49,6 +49,9 @@ build/
 .claude/settings.local.json
 .claude/settings.*.json
 
+# Jules local config
+.jules/
+
 # direnv
 .direnv/
 
@@ -66,3 +69,8 @@ backend/coverage.xml
 # Local-only docs (developer private notes)
 docs/local/*
 !docs/local/README.md
+
+# Root-level accidental npm installs
+/node_modules/
+/package.json
+/package-lock.json
