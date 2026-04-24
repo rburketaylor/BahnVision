@@ -372,14 +372,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-image
 
       - name: Run Trivy vulnerability scanner on backend
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "bahnvision-backend:test"
           format: "sarif"
           output: "trivy-backend-results.sarif"
 
       - name: Run Trivy vulnerability scanner on frontend
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "bahnvision-frontend:test"
           format: "sarif"
