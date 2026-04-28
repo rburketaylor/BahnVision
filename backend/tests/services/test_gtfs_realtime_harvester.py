@@ -5,7 +5,7 @@ Tests for the GTFS-RT data harvester service (streaming aggregation).
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,6 +27,9 @@ class FakeCache:
         self._store: dict[str, str] = {}
 
     async def get(self, key: str):
+        return self._store.get(key)
+
+    async def get_json(self, key: str):
         return self._store.get(key)
 
     async def set(self, key: str, value: str, ttl_seconds: int | None = None):
@@ -240,6 +243,56 @@ class TestGTFSRTDataHarvester:
         with patch("app.services.gtfs_realtime_harvester.GTFS_RT_AVAILABLE", False):
             count = await harvester.harvest_once()
             assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_route_type_map_is_cached_by_active_feed(
+        self,
+    ):
+        """Route type maps should be fetched once per active feed and reused."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        feed_result = MagicMock()
+        feed_result.scalar_one_or_none = MagicMock(return_value="feed_1")
+
+        route_result = MagicMock()
+        route_result.all = MagicMock(return_value=[("route_1", 1)])
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[feed_result, route_result, feed_result]
+        )
+
+        first = await harvester._get_route_type_map(session)
+        second = await harvester._get_route_type_map(session)
+
+        assert first == {"route_1": 1}
+        assert second == {"route_1": 1}
+        assert session.execute.call_count == 3
+        assert cache._store["gtfs_rt:route_type_map:v1:feed_1"] == {"route_1": 1}
+
+    @pytest.mark.asyncio
+    async def test_route_type_map_cache_failures_fall_back_to_db(self):
+        """Cache failures should not block route type map lookup."""
+        cache = AsyncMock()
+        cache.get_json = AsyncMock(side_effect=RuntimeError("cache down"))
+        cache.set_json = AsyncMock(side_effect=RuntimeError("cache down"))
+
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        feed_result = MagicMock()
+        feed_result.scalar_one_or_none = MagicMock(return_value="feed_2")
+
+        route_result = MagicMock()
+        route_result.all = MagicMock(return_value=[("route_2", 2)])
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[feed_result, route_result])
+
+        result = await harvester._get_route_type_map(session)
+
+        assert result == {"route_2": 2}
+        assert session.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_harvest_once_checks_import_lock_once_per_cycle(self):

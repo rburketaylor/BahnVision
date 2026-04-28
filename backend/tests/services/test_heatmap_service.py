@@ -337,7 +337,7 @@ class TestHeatmapService:
         """Ensure service fetches route_type breakdown only for selected stations."""
 
         @dataclass
-        class StationAggRow:
+        class CombinedRow:
             stop_id: str
             stop_name: str
             stop_lat: float
@@ -345,15 +345,11 @@ class TestHeatmapService:
             total_departures: int
             cancelled_count: int
             delayed_count: int
+            route_type: int | None
+            breakdown_total: int
+            breakdown_cancelled: int
+            breakdown_delayed: int
             impact_score: int = 0
-
-        @dataclass
-        class BreakdownRow:
-            stop_id: str
-            route_type: int
-            total_departures: int
-            cancelled_count: int
-            delayed_count: int
 
         @dataclass
         class TotalsRow:
@@ -369,8 +365,8 @@ class TestHeatmapService:
             cancelled_count: int
             delayed_count: int
 
-        station_rows = [
-            StationAggRow(
+        combined_rows = [
+            CombinedRow(
                 stop_id="de:09162:6",
                 stop_name="Marienplatz",
                 stop_lat=48.13743,
@@ -378,16 +374,11 @@ class TestHeatmapService:
                 total_departures=100,
                 cancelled_count=5,
                 delayed_count=10,
-                impact_score=15,
-            )
-        ]
-        breakdown_rows = [
-            BreakdownRow(
-                stop_id="de:09162:6",
                 route_type=2,
-                total_departures=100,
-                cancelled_count=5,
-                delayed_count=10,
+                breakdown_total=100,
+                breakdown_cancelled=5,
+                breakdown_delayed=10,
+                impact_score=15,
             )
         ]
 
@@ -408,16 +399,14 @@ class TestHeatmapService:
             )
         ]
 
-        session = FakeAsyncSession(
-            row_sets=[station_rows, breakdown_rows, totals_rows, line_rows]
-        )
+        session = FakeAsyncSession(row_sets=[combined_rows, totals_rows, line_rows])
         gtfs_schedule = FakeGTFSScheduleService()
         cache = FakeCache()
         service = HeatmapService(gtfs_schedule, cache, session=session)
 
         result = await service.get_cancellation_heatmap(max_points=1)
 
-        assert len(session.executed_statements) == 4
+        assert len(session.executed_statements) == 3
         assert len(result.data_points) == 1
         assert result.data_points[0].station_id == "de:09162:6"
         assert result.data_points[0].by_transport["BAHN"].total == 100
@@ -429,7 +418,7 @@ class TestHeatmapService:
         """Daily path should align station totals with selected transport modes."""
 
         @dataclass
-        class StationAggRow:
+        class CombinedRow:
             stop_id: str
             stop_name: str
             stop_lat: float
@@ -437,15 +426,14 @@ class TestHeatmapService:
             total_departures: int
             cancelled_count: int
             delayed_count: int
+            transport_type: str | None
+            breakdown_total: int
+            breakdown_cancelled: int
+            breakdown_delayed: int
             impact_score: int = 0
 
-        @dataclass
-        class DailyRow:
-            stop_id: str
-            by_route_type: dict
-
-        station_rows = [
-            StationAggRow(
+        combined_rows = [
+            CombinedRow(
                 stop_id="stop_1",
                 stop_name="Stop 1",
                 stop_lat=48.1,
@@ -453,19 +441,27 @@ class TestHeatmapService:
                 total_departures=20,
                 cancelled_count=5,
                 delayed_count=7,
-            )
-        ]
-        daily_rows = [
-            DailyRow(
+                transport_type="UBAHN",
+                breakdown_total=6,
+                breakdown_cancelled=2,
+                breakdown_delayed=3,
+            ),
+            CombinedRow(
                 stop_id="stop_1",
-                by_route_type={
-                    "UBAHN": {"trips": 6, "cancelled": 2, "delayed": 3},
-                    "BUS": {"trips": 14, "cancelled": 3, "delayed": 4},
-                },
-            )
+                stop_name="Stop 1",
+                stop_lat=48.1,
+                stop_lon=11.5,
+                total_departures=20,
+                cancelled_count=5,
+                delayed_count=7,
+                transport_type="BUS",
+                breakdown_total=14,
+                breakdown_cancelled=3,
+                breakdown_delayed=4,
+            ),
         ]
 
-        session = FakeAsyncSession(row_sets=[station_rows, daily_rows])
+        session = FakeAsyncSession(row_sets=[combined_rows])
         service = HeatmapService(
             FakeGTFSScheduleService(), FakeCache(), session=session
         )

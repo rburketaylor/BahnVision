@@ -14,7 +14,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeGuard, TypeVar
 
 import httpx
 from sqlalchemy import delete, select, text
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory
+from app.models.gtfs import GTFSFeedInfo
 from app.jobs.heatmap_cache_warmup import HeatmapCacheWarmer
 from app.models.heatmap import (
     HeatmapDataPoint,
@@ -79,6 +80,8 @@ _UPSERT_RETRY_DELAY_SECONDS = 1.0
 _TRIP_MARKER_TTL_SECONDS = 7200  # 2 hours
 _TRIP_HASH_HEX_LENGTH = 24
 _LEGACY_TRIP_HASH_HEX_LENGTH = 12
+_ROUTE_TYPE_MAP_CACHE_VERSION = 1
+_ROUTE_TYPE_MAP_CACHE_TTL_SECONDS = 24 * 60 * 60
 _TRIP_MARKER_UPDATE_LUA = (
     """
 local prev = redis.call("GET", KEYS[1])
@@ -244,6 +247,14 @@ def _escape_tsv(val) -> str:
     return s
 
 
+def _supports_json_cache(cache_service: Any | None) -> TypeGuard[CacheService]:
+    return bool(
+        cache_service
+        and callable(getattr(cache_service, "get_json", None))
+        and callable(getattr(cache_service, "set_json", None))
+    )
+
+
 class GTFSRTDataHarvester:
     """Background service for collecting and aggregating GTFS-RT data.
 
@@ -266,11 +277,10 @@ class GTFSRTDataHarvester:
         self._cache = cache_service
         self._heatmap_cache_warmer: HeatmapCacheWarmer | None = (
             HeatmapCacheWarmer(cache_service)
-            if cache_service is not None
-            and hasattr(cache_service, "get_json")
-            and hasattr(cache_service, "set_json")
+            if _supports_json_cache(cache_service)
             else None
         )
+        self._route_type_map_cache: dict[str, dict[str, int]] = {}
         self._harvest_interval = harvest_interval_seconds or getattr(
             self.settings, "gtfs_rt_harvest_interval_seconds", 300
         )
@@ -515,12 +525,63 @@ class GTFSRTDataHarvester:
         }
         return mapping.get(relationship, ScheduleRelationship.SCHEDULED)
 
+    async def _get_active_feed_id(self, session: AsyncSession) -> str | None:
+        """Get the active GTFS feed identity when available."""
+        try:
+            stmt = (
+                select(GTFSFeedInfo.feed_id)
+                .order_by(GTFSFeedInfo.downloaded_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.warning("Failed to fetch active GTFS feed id: %s", e)
+            return None
+
+    def _route_type_map_cache_key(self, feed_id: str | None) -> str:
+        feed_key = feed_id or "unknown"
+        return f"gtfs_rt:route_type_map:v{_ROUTE_TYPE_MAP_CACHE_VERSION}:{feed_key}"
+
     async def _get_route_type_map(self, session: AsyncSession) -> dict[str, int]:
         """Fetch route_id -> route_type mapping from gtfs_routes table."""
+        feed_id = await self._get_active_feed_id(session)
+        cache_key = self._route_type_map_cache_key(feed_id)
+
+        cached_route_type_map = self._route_type_map_cache.get(cache_key)
+        if cached_route_type_map is not None:
+            return dict(cached_route_type_map)
+
+        if _supports_json_cache(self._cache):
+            try:
+                cached_data = await self._cache.get_json(cache_key)
+                if cached_data is not None:
+                    route_type_map = {
+                        str(route_id): int(route_type)
+                        for route_id, route_type in cached_data.items()
+                    }
+                    self._route_type_map_cache[cache_key] = dict(route_type_map)
+                    return route_type_map
+            except Exception as e:
+                logger.warning("Failed to read route type map from cache: %s", e)
+
         try:
             stmt = text("SELECT route_id, route_type FROM gtfs_routes")
             result = await session.execute(stmt)
-            return {str(row[0]): int(row[1]) for row in result.all()}
+            route_type_map = {str(row[0]): int(row[1]) for row in result.all()}
+            self._route_type_map_cache[cache_key] = dict(route_type_map)
+
+            if _supports_json_cache(self._cache):
+                try:
+                    await self._cache.set_json(
+                        cache_key,
+                        route_type_map,
+                        ttl_seconds=_ROUTE_TYPE_MAP_CACHE_TTL_SECONDS,
+                    )
+                except Exception as e:
+                    logger.warning("Failed to cache route type map: %s", e)
+
+            return route_type_map
         except Exception as e:
             logger.warning(f"Failed to fetch route type map: {e}")
             return {}
@@ -730,11 +791,11 @@ class GTFSRTDataHarvester:
         snapshot_timestamp: datetime,
     ) -> None:
         """Build and cache the live heatmap snapshot."""
-        if not self._cache or not hasattr(self._cache, "set_json"):
+        if not _supports_json_cache(self._cache):
             logger.warning(
-                "Live snapshot caching skipped: cache=%s, has_set_json=%s",
+                "Live snapshot caching skipped: cache=%s, supports_json_cache=%s",
                 self._cache is not None,
-                hasattr(self._cache, "set_json") if self._cache else False,
+                _supports_json_cache(self._cache),
             )
             return
 

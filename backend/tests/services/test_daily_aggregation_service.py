@@ -342,6 +342,19 @@ class TestDailyAggregationService:
         assert "SBAHN" in daily.by_route_type
         assert daily.by_route_type["UBAHN"]["trips"] == 100
         assert daily.by_route_type["SBAHN"]["trips"] == 200
+        assert sum(stats["trips"] for stats in daily.by_route_type.values()) == 300
+        assert (
+            sum(stats["cancelled"] for stats in daily.by_route_type.values())
+            == daily.cancelled_count
+        )
+        assert (
+            sum(stats["delayed"] for stats in daily.by_route_type.values())
+            == daily.delayed_count
+        )
+        assert (
+            sum(stats["on_time"] for stats in daily.by_route_type.values())
+            == daily.on_time_count
+        )
 
     @pytest.mark.asyncio
     async def test_aggregate_day_unknown_route_type_defaults_to_bus(self):
