@@ -6,9 +6,9 @@ import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from app import main
 
@@ -42,7 +42,8 @@ def test_configure_sqlalchemy_logging_sets_expected_levels():
             logger.propagate = propagate
 
 
-def test_request_id_middleware_respects_existing_header(monkeypatch):
+@pytest.mark.asyncio
+async def test_request_id_middleware_respects_existing_header(monkeypatch):
     app = FastAPI()
     main._install_request_id_middleware(app)
 
@@ -50,13 +51,55 @@ def test_request_id_middleware_respects_existing_header(monkeypatch):
     async def ping():
         return {"ok": True}
 
-    client = TestClient(app)
-    response = client.get("/ping", headers={main.REQUEST_ID_HEADER: "external-id"})
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/ping", headers={main.REQUEST_ID_HEADER: "external-id"}
+        )
     assert response.headers[main.REQUEST_ID_HEADER] == "external-id"
 
     monkeypatch.setattr(main, "uuid4", lambda: "generated-id")
-    response = client.get("/ping")
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/ping")
     assert response.headers[main.REQUEST_ID_HEADER] == "generated-id"
+
+
+@pytest.mark.asyncio
+async def test_request_timing_middleware_appends_server_timing_and_request_id():
+    app = FastAPI()
+    main._install_request_id_middleware(app)
+    main._install_request_timing_middleware(app)
+
+    @app.get("/ping")
+    async def ping():
+        return {"ok": True}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/ping", headers={main.REQUEST_ID_HEADER: "external-id"}
+        )
+
+    assert response.status_code == 200
+    assert response.headers[main.REQUEST_ID_HEADER] == "external-id"
+    assert response.headers["Server-Timing"].startswith("app;dur=")
+
+
+@pytest.mark.asyncio
+async def test_request_timing_middleware_preserves_error_response_headers():
+    app = FastAPI()
+    main._install_request_id_middleware(app)
+    main._install_request_timing_middleware(app)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/missing", headers={main.REQUEST_ID_HEADER: "external-id"}
+        )
+
+    assert response.status_code == 404
+    assert response.headers[main.REQUEST_ID_HEADER] == "external-id"
+    assert "app;dur=" in response.headers["Server-Timing"]
 
 
 @pytest.mark.asyncio

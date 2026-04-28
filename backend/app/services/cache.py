@@ -15,6 +15,7 @@ import itertools
 import json
 import logging
 import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from functools import lru_cache, wraps
 from typing import Any, AsyncIterator, Callable, TypeVar
@@ -50,6 +51,7 @@ class TTLConfig:
         self.valkey_cache_ttl_not_found = settings.valkey_cache_ttl_not_found_seconds
         self.circuit_breaker_timeout = settings.cache_circuit_breaker_timeout_seconds
         self.cache_mset_batch_size = settings.cache_mset_batch_size
+        self.fallback_cache_max_entries = settings.fallback_cache_max_entries
 
         self._validate_ttls()
 
@@ -151,8 +153,13 @@ class FallbackCache:
     Thread-safe with automatic cleanup of expired entries.
     """
 
-    def __init__(self) -> None:
-        self._store: dict[str, tuple[str, float | None]] = {}
+    def __init__(self, max_entries: int | None = None) -> None:
+        if max_entries is None:
+            max_entries = get_settings().fallback_cache_max_entries
+        self._max_entries = max_entries
+        if self._max_entries <= 0:
+            raise ValueError("Fallback cache max entries must be positive")
+        self._store: OrderedDict[str, tuple[str, float | None]] = OrderedDict()
         self._lock = asyncio.Lock()
 
     async def set(self, key: str, value: str, ttl_seconds: int | None) -> None:
@@ -162,7 +169,10 @@ class FallbackCache:
             expires_at = time.monotonic() + ttl_seconds
 
         async with self._lock:
+            self._cleanup_expired_locked()
             self._store[key] = (value, expires_at)
+            self._store.move_to_end(key)
+            self._evict_oldest_locked()
 
     async def get(self, key: str) -> str | None:
         """Retrieve a value, returning None if expired or not found."""
@@ -185,15 +195,27 @@ class FallbackCache:
 
     async def cleanup_expired(self) -> None:
         """Remove all expired entries from the store."""
-        current_time = time.monotonic()
         async with self._lock:
-            expired_keys = [
-                key
-                for key, (_, expires_at) in self._store.items()
-                if expires_at is not None and expires_at <= current_time
-            ]
-            for key in expired_keys:
-                del self._store[key]
+            self._cleanup_expired_locked()
+
+    async def clear(self) -> None:
+        """Remove all entries from the store."""
+        async with self._lock:
+            self._store.clear()
+
+    def _cleanup_expired_locked(self) -> None:
+        current_time = time.monotonic()
+        expired_keys = [
+            key
+            for key, (_, expires_at) in self._store.items()
+            if expires_at is not None and expires_at <= current_time
+        ]
+        for key in expired_keys:
+            self._store.pop(key, None)
+
+    def _evict_oldest_locked(self) -> None:
+        while len(self._store) > self._max_entries:
+            self._store.popitem(last=False)
 
 
 # =============================================================================
@@ -279,7 +301,7 @@ class CacheService:
         self._client = client
         self._config = TTLConfig()
         self._circuit_breaker = CircuitBreaker(self._config)
-        self._fallback = FallbackCache()
+        self._fallback = FallbackCache(self._config.fallback_cache_max_entries)
         self._single_flight = SingleFlightLock(client)
         self._next_fallback_cleanup_at = 0.0
 
@@ -523,6 +545,42 @@ class CacheService:
         if remove_stale:
             await self._fallback.delete(stale_key)
         await self._maybe_cleanup_fallback()
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """Remove all cache entries matching a key pattern.
+
+        Uses SCAN to avoid blocking the Valkey server. Falls back to
+        clearing the in-memory cache entirely when Valkey is unavailable.
+
+        Args:
+            pattern: Glob-style pattern (e.g. ``gtfs:schedule:*``).
+
+        Returns:
+            Number of keys deleted from Valkey.
+        """
+        deleted_count = 0
+
+        if not self._circuit_breaker.is_open():
+            try:
+                cursor = 0
+                while True:
+                    cursor, keys = await self._client.scan(  # type: ignore[attr-defined]
+                        cursor, match=pattern, count=100
+                    )
+                    if keys:
+                        await self._client.delete(*keys)
+                        deleted_count += len(keys)
+                    if cursor == 0:
+                        break
+                self._circuit_breaker.close()
+            except Exception as exc:
+                logger.warning("DELETE pattern failed: %s", exc)
+                self._circuit_breaker.open()
+
+        # Fallback cache: we can't efficiently pattern-match, so clear it
+        # entirely. This is safe because fallback is small and local.
+        await self._fallback.clear()
+        return deleted_count
 
     @asynccontextmanager
     async def single_flight(

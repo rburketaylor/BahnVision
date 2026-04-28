@@ -27,6 +27,11 @@ TRANSIT_TRANSPORT_REQUESTS = Counter(
     "Outbound Transit client requests per transport type.",
     labelnames=("endpoint", "transport_type", "result"),
 )
+API_REQUEST_LATENCY = Histogram(
+    "bahnvision_api_request_duration_seconds",
+    "Latency of BahnVision API requests.",
+    labelnames=("method", "route", "status_code"),
+)
 
 
 def record_cache_event(cache: str, event: str) -> None:
@@ -54,3 +59,14 @@ def record_transit_transport_request(
     TRANSIT_TRANSPORT_REQUESTS.labels(
         endpoint=endpoint, transport_type=transport_type, result=result
     ).inc()
+
+
+def observe_api_request(
+    method: str, route: str, status_code: int | str, duration_seconds: float
+) -> None:
+    """Record API request latency with bounded labels."""
+    API_REQUEST_LATENCY.labels(
+        method=method.upper(),
+        route=route or "unmatched",
+        status_code=str(status_code),
+    ).observe(duration_seconds)

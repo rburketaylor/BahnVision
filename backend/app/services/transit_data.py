@@ -329,6 +329,13 @@ class StopInfo:
         return StopInfo(**data)
 
 
+def _normalize_departure_cache_from_time(from_time: datetime | None) -> str:
+    """Normalize departure lookup timestamps to one-minute cache buckets."""
+    if from_time is None:
+        return "none"
+    return from_time.replace(second=0, microsecond=0).isoformat()
+
+
 class TransitDataService:
     """Combined service for static and real-time transit data"""
 
@@ -359,8 +366,8 @@ class TransitDataService:
         while keeping real-time data reasonably fresh.
         """
         try:
-            # Cache key without time bucket - use stale-while-revalidate instead
-            from_time_key = from_time.isoformat() if from_time else "none"
+            # Cache key uses one-minute buckets for explicit timestamps only.
+            from_time_key = _normalize_departure_cache_from_time(from_time)
             cache_key = f"departures:{stop_id}:{limit}:{offset_minutes}:{from_time_key}:{include_real_time}"
 
             # Try to get from cache (fresh or stale)

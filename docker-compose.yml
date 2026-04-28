@@ -84,7 +84,7 @@ services:
     mem_limit: 512m
 
   valkey:
-    image: valkey/valkey:latest
+    image: valkey/valkey:8.1.6
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 import sys
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -14,6 +15,7 @@ from app.api.routes import api_router
 from app.api.v1.shared.rate_limit import limiter
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.metrics import observe_api_request
 from app.core.telemetry import (
     configure_opentelemetry,
     instrument_fastapi,
@@ -68,6 +70,49 @@ def _install_request_id_middleware(app: FastAPI) -> None:
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
+
+
+def _append_server_timing_header(response, entry: str) -> None:
+    existing = response.headers.get("Server-Timing")
+    response.headers["Server-Timing"] = f"{existing}, {entry}" if existing else entry
+
+
+def _resolve_route_template(request: Request) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if route_path:
+        return route_path
+    return "unmatched"
+
+
+def _install_request_timing_middleware(app: FastAPI) -> None:
+    """Record API request latency and append Server-Timing metadata."""
+
+    @app.middleware("http")
+    async def add_request_timing(request: Request, call_next):
+        start = perf_counter()
+        response = None
+        status_code = 500
+
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            duration_seconds = perf_counter() - start
+            try:
+                observe_api_request(
+                    request.method,
+                    _resolve_route_template(request),
+                    status_code,
+                    duration_seconds,
+                )
+                if response is not None:
+                    _append_server_timing_header(
+                        response, f"app;dur={duration_seconds * 1000:.2f}"
+                    )
+            except Exception:
+                logger.exception("Failed to record API request timing")
 
 
 @asynccontextmanager
@@ -154,6 +199,7 @@ def create_app() -> FastAPI:
     # Instrument FastAPI for tracing if enabled
     instrument_fastapi(app, enabled=settings.otel_enabled)
     _install_request_id_middleware(app)
+    _install_request_timing_middleware(app)
 
     # Compress larger JSON responses (e.g., heatmap payloads)
     app.add_middleware(GZipMiddleware, minimum_size=1024)
