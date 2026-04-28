@@ -17,6 +17,19 @@ const MOCK_GTFS_FEED = {
   route_count: 200,
   trip_count: 25000,
   is_expired: false,
+  import_progress: {
+    state: 'idle',
+    phase: null,
+    message: null,
+    percent: null,
+    rows_processed: null,
+    rows_total: null,
+    started_at: null,
+    updated_at: null,
+    finished_at: null,
+    error_type: null,
+    error_message: null,
+  },
 }
 
 const MOCK_GTFS_RT_HARVESTER = {
@@ -104,6 +117,79 @@ bahnvision_transit_requests_total{method="GET"} 1000
     await expect(page.getByText(stopCount, { exact: true })).toBeVisible()
     await expect(page.getByText(routeCount, { exact: true })).toBeVisible()
     await expect(page.getByText(tripCount, { exact: true })).toBeVisible()
+  })
+
+  test('shows GTFS import progress on Ingestion tab', async ({ page }) => {
+    await page.route('**/api/v1/system/ingestion-status**', async route => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          gtfs_feed: {
+            ...MOCK_GTFS_FEED,
+            import_progress: {
+              state: 'running',
+              phase: 'copy_stop_times',
+              message: 'Copying stop_times.txt',
+              percent: 72.4,
+              rows_processed: 36200000,
+              rows_total: 50000000,
+              started_at: '2025-01-01T00:00:00Z',
+              updated_at: '2025-01-01T00:05:00Z',
+              finished_at: null,
+              error_type: null,
+              error_message: null,
+            },
+          },
+          gtfs_rt_harvester: MOCK_GTFS_RT_HARVESTER,
+        }),
+      })
+    })
+
+    await page.goto('/monitoring')
+    await page.getByRole('tab', { name: /Ingestion/ }).click()
+
+    await expect(page.getByText('Import Running')).toBeVisible()
+    await expect(page.getByRole('progressbar', { name: 'GTFS import progress' })).toHaveAttribute(
+      'aria-valuenow',
+      '72.4'
+    )
+    await expect(page.getByText(/36,200,000 \/ 50,000,000 rows/)).toBeVisible()
+  })
+
+  test('shows GTFS import error panel on Ingestion tab', async ({ page }) => {
+    await page.route('**/api/v1/system/ingestion-status**', async route => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          gtfs_feed: {
+            ...MOCK_GTFS_FEED,
+            import_progress: {
+              state: 'failed',
+              phase: 'validate',
+              message: 'Validating GTFS feed',
+              percent: 20,
+              rows_processed: null,
+              rows_total: null,
+              started_at: '2025-01-01T00:00:00Z',
+              updated_at: '2025-01-01T00:01:00Z',
+              finished_at: '2025-01-01T00:01:00Z',
+              error_type: 'GTFSFeedValidationError',
+              error_message: 'stops.txt is required and cannot be empty',
+            },
+          },
+          gtfs_rt_harvester: MOCK_GTFS_RT_HARVESTER,
+        }),
+      })
+    })
+
+    await page.goto('/monitoring')
+    await page.getByRole('tab', { name: /Ingestion/ }).click()
+
+    await expect(page.getByText('GTFS Import Failed')).toBeVisible()
+    await expect(page.getByText(/GTFSFeedValidationError:/)).toBeVisible()
+    await expect(page.getByText(/stops.txt is required/)).toBeVisible()
   })
 
   test('switches to Performance tab', async ({ page }) => {
