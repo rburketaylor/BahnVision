@@ -7,13 +7,12 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Float,
+    Index,
     Integer,
-    Interval,
-    Numeric,
     PrimaryKeyConstraint,
     SmallInteger,
     String,
-    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,25 +24,23 @@ class GTFSStop(Base):
 
     stop_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     stop_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    stop_lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
-    stop_lon: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    stop_lat: Mapped[float | None] = mapped_column(Float)
+    stop_lon: Mapped[float | None] = mapped_column(Float)
     location_type: Mapped[int | None] = mapped_column(SmallInteger, default=0)
     parent_station: Mapped[str | None] = mapped_column(
         String(64),
         ForeignKey("gtfs_stops.stop_id", ondelete="SET NULL"),
+        index=True,
     )
     platform_code: Mapped[str | None] = mapped_column(String(16))
-    feed_id: Mapped[str | None] = mapped_column(String(32))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
+
+    __table_args__ = (
+        Index(
+            "idx_gtfs_stops_name_trgm",
+            "stop_name",
+            postgresql_using="gin",
+            postgresql_ops={"stop_name": "gin_trgm_ops"},
+        ),
     )
 
 
@@ -56,12 +53,6 @@ class GTFSRoute(Base):
     route_long_name: Mapped[str | None] = mapped_column(String(255))
     route_type: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     route_color: Mapped[str | None] = mapped_column(String(6))
-    feed_id: Mapped[str | None] = mapped_column(String(32))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
 
     trips: Mapped[list[GTFSTrip]] = relationship(back_populates="route")
 
@@ -78,12 +69,6 @@ class GTFSTrip(Base):
     service_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     trip_headsign: Mapped[str | None] = mapped_column(String(255))
     direction_id: Mapped[int | None] = mapped_column(SmallInteger)
-    feed_id: Mapped[str | None] = mapped_column(String(32))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
 
     route: Mapped[GTFSRoute] = relationship(back_populates="trips")
     stop_times: Mapped[list[GTFSStopTime]] = relationship(back_populates="trip")
@@ -92,10 +77,10 @@ class GTFSTrip(Base):
 class GTFSStopTime(Base):
     __tablename__ = "gtfs_stop_times"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("gtfs_trips.trip_id"),
+        primary_key=True,
         nullable=False,
     )
     stop_id: Mapped[str] = mapped_column(
@@ -103,12 +88,13 @@ class GTFSStopTime(Base):
         ForeignKey("gtfs_stops.stop_id"),
         nullable=False,
     )
-    arrival_time: Mapped[datetime | None] = mapped_column(Interval)
-    departure_time: Mapped[datetime | None] = mapped_column(Interval)
-    stop_sequence: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    arrival_seconds: Mapped[int | None] = mapped_column(Integer)
+    departure_seconds: Mapped[int | None] = mapped_column(Integer)
+    stop_sequence: Mapped[int] = mapped_column(
+        SmallInteger, primary_key=True, nullable=False
+    )
     pickup_type: Mapped[int | None] = mapped_column(SmallInteger, default=0)
     drop_off_type: Mapped[int | None] = mapped_column(SmallInteger, default=0)
-    feed_id: Mapped[str | None] = mapped_column(String(32))
 
     trip: Mapped[GTFSTrip] = relationship(back_populates="stop_times")
     stop: Mapped[GTFSStop] = relationship()
@@ -127,7 +113,6 @@ class GTFSCalendar(Base):
     sunday: Mapped[bool] = mapped_column(Boolean, nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    feed_id: Mapped[str | None] = mapped_column(String(32))
 
 
 class GTFSCalendarDate(Base):
@@ -136,7 +121,6 @@ class GTFSCalendarDate(Base):
     service_id: Mapped[str] = mapped_column(String(64), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     exception_type: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    feed_id: Mapped[str | None] = mapped_column(String(32))
 
     __table_args__ = (PrimaryKeyConstraint("service_id", "date"),)
 

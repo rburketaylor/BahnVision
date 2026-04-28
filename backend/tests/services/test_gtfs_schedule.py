@@ -12,118 +12,101 @@ from app.services.gtfs_schedule import (
     GTFSScheduleService,
     ScheduledDeparture,
     StopNotFoundError,
-    time_to_interval,
-    interval_to_datetime,
+    time_to_seconds,
+    seconds_to_datetime,
     _get_weekday_column,
 )
 from app.models.gtfs import GTFSCalendar
 
 
-class TestTimeToInterval:
-    """Tests for time_to_interval helper function."""
+@pytest.fixture
+def mock_cache():
+    """Create a mock cache service."""
+    cache = AsyncMock()
+    cache.get_json = AsyncMock(return_value=None)
+    cache.set_json = AsyncMock(return_value=None)
+    return cache
 
-    def test_time_to_interval_morning(self):
+
+class TestTimeToSeconds:
+    """Tests for time_to_seconds helper function."""
+
+    def test_time_to_seconds_morning(self):
         """Test conversion of morning time."""
         dt = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
-        result = time_to_interval(dt)
-        assert result == timedelta(hours=8, minutes=30, seconds=0)
+        result = time_to_seconds(dt)
+        assert result == 30_600
 
-    def test_time_to_interval_afternoon(self):
+    def test_time_to_seconds_afternoon(self):
         """Test conversion of afternoon time."""
         dt = datetime(2025, 12, 8, 14, 45, 30, tzinfo=timezone.utc)
-        result = time_to_interval(dt)
-        assert result == timedelta(hours=14, minutes=45, seconds=30)
+        result = time_to_seconds(dt)
+        assert result == 53_130
 
-    def test_time_to_interval_midnight(self):
+    def test_time_to_seconds_midnight(self):
         """Test conversion of midnight."""
         dt = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
-        result = time_to_interval(dt)
-        assert result == timedelta(hours=0, minutes=0, seconds=0)
+        result = time_to_seconds(dt)
+        assert result == 0
 
 
-class TestIntervalToDatetime:
-    """Tests for interval_to_datetime helper function."""
+class TestSecondsToDatetime:
+    """Tests for seconds_to_datetime helper function."""
 
-    def test_interval_to_datetime_with_timedelta(self):
-        """Test conversion from timedelta."""
+    def test_seconds_to_datetime(self):
+        """Test conversion from integer seconds."""
         service_date = date(2025, 12, 8)
-        interval = timedelta(hours=8, minutes=30)
-        result = interval_to_datetime(service_date, interval)
+        result = seconds_to_datetime(service_date, 30_600)
 
         expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
         assert result == expected
 
-    def test_interval_to_datetime_over_24h(self):
+    def test_seconds_to_datetime_over_24h(self):
         """Test conversion of times > 24 hours (overnight service)."""
         service_date = date(2025, 12, 8)
-        interval = timedelta(hours=25, minutes=30)  # 1:30 AM next day
-        result = interval_to_datetime(service_date, interval)
+        result = seconds_to_datetime(service_date, 91_800)
 
         # Should be 2025-12-09 01:30:00
         expected = datetime(2025, 12, 9, 1, 30, 0, tzinfo=timezone.utc)
         assert result == expected
 
-    def test_interval_to_datetime_string_format(self):
-        """Test conversion from string interval format."""
+    def test_seconds_to_datetime_string_integer(self):
+        """Test conversion from string integer seconds."""
         service_date = date(2025, 12, 8)
-        interval_str = "8 hours 30 minutes 0 seconds"
-        result = interval_to_datetime(service_date, interval_str)
+        result = seconds_to_datetime(service_date, "30600")
 
         expected = datetime(2025, 12, 8, 8, 30, 0, tzinfo=timezone.utc)
         assert result == expected
 
-    def test_interval_to_datetime_none(self):
+    def test_seconds_to_datetime_none(self):
         """Test that None returns None."""
-        result = interval_to_datetime(date(2025, 12, 8), None)
+        result = seconds_to_datetime(date(2025, 12, 8), None)
         assert result is None
 
-    def test_interval_to_datetime_invalid_format(self):
-        """Test that unrecognized string format defaults to midnight.
-
-        The parser doesn't raise for unrecognized strings, it just
-        returns midnight (0:0:0 delta) on the service date.
-        """
-        result = interval_to_datetime(date(2025, 12, 8), "invalid")
-        # Parser returns midnight (00:00:00) for strings without hours/minutes/seconds
-        expected = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
-        assert result == expected
-
-    def test_interval_to_datetime_string_with_seconds(self):
-        """Test conversion from string interval format including seconds."""
-        service_date = date(2025, 12, 8)
-        interval_str = "8 hours 30 minutes 45 seconds"
-        result = interval_to_datetime(service_date, interval_str)
-
-        expected = datetime(2025, 12, 8, 8, 30, 45, tzinfo=timezone.utc)
-        assert result == expected
-
-    def test_interval_to_datetime_unknown_type(self):
-        """Test that unknown interval types return None and log a warning."""
-        result = interval_to_datetime(date(2025, 12, 8), 12345)  # int is not supported
+    def test_seconds_to_datetime_invalid_format(self):
+        """Test that unrecognized strings return None."""
+        result = seconds_to_datetime(date(2025, 12, 8), "invalid")
         assert result is None
 
-    def test_interval_to_datetime_value_error(self):
-        """Test handling of ValueError during interval parsing."""
+    def test_seconds_to_datetime_value_error(self):
+        """Test handling of ValueError during seconds parsing."""
 
         # Create a mock object that raises ValueError when accessed
-        class BadInterval:
+        class BadSeconds:
             def __str__(self):
-                raise ValueError("Bad interval")
+                raise ValueError("Bad seconds")
 
-        result = interval_to_datetime(date(2025, 12, 8), BadInterval())
+        result = seconds_to_datetime(date(2025, 12, 8), BadSeconds())
         # Should return None due to exception handling
         assert result is None
 
-    def test_interval_to_datetime_with_base_datetime(self):
+    def test_seconds_to_datetime_with_base_datetime(self):
         """Test conversion with pre-calculated base_datetime."""
         service_date = date(2025, 12, 8)
         base_datetime = datetime(2025, 12, 8, 0, 0, 0, tzinfo=timezone.utc)
-        interval = timedelta(hours=10, minutes=30)
 
         # Should use the base_datetime directly
-        result = interval_to_datetime(
-            service_date, interval, base_datetime=base_datetime
-        )
+        result = seconds_to_datetime(service_date, 37_800, base_datetime=base_datetime)
 
         expected = datetime(2025, 12, 8, 10, 30, 0, tzinfo=timezone.utc)
         assert result == expected
@@ -248,9 +231,9 @@ class TestGTFSScheduleService:
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_session):
+    def service(self, mock_session, mock_cache):
         """Create service with mock session."""
-        return GTFSScheduleService(mock_session)
+        return GTFSScheduleService(mock_session, cache_service=mock_cache)
 
     @pytest.mark.asyncio
     async def test_get_stop_departures_stop_not_found(self, service, mock_session):
@@ -278,6 +261,66 @@ class TestGTFSScheduleService:
             )
 
             mock_method.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_active_service_ids_caches_by_date(
+        self, service, mock_session, mock_cache
+    ):
+        """Test active service IDs are cached per query date."""
+        cache_key = "gtfs:schedule:active_service_ids:v1:2025-12-08"
+        mock_cache.get_json.side_effect = [
+            None,
+            ["service_1", "service_3"],
+        ]
+
+        mock_cal_result = MagicMock()
+        mock_cal_scalars = MagicMock()
+        mock_cal_scalars.all = MagicMock(return_value=["service_1", "service_2"])
+        mock_cal_result.scalars = MagicMock(return_value=mock_cal_scalars)
+
+        mock_cd_result = MagicMock()
+        added = MagicMock()
+        added.service_id = "service_3"
+        added.exception_type = 1
+        removed = MagicMock()
+        removed.service_id = "service_2"
+        removed.exception_type = 2
+        mock_cd_result.all = MagicMock(return_value=[added, removed])
+
+        mock_session.execute = AsyncMock(side_effect=[mock_cal_result, mock_cd_result])
+
+        first_result = await service.get_active_service_ids(date(2025, 12, 8))
+        second_result = await service.get_active_service_ids(date(2025, 12, 8))
+
+        assert sorted(first_result) == ["service_1", "service_3"]
+        assert second_result == ["service_1", "service_3"]
+        mock_cache.get_json.assert_any_call(cache_key)
+        assert mock_cache.get_json.await_count == 2
+        mock_cache.set_json.assert_called_once()
+        assert mock_session.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_active_service_ids_falls_back_when_cache_fails(
+        self, service, mock_session, mock_cache
+    ):
+        """Test cache failures do not block active service ID lookup."""
+        mock_cache.get_json.side_effect = RuntimeError("cache down")
+        mock_cache.set_json.side_effect = RuntimeError("cache down")
+
+        mock_cal_result = MagicMock()
+        mock_cal_scalars = MagicMock()
+        mock_cal_scalars.all = MagicMock(return_value=["service_1"])
+        mock_cal_result.scalars = MagicMock(return_value=mock_cal_scalars)
+
+        mock_cd_result = MagicMock()
+        mock_cd_result.all = MagicMock(return_value=[])
+
+        mock_session.execute = AsyncMock(side_effect=[mock_cal_result, mock_cd_result])
+
+        result = await service.get_active_service_ids(date(2025, 12, 8))
+
+        assert result == ["service_1"]
+        assert mock_session.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_search_stops_by_name(self, service, mock_session):
@@ -494,13 +537,13 @@ class TestGetStopDepartures:
         return AsyncMock()
 
     @pytest.fixture
-    def service(self, mock_session):
+    def service(self, mock_session, mock_cache):
         """Create service with mock session."""
-        return GTFSScheduleService(mock_session)
+        return GTFSScheduleService(mock_session, cache_service=mock_cache)
 
     def _create_departure_row(
         self,
-        departure_time: timedelta,
+        departure_time: timedelta | int,
         trip_id: str = "trip_001",
         route_id: str = "route_S1",
         trip_headsign: str = "München Ost",
@@ -510,12 +553,25 @@ class TestGetStopDepartures:
         route_color: str = "00BFFF",
         stop_id: str = "de:09162:6",
         stop_name: str = "Marienplatz",
-        arrival_time: timedelta = None,
+        arrival_time: timedelta | int = None,
     ):
         """Create a mock departure row matching the SQL query output."""
+        departure_seconds = (
+            int(departure_time.total_seconds())
+            if isinstance(departure_time, timedelta)
+            else departure_time
+        )
+        arrival_seconds = (
+            int(arrival_time.total_seconds())
+            if isinstance(arrival_time, timedelta)
+            else arrival_time
+        )
+        if arrival_seconds is None:
+            arrival_seconds = departure_seconds
+
         row = MagicMock()
-        row.departure_time = departure_time
-        row.arrival_time = arrival_time or departure_time
+        row.departure_seconds = departure_seconds
+        row.arrival_seconds = arrival_seconds
         row.trip_headsign = trip_headsign
         row.route_short_name = route_short_name
         row.route_long_name = route_long_name
@@ -526,8 +582,8 @@ class TestGetStopDepartures:
         row.route_id = route_id
         # Add _mapping for dict conversion
         row._mapping = {
-            "departure_time": departure_time,
-            "arrival_time": arrival_time or departure_time,
+            "departure_seconds": departure_seconds,
+            "arrival_seconds": arrival_seconds,
             "trip_headsign": trip_headsign,
             "route_short_name": route_short_name,
             "route_long_name": route_long_name,
@@ -649,6 +705,9 @@ class TestGetStopDepartures:
         sql = str(query_obj)
 
         assert "t.service_id IN" in sql or "gtfs_trips.service_id IN" in sql
+        assert "departure_seconds" in sql
+        assert "departure_time" not in sql
+        assert "ORDER BY st.departure_seconds" in sql
 
     @pytest.mark.asyncio
     async def test_get_stop_departures_includes_parent_station_children(
@@ -872,8 +931,8 @@ class TestGetStopDepartures:
             departure_time=timedelta(hours=9, minutes=0),
             trip_id="trip_no_arrival",
         )
-        departure_row.arrival_time = None
-        departure_row._mapping["arrival_time"] = None
+        departure_row.arrival_seconds = None
+        departure_row._mapping["arrival_seconds"] = None
 
         mock_stop = self._mock_stop_exists(mock_session)
         mock_stop_result = MagicMock()

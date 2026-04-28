@@ -1,4 +1,7 @@
 import asyncio
+import csv
+import io
+import inspect
 import logging
 import tempfile
 import zipfile
@@ -16,8 +19,40 @@ from app.core.config import Settings
 from app.models.gtfs import (
     GTFSFeedInfo,
 )
+from app.services.cache import get_cache_service
 
 logger = logging.getLogger(__name__)
+
+
+class GTFSFeedValidationError(ValueError):
+    """Raised when a GTFS feed is incomplete before final table replacement."""
+
+
+_REQUIRED_STATIC_COLUMNS: dict[str, set[str]] = {
+    "stops.txt": {"stop_id", "stop_name", "stop_lat", "stop_lon"},
+    "routes.txt": {"route_id", "route_type"},
+    "trips.txt": {"trip_id", "route_id", "service_id"},
+    "calendar.txt": {
+        "service_id",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "start_date",
+        "end_date",
+    },
+    "calendar_dates.txt": {"service_id", "date", "exception_type"},
+    "stop_times.txt": {
+        "trip_id",
+        "stop_id",
+        "arrival_time",
+        "departure_time",
+        "stop_sequence",
+    },
+}
 
 
 class _ConnectionContext:
@@ -65,6 +100,31 @@ def _clean_value(val):
     return val
 
 
+def _parse_gtfs_time_to_seconds(time_value: Any) -> int | None:
+    """Parse a GTFS HH:MM:SS value into seconds since service midnight."""
+    cleaned = _clean_value(time_value)
+    if cleaned is None:
+        return None
+
+    try:
+        parts = str(cleaned).strip().split(":")
+    except Exception:
+        return None
+
+    if len(parts) != 3 or not all(part.strip() for part in parts):
+        return None
+
+    try:
+        hours, minutes, seconds = (int(part) for part in parts)
+    except ValueError:
+        return None
+
+    if hours < 0 or not 0 <= minutes <= 59 or not 0 <= seconds <= 59:
+        return None
+
+    return hours * 3600 + minutes * 60 + seconds
+
+
 class GTFSFeedImporter:
     """Import GTFS feed into PostgreSQL using Polars + PostgreSQL COPY."""
 
@@ -106,11 +166,9 @@ class GTFSFeedImporter:
 
         # Generate feed_id for tracking
         feed_id = f"gtfs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        stop_times_batch_size = self.settings.gtfs_stop_times_batch_size
 
-        # Truncate all GTFS tables for clean import
-        logger.info("Truncating existing GTFS data...")
-        await self._truncate_all_tables()
-
+        final_load_started = False
         try:
             if is_zip:
                 with zipfile.ZipFile(feed_path) as zf:
@@ -121,6 +179,19 @@ class GTFSFeedImporter:
                     calendar_dates_df = self._read_gtfs_table(zf, "calendar_dates.txt")
                     feed_info_df = self._read_gtfs_table(zf, "feed_info.txt")
 
+                    self._validate_static_feed_content(
+                        zf,
+                        stops_df=stops_df,
+                        routes_df=routes_df,
+                        trips_df=trips_df,
+                        calendar_df=calendar_df,
+                        calendar_dates_df=calendar_dates_df,
+                    )
+
+                    logger.info("Truncating existing GTFS data...")
+                    await self._truncate_all_tables()
+                    final_load_started = True
+
                     logger.info(
                         f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
                     )
@@ -129,12 +200,10 @@ class GTFSFeedImporter:
                     # These have no dependencies on each other
                     try:
                         async with asyncio.TaskGroup() as tg:
-                            tg.create_task(self._copy_stops(stops_df, feed_id))
-                            tg.create_task(self._copy_routes(routes_df, feed_id))
+                            tg.create_task(self._copy_stops(stops_df))
+                            tg.create_task(self._copy_routes(routes_df))
                             tg.create_task(
-                                self._copy_calendar(
-                                    calendar_df, calendar_dates_df, feed_id
-                                )
+                                self._copy_calendar(calendar_df, calendar_dates_df)
                             )
                     except* Exception:  # type: ignore
                         # ExceptionGroup handling for Python 3.11+
@@ -144,10 +213,16 @@ class GTFSFeedImporter:
                         raise
 
                     # Phase 2: Import dependent tables (trips depends on routes, calendar)
-                    await self._copy_trips(trips_df, feed_id)
+                    await self._copy_trips(trips_df)
 
                     # Phase 3: Import stop_times (depends on trips, stops)
-                    await self._copy_stop_times_from_zip(zf, feed_id)
+                    logger.info(
+                        "Using GTFS stop_times batch size of %s rows",
+                        stop_times_batch_size,
+                    )
+                    await self._copy_stop_times_from_zip(
+                        zf, batch_size=stop_times_batch_size
+                    )
             else:
                 stops_df = self._read_gtfs_table(feed_path, "stops.txt")
                 routes_df = self._read_gtfs_table(feed_path, "routes.txt")
@@ -158,6 +233,19 @@ class GTFSFeedImporter:
                 )
                 feed_info_df = self._read_gtfs_table(feed_path, "feed_info.txt")
 
+                self._validate_static_feed_content(
+                    feed_path,
+                    stops_df=stops_df,
+                    routes_df=routes_df,
+                    trips_df=trips_df,
+                    calendar_df=calendar_df,
+                    calendar_dates_df=calendar_dates_df,
+                )
+
+                logger.info("Truncating existing GTFS data...")
+                await self._truncate_all_tables()
+                final_load_started = True
+
                 logger.info(
                     f"Persisting GTFS feed {feed_id} to database using parallel COPY..."
                 )
@@ -165,20 +253,26 @@ class GTFSFeedImporter:
                 # Phase 1: Parallel import of independent tables
                 try:
                     async with asyncio.TaskGroup() as tg:
-                        tg.create_task(self._copy_stops(stops_df, feed_id))
-                        tg.create_task(self._copy_routes(routes_df, feed_id))
+                        tg.create_task(self._copy_stops(stops_df))
+                        tg.create_task(self._copy_routes(routes_df))
                         tg.create_task(
-                            self._copy_calendar(calendar_df, calendar_dates_df, feed_id)
+                            self._copy_calendar(calendar_df, calendar_dates_df)
                         )
                 except* Exception:  # type: ignore
                     logger.exception("Errors during parallel independent table import")
                     raise
 
                 # Phase 2: Import dependent tables
-                await self._copy_trips(trips_df, feed_id)
+                await self._copy_trips(trips_df)
 
                 # Phase 3: Import stop_times
-                await self._copy_stop_times_from_path(feed_path, feed_id)
+                logger.info(
+                    "Using GTFS stop_times batch size of %s rows",
+                    stop_times_batch_size,
+                )
+                await self._copy_stop_times_from_path(
+                    feed_path, batch_size=stop_times_batch_size
+                )
 
             feed_start_date, feed_end_date = self._resolve_feed_dates(
                 feed_info_df, calendar_df
@@ -197,15 +291,38 @@ class GTFSFeedImporter:
                 trip_count=trip_count,
             )
 
+            await self._analyze_gtfs_tables()
+
+            try:
+                await self._cleanup_gtfs_archives(feed_path)
+            except Exception:
+                logger.exception("Failed to clean up GTFS archives after import")
+
+            try:
+                cache = get_cache_service()
+                deleted = await cache.delete_pattern(
+                    "gtfs:schedule:active_service_ids:*"
+                )
+                if deleted:
+                    logger.info(
+                        "Invalidated %d active-service cache keys after import",
+                        deleted,
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to invalidate active-service cache after import"
+                )
+
             logger.info(f"Successfully imported GTFS feed {feed_id}")
             return feed_id
         except Exception:
-            try:
-                await self._recreate_stop_times_indexes_and_fks()
-            except Exception:
-                logger.exception(
-                    "Failed to restore stop_times indexes/FKs after import error"
-                )
+            if final_load_started:
+                try:
+                    await self._recreate_stop_times_indexes_and_fks()
+                except Exception:
+                    logger.exception(
+                        "Failed to restore stop_times indexes/FKs after import error"
+                    )
             raise
 
     async def _truncate_all_tables(self):
@@ -233,11 +350,11 @@ class GTFSFeedImporter:
             text("DROP INDEX IF EXISTS idx_gtfs_stop_times_departure_lookup")
         )
 
-        # Order matters due to foreign key constraints - truncate in reverse dependency order
-        # Use CASCADE to handle any FK constraints
+        # Order matters due to foreign key constraints - truncate all static GTFS
+        # tables together without cascading into realtime history.
         await self.session.execute(
             text(
-                "TRUNCATE TABLE gtfs_stop_times, gtfs_calendar_dates, gtfs_calendar, gtfs_trips, gtfs_routes, gtfs_stops, gtfs_feed_info CASCADE"
+                "TRUNCATE TABLE gtfs_stop_times, gtfs_calendar_dates, gtfs_calendar, gtfs_trips, gtfs_routes, gtfs_stops, gtfs_feed_info"
             )
         )
         await self.session.commit()
@@ -246,29 +363,106 @@ class GTFSFeedImporter:
         # Ensure logging mode matches configuration
         # Use explicit ALTER TABLE statements to avoid SQL injection concerns
         # (table names are hardcoded, logging mode is validated from settings)
-        if self.settings.gtfs_use_unlogged_tables:
-            await self.session.execute(text("ALTER TABLE gtfs_stops SET UNLOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_routes SET UNLOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_trips SET UNLOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_stop_times SET UNLOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_calendar SET UNLOGGED"))
+        await self._set_gtfs_table_persistence_mode(
+            use_unlogged=self.settings.gtfs_use_unlogged_tables
+        )
+
+    async def _get_gtfs_table_persistence(self, table_name: str) -> str | None:
+        result = await self.session.execute(
+            text(
+                "SELECT relpersistence FROM pg_class WHERE oid = to_regclass(:table_name)"
+            ),
+            {"table_name": table_name},
+        )
+        current_mode = result.scalar_one_or_none()
+        if inspect.isawaitable(current_mode):
+            current_mode = await cast(Any, current_mode)
+        return current_mode
+
+    async def _set_gtfs_table_persistence_mode(self, *, use_unlogged: bool) -> None:
+        desired_mode = "u" if use_unlogged else "p"
+        desired_label = "UNLOGGED" if use_unlogged else "LOGGED"
+        tables = [
+            "gtfs_stops",
+            "gtfs_routes",
+            "gtfs_trips",
+            "gtfs_stop_times",
+            "gtfs_calendar",
+            "gtfs_calendar_dates",
+            "gtfs_feed_info",
+        ]
+
+        altered_tables: list[str] = []
+        for table_name in tables:
+            current_mode = await self._get_gtfs_table_persistence(table_name)
+            if current_mode == desired_mode:
+                continue
+
             await self.session.execute(
-                text("ALTER TABLE gtfs_calendar_dates SET UNLOGGED")
+                text(f"ALTER TABLE {table_name} SET {desired_label}")
             )
-            await self.session.execute(text("ALTER TABLE gtfs_feed_info SET UNLOGGED"))
-            logger.info("GTFS tables set to UNLOGGED mode")
+            altered_tables.append(table_name)
+
+        if altered_tables:
+            logger.info(
+                "GTFS tables set to %s mode: %s",
+                desired_label,
+                ", ".join(altered_tables),
+            )
         else:
-            await self.session.execute(text("ALTER TABLE gtfs_stops SET LOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_routes SET LOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_trips SET LOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_stop_times SET LOGGED"))
-            await self.session.execute(text("ALTER TABLE gtfs_calendar SET LOGGED"))
-            await self.session.execute(
-                text("ALTER TABLE gtfs_calendar_dates SET LOGGED")
-            )
-            await self.session.execute(text("ALTER TABLE gtfs_feed_info SET LOGGED"))
-            logger.info("GTFS tables set to LOGGED mode")
+            logger.info("GTFS tables already in %s mode", desired_label)
         await self.session.commit()
+
+    async def _analyze_gtfs_tables(self) -> None:
+        logger.info("Running ANALYZE on GTFS tables after import...")
+        for table_name in [
+            "gtfs_stops",
+            "gtfs_routes",
+            "gtfs_trips",
+            "gtfs_stop_times",
+            "gtfs_calendar",
+            "gtfs_calendar_dates",
+            "gtfs_feed_info",
+        ]:
+            await self.session.execute(text(f"ANALYZE {table_name}"))
+        await self.session.commit()
+
+    async def _cleanup_gtfs_archives(self, current_feed_path: Path | None) -> None:
+        retention_count = self.settings.gtfs_feed_archive_retention_count
+        current_archive_path = (
+            current_feed_path.resolve() if current_feed_path is not None else None
+        )
+
+        for part_file in self.storage_path.glob("*.part"):
+            if not part_file.is_file():
+                continue
+            try:
+                part_file.unlink(missing_ok=True)
+            except Exception:
+                logger.warning(
+                    "Failed to delete stale GTFS archive part file: %s", part_file
+                )
+
+        zip_files = [path for path in self.storage_path.glob("*.zip") if path.is_file()]
+        if not zip_files:
+            return
+
+        zip_files.sort(
+            key=lambda path: (path.stat().st_mtime_ns, path.name),
+            reverse=True,
+        )
+
+        keep_paths = {path.resolve() for path in zip_files[: max(retention_count, 0)]}
+        if current_archive_path is not None:
+            keep_paths.add(current_archive_path)
+
+        for archive_path in zip_files:
+            if archive_path.resolve() in keep_paths:
+                continue
+            try:
+                archive_path.unlink(missing_ok=True)
+            except Exception:
+                logger.warning("Failed to delete stale GTFS archive: %s", archive_path)
 
     def _get_asyncpg_conn(self):
         """Get raw asyncpg connection for COPY operations.
@@ -306,6 +500,131 @@ class GTFSFeedImporter:
 
         with source.open(member_name) as f:
             return pl.read_csv(f, null_values=[""], infer_schema_length=1000)
+
+    def _find_gtfs_zip_member(
+        self, source: zipfile.ZipFile, filename: str
+    ) -> str | None:
+        try:
+            source.getinfo(filename)
+            return filename
+        except KeyError:
+            return next(
+                (name for name in source.namelist() if name.endswith(f"/{filename}")),
+                None,
+            )
+
+    def _read_gtfs_header(
+        self, source: zipfile.ZipFile | Path, filename: str
+    ) -> list[str] | None:
+        if isinstance(source, Path):
+            path = source / filename
+            if not path.exists():
+                return None
+            with path.open("r", encoding="utf-8-sig", newline="") as f:
+                return next(csv.reader(f), None)
+
+        member_name = self._find_gtfs_zip_member(source, filename)
+        if member_name is None:
+            return None
+        with source.open(member_name) as f:
+            wrapper = io.TextIOWrapper(f, encoding="utf-8-sig", newline="")
+            try:
+                return next(csv.reader(wrapper), None)
+            finally:
+                wrapper.detach()
+
+    def _validate_columns(
+        self,
+        *,
+        filename: str,
+        columns: set[str],
+        required: set[str],
+    ) -> None:
+        missing = required - columns
+        if missing:
+            raise GTFSFeedValidationError(
+                f"{filename} is missing required columns: {', '.join(sorted(missing))}"
+            )
+
+    def _validate_required_table(
+        self, *, filename: str, df: pl.DataFrame | None
+    ) -> None:
+        if df is None or df.is_empty():
+            raise GTFSFeedValidationError(f"{filename} is required and cannot be empty")
+        self._validate_columns(
+            filename=filename,
+            columns=set(df.columns),
+            required=_REQUIRED_STATIC_COLUMNS[filename],
+        )
+
+    def _validate_static_feed_content(
+        self,
+        source: zipfile.ZipFile | Path,
+        *,
+        stops_df: pl.DataFrame | None,
+        routes_df: pl.DataFrame | None,
+        trips_df: pl.DataFrame | None,
+        calendar_df: pl.DataFrame | None,
+        calendar_dates_df: pl.DataFrame | None,
+    ) -> None:
+        """Validate source feed content before replacing final GTFS tables."""
+        self._validate_required_table(filename="stops.txt", df=stops_df)
+        self._validate_required_table(filename="routes.txt", df=routes_df)
+        self._validate_required_table(filename="trips.txt", df=trips_df)
+        assert routes_df is not None
+        assert trips_df is not None
+
+        service_ids: set[str] = set()
+        if calendar_df is not None and not calendar_df.is_empty():
+            self._validate_columns(
+                filename="calendar.txt",
+                columns=set(calendar_df.columns),
+                required=_REQUIRED_STATIC_COLUMNS["calendar.txt"],
+            )
+            service_ids.update(str(value) for value in calendar_df["service_id"])
+
+        if calendar_dates_df is not None and not calendar_dates_df.is_empty():
+            self._validate_columns(
+                filename="calendar_dates.txt",
+                columns=set(calendar_dates_df.columns),
+                required=_REQUIRED_STATIC_COLUMNS["calendar_dates.txt"],
+            )
+            service_ids.update(str(value) for value in calendar_dates_df["service_id"])
+
+        if not service_ids:
+            raise GTFSFeedValidationError(
+                "calendar.txt or calendar_dates.txt is required and cannot be empty"
+            )
+
+        route_ids = {str(value) for value in routes_df["route_id"]}
+        unknown_route_ids = sorted(
+            {str(value) for value in trips_df["route_id"]} - route_ids
+        )
+        if unknown_route_ids:
+            preview = ", ".join(unknown_route_ids[:5])
+            raise GTFSFeedValidationError(
+                f"trips.txt references missing route_id values: {preview}"
+            )
+
+        unknown_service_ids = sorted(
+            {str(value) for value in trips_df["service_id"]} - service_ids
+        )
+        if unknown_service_ids:
+            preview = ", ".join(unknown_service_ids[:5])
+            raise GTFSFeedValidationError(
+                f"trips.txt references missing service_id values: {preview}"
+            )
+
+        stop_times_header = self._read_gtfs_header(source, "stop_times.txt")
+        if stop_times_header is None:
+            raise GTFSFeedValidationError(
+                "stop_times.txt is required and cannot be empty"
+            )
+        self._validate_columns(
+            filename="stop_times.txt",
+            columns=set(stop_times_header),
+            required=_REQUIRED_STATIC_COLUMNS["stop_times.txt"],
+        )
 
     def _parse_gtfs_date_value(self, val) -> date | None:
         cleaned = _clean_value(val)
@@ -405,7 +724,7 @@ class GTFSFeedImporter:
                 except Exception:
                     logger.warning("Failed to delete temp file: %s", tmp_path)
 
-    async def _copy_stops(self, stops_df: pl.DataFrame | None, feed_id: str):
+    async def _copy_stops(self, stops_df: pl.DataFrame | None):
         """Bulk insert stops using PostgreSQL COPY."""
         if stops_df is None or stops_df.is_empty():
             return
@@ -421,7 +740,6 @@ class GTFSFeedImporter:
 
         export_df = df.with_columns(
             pl.col("location_type").fill_null(0).cast(pl.Int16),
-            pl.lit(feed_id).alias("feed_id"),
         ).select(
             [
                 "stop_id",
@@ -431,7 +749,6 @@ class GTFSFeedImporter:
                 "location_type",
                 "parent_station",
                 "platform_code",
-                "feed_id",
             ]
         )
 
@@ -446,13 +763,12 @@ class GTFSFeedImporter:
                 "location_type",
                 "parent_station",
                 "platform_code",
-                "feed_id",
             ],
         )
 
         logger.info(f"Copied {stops_df.height} stops")
 
-    async def _copy_routes(self, routes_df: pl.DataFrame | None, feed_id: str):
+    async def _copy_routes(self, routes_df: pl.DataFrame | None):
         """Bulk insert routes using PostgreSQL COPY."""
         if routes_df is None or routes_df.is_empty():
             return
@@ -464,7 +780,7 @@ class GTFSFeedImporter:
             if col not in df.columns:
                 df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias(col))
 
-        export_df = df.with_columns(pl.lit(feed_id).alias("feed_id")).select(
+        export_df = df.select(
             [
                 "route_id",
                 "agency_id",
@@ -472,7 +788,6 @@ class GTFSFeedImporter:
                 "route_long_name",
                 "route_type",
                 "route_color",
-                "feed_id",
             ]
         )
 
@@ -486,13 +801,12 @@ class GTFSFeedImporter:
                 "route_long_name",
                 "route_type",
                 "route_color",
-                "feed_id",
             ],
         )
 
         logger.info(f"Copied {routes_df.height} routes")
 
-    async def _copy_trips(self, trips_df: pl.DataFrame | None, feed_id: str):
+    async def _copy_trips(self, trips_df: pl.DataFrame | None):
         """Bulk insert trips using PostgreSQL COPY."""
         if trips_df is None or trips_df.is_empty():
             return
@@ -507,14 +821,13 @@ class GTFSFeedImporter:
         else:
             df = df.with_columns(pl.col("direction_id").cast(pl.Int16, strict=False))
 
-        export_df = df.with_columns(pl.lit(feed_id).alias("feed_id")).select(
+        export_df = df.select(
             [
                 "trip_id",
                 "route_id",
                 "service_id",
                 "trip_headsign",
                 "direction_id",
-                "feed_id",
             ]
         )
 
@@ -527,13 +840,12 @@ class GTFSFeedImporter:
                 "service_id",
                 "trip_headsign",
                 "direction_id",
-                "feed_id",
             ],
         )
 
         logger.info(f"Copied {trips_df.height} trips")
 
-    async def _copy_stop_times_batch(self, stop_times_df: pl.DataFrame, feed_id: str):
+    async def _copy_stop_times_batch(self, stop_times_df: pl.DataFrame):
         if stop_times_df.is_empty():
             return
 
@@ -543,22 +855,24 @@ class GTFSFeedImporter:
                 df = df.with_columns(pl.lit(0).alias(col))
 
         export_df = df.with_columns(
-            pl.col("arrival_time").cast(pl.Utf8).str.strip_chars().replace("", None),
-            pl.col("departure_time").cast(pl.Utf8).str.strip_chars().replace("", None),
+            pl.col("arrival_time")
+            .map_elements(_parse_gtfs_time_to_seconds, return_dtype=pl.Int32)
+            .alias("arrival_seconds"),
+            pl.col("departure_time")
+            .map_elements(_parse_gtfs_time_to_seconds, return_dtype=pl.Int32)
+            .alias("departure_seconds"),
             pl.col("stop_sequence").cast(pl.Int32),
             pl.col("pickup_type").fill_null(0).cast(pl.Int8),
             pl.col("drop_off_type").fill_null(0).cast(pl.Int8),
-            pl.lit(feed_id).alias("feed_id"),
         ).select(
             [
                 "trip_id",
                 "stop_id",
-                "arrival_time",
-                "departure_time",
+                "arrival_seconds",
+                "departure_seconds",
                 "stop_sequence",
                 "pickup_type",
                 "drop_off_type",
-                "feed_id",
             ]
         )
 
@@ -568,12 +882,11 @@ class GTFSFeedImporter:
             columns=[
                 "trip_id",
                 "stop_id",
-                "arrival_time",
-                "departure_time",
+                "arrival_seconds",
+                "departure_seconds",
                 "stop_sequence",
                 "pickup_type",
                 "drop_off_type",
-                "feed_id",
             ],
         )
 
@@ -608,7 +921,7 @@ class GTFSFeedImporter:
             )
 
     async def _copy_stop_times_from_zip(
-        self, zf: zipfile.ZipFile, feed_id: str, *, batch_size: int = 500_000
+        self, zf: zipfile.ZipFile, *, batch_size: int = 500_000
     ):
         member_name = "stop_times.txt"
         try:
@@ -647,7 +960,7 @@ class GTFSFeedImporter:
 
             async def process_batch(batch_df: pl.DataFrame, batch_num: int) -> None:
                 async with semaphore:
-                    await self._copy_stop_times_batch(batch_df, feed_id)
+                    await self._copy_stop_times_batch(batch_df)
                     if batch_num % 10 == 0:
                         logger.info("Copied %s stop_times batches...", batch_num)
 
@@ -690,7 +1003,7 @@ class GTFSFeedImporter:
         await self._recreate_stop_times_indexes_and_fks()
 
     async def _copy_stop_times_from_path(
-        self, feed_path: Path, feed_id: str, *, batch_size: int = 500_000
+        self, feed_path: Path, *, batch_size: int = 500_000
     ):
         stop_times_path = feed_path / "stop_times.txt"
         if not stop_times_path.exists():
@@ -703,7 +1016,7 @@ class GTFSFeedImporter:
 
         async def process_batch(batch_df: pl.DataFrame, batch_num: int) -> None:
             async with semaphore:
-                await self._copy_stop_times_batch(batch_df, feed_id)
+                await self._copy_stop_times_batch(batch_df)
                 if batch_num % 10 == 0:
                     logger.info("Copied %s stop_times batches...", batch_num)
 
@@ -749,7 +1062,7 @@ class GTFSFeedImporter:
         )
         await self.session.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_time)"
+                "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_seconds)"
             )
         )
 
@@ -785,7 +1098,6 @@ class GTFSFeedImporter:
         self,
         calendar_df: pl.DataFrame | None,
         calendar_dates_df: pl.DataFrame | None,
-        feed_id: str,
     ):
         """Bulk insert calendar data using PostgreSQL COPY."""
         if calendar_df is not None and not calendar_df.is_empty():
@@ -819,7 +1131,6 @@ class GTFSFeedImporter:
                         .str.strptime(pl.Date, "%Y-%m-%d", strict=False),
                     ]
                 ).alias("end_date"),
-                pl.lit(feed_id).alias("feed_id"),
             ).select(
                 [
                     "service_id",
@@ -832,7 +1143,6 @@ class GTFSFeedImporter:
                     "sunday",
                     "start_date",
                     "end_date",
-                    "feed_id",
                 ]
             )
 
@@ -850,7 +1160,6 @@ class GTFSFeedImporter:
                     "sunday",
                     "start_date",
                     "end_date",
-                    "feed_id",
                 ],
             )
 
@@ -873,13 +1182,12 @@ class GTFSFeedImporter:
                     ]
                 ).alias("date"),
                 pl.col("exception_type").cast(pl.Int16),
-                pl.lit(feed_id).alias("feed_id"),
-            ).select(["service_id", "date", "exception_type", "feed_id"])
+            ).select(["service_id", "date", "exception_type"])
 
             await self._copy_polars_df(
                 export_df,
                 "gtfs_calendar_dates",
-                columns=["service_id", "date", "exception_type", "feed_id"],
+                columns=["service_id", "date", "exception_type"],
             )
 
             logger.info(f"Copied {calendar_dates_df.height} calendar date records")
@@ -959,15 +1267,6 @@ class GTFSFeedImporter:
         await self.session.commit()
         logger.info(f"Recorded feed info for {feed_id}")
 
-    def _convert_time_to_interval(self, time_str: Optional[str]) -> Optional[str]:
-        """Convert GTFS time string (HH:MM:SS) to PostgreSQL interval format."""
-        if time_str is None:
-            return None
-
-        try:
-            # Handle times > 24h (e.g., 26:30:00 for 2:30 AM next day)
-            hours, minutes, seconds = map(int, time_str.split(":"))
-            return f"{hours} hours {minutes} minutes {seconds} seconds"
-        except (ValueError, AttributeError):
-            logger.warning(f"Invalid time format: {time_str}")
-            return None
+    def _parse_gtfs_time_to_seconds(self, time_str: Optional[str]) -> Optional[int]:
+        """Convert a GTFS time string (HH:MM:SS) to seconds since service midnight."""
+        return _parse_gtfs_time_to_seconds(time_str)

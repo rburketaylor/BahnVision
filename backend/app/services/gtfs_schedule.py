@@ -1,6 +1,6 @@
-import logging
 import math
-from datetime import datetime, time, timedelta, timezone, date
+import logging
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, List, Optional
 
 from sqlalchemy import select, or_
@@ -15,6 +15,7 @@ from app.models.gtfs import (
     GTFSCalendar,
     GTFSCalendarDate,
 )
+from app.services.cache import CacheService, get_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,25 @@ def _get_weekday_column(calendar: Any, weekday: str):
 class GTFSScheduleService:
     """Query scheduled departures from PostgreSQL."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        cache_service: CacheService | None = None,
+    ):
         self.session = session
+        self._cache = cache_service or get_cache_service()
+
+    def _active_service_ids_cache_key(self, query_date: date) -> str:
+        return f"gtfs:schedule:active_service_ids:v1:{query_date.isoformat()}"
+
+    def _active_service_ids_cache_ttl_seconds(self, query_date: date) -> int:
+        expiry = datetime.combine(
+            query_date + timedelta(days=1), time(0, 0), tzinfo=timezone.utc
+        )
+        ttl_seconds = int((expiry - datetime.now(timezone.utc)).total_seconds())
+        if ttl_seconds <= 0:
+            return 24 * 60 * 60
+        return ttl_seconds
 
     async def get_active_service_ids(self, query_date: date) -> List[str]:
         """Get active service_ids for a specific date.
@@ -103,6 +121,18 @@ class GTFSScheduleService:
         to return a flat list of valid service_ids. This avoids complex joins
         in the main departures query.
         """
+        cache_key = self._active_service_ids_cache_key(query_date)
+        try:
+            cached_service_ids = await self._cache.get_json(cache_key)
+            if cached_service_ids is not None:
+                return [str(service_id) for service_id in cached_service_ids]
+        except Exception as cache_error:
+            logger.warning(
+                "Failed to read active service IDs from cache for %s: %s",
+                query_date,
+                cache_error,
+            )
+
         weekday = query_date.strftime("%A").lower()
 
         c = aliased(GTFSCalendar, name="c")
@@ -131,7 +161,22 @@ class GTFSScheduleService:
         added = {row.service_id for row in exceptions if row.exception_type == 1}
         removed = {row.service_id for row in exceptions if row.exception_type == 2}
 
-        return list((active_cal - removed) | added)
+        active_service_ids = list((active_cal - removed) | added)
+
+        try:
+            await self._cache.set_json(
+                cache_key,
+                active_service_ids,
+                ttl_seconds=self._active_service_ids_cache_ttl_seconds(query_date),
+            )
+        except Exception as cache_error:
+            logger.warning(
+                "Failed to cache active service IDs for %s: %s",
+                query_date,
+                cache_error,
+            )
+
+        return active_service_ids
 
     async def get_stop_departures(
         self,
@@ -181,14 +226,14 @@ class GTFSScheduleService:
         t = aliased(GTFSTrip, name="t")
         r = aliased(GTFSRoute, name="r")
 
-        from_interval = time_to_interval(from_time)
+        from_seconds = time_to_seconds(from_time)
 
         # Build the query using SQLAlchemy ORM
         # Optimization: Filter by stop_id IN (...) instead of joining GTFSStop
         query = (
             select(
-                st.departure_time,
-                st.arrival_time,
+                st.departure_seconds,
+                st.arrival_seconds,
                 t.trip_headsign,
                 r.route_short_name,
                 r.route_long_name,
@@ -203,10 +248,10 @@ class GTFSScheduleService:
             .join(r, t.route_id == r.route_id)
             .where(
                 st.stop_id.in_(target_stop_ids),
-                st.departure_time >= from_interval,
+                st.departure_seconds >= from_seconds,
                 t.service_id.in_(active_service_ids),
             )
-            .order_by(st.departure_time)
+            .order_by(st.departure_seconds)
             .limit(limit)
         )
 
@@ -217,14 +262,14 @@ class GTFSScheduleService:
 
         departures = []
         for row in result:
-            departure_dt = interval_to_datetime(
-                today, row.departure_time, base_datetime=service_midnight
+            departure_dt = seconds_to_datetime(
+                today, row.departure_seconds, base_datetime=service_midnight
             )
             arrival_dt = (
-                interval_to_datetime(
-                    today, row.arrival_time, base_datetime=service_midnight
+                seconds_to_datetime(
+                    today, row.arrival_seconds, base_datetime=service_midnight
                 )
-                if row.arrival_time is not None
+                if row.arrival_seconds is not None
                 else None
             )
 
@@ -316,55 +361,32 @@ class GTFSScheduleService:
         return result.scalar_one_or_none()
 
 
-def time_to_interval(dt: datetime) -> timedelta:
-    """Convert datetime time to a timedelta for PostgreSQL interval comparison."""
+def time_to_seconds(dt: datetime) -> int:
+    """Convert datetime time to seconds since service midnight."""
     t = dt.time()
-    return timedelta(hours=t.hour, minutes=t.minute, seconds=t.second)
+    return t.hour * 3600 + t.minute * 60 + t.second
 
 
-def interval_to_datetime(
-    service_date: date, interval_value, base_datetime: Optional[datetime] = None
+def seconds_to_datetime(
+    service_date: date, seconds_value, base_datetime: Optional[datetime] = None
 ) -> Optional[datetime]:
-    """Convert PostgreSQL interval to a concrete UTC datetime on the service date.
+    """Convert seconds since service midnight to a concrete UTC datetime.
 
     Handles GTFS times that extend beyond 24h by adding the full timedelta to
     the service day midnight instead of wrapping to a time-of-day.
 
     Args:
         service_date: The date of service.
-        interval_value: The interval value (timedelta or string).
+        seconds_value: Seconds since service midnight.
         base_datetime: Optional pre-calculated midnight datetime to avoid
             recalculating it for every call.
     """
-    if interval_value is None:
+    if seconds_value is None:
         return None
 
     try:
-        # PostgreSQL returns interval as timedelta; strings are possible too.
-        if isinstance(interval_value, timedelta):
-            delta = interval_value
-        elif isinstance(interval_value, str):
-            # Parse a string like "2 hours 30 minutes 0 seconds"
-            parts = interval_value.split()
-            hours = minutes = seconds = 0
-            i = 0
-            while i < len(parts):
-                if i + 1 < len(parts):
-                    value = int(parts[i])
-                    unit = parts[i + 1]
-                    if "hour" in unit:
-                        hours = value
-                    elif "minute" in unit:
-                        minutes = value
-                    elif "second" in unit:
-                        seconds = value
-                    i += 2
-                else:
-                    i += 1
-            delta = timedelta(hours=hours, minutes=minutes, seconds=seconds)
-        else:
-            logger.warning("Unknown interval type: %s", type(interval_value))
-            return None
+        total_seconds = int(seconds_value)
+        delta = timedelta(seconds=total_seconds)
 
         if base_datetime:
             return base_datetime + delta
@@ -374,6 +396,10 @@ def interval_to_datetime(
         )
         return service_midnight + delta
 
-    except (ValueError, AttributeError) as exc:
-        logger.warning("Invalid interval format: %s, error: %s", interval_value, exc)
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "Invalid seconds value of type %s: %s",
+            type(seconds_value).__name__,
+            exc,
+        )
         return None

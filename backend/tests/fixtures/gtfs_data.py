@@ -5,7 +5,6 @@ Provides reusable test data for GTFS models and services.
 """
 
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 from typing import List, Optional
 
 from app.models.gtfs import (
@@ -30,18 +29,16 @@ def create_test_gtfs_stop(
     location_type: int = 1,
     parent_station: Optional[str] = None,
     platform_code: Optional[str] = None,
-    feed_id: str = "test_feed_001",
 ) -> GTFSStop:
     """Create a test GTFS stop."""
     return GTFSStop(
         stop_id=stop_id,
         stop_name=stop_name,
-        stop_lat=Decimal(str(stop_lat)),
-        stop_lon=Decimal(str(stop_lon)),
+        stop_lat=stop_lat,
+        stop_lon=stop_lon,
         location_type=location_type,
         parent_station=parent_station,
         platform_code=platform_code,
-        feed_id=feed_id,
     )
 
 
@@ -52,7 +49,6 @@ def create_test_gtfs_route(
     route_long_name: str = "Freising - München Hbf - Ostbahnhof",
     route_type: int = 2,  # Rail
     route_color: str = "00BFFF",
-    feed_id: str = "test_feed_001",
 ) -> GTFSRoute:
     """Create a test GTFS route."""
     return GTFSRoute(
@@ -62,7 +58,6 @@ def create_test_gtfs_route(
         route_long_name=route_long_name,
         route_type=route_type,
         route_color=route_color,
-        feed_id=feed_id,
     )
 
 
@@ -72,7 +67,6 @@ def create_test_gtfs_trip(
     service_id: str = "service_weekday",
     trip_headsign: str = "Ostbahnhof",
     direction_id: int = 0,
-    feed_id: str = "test_feed_001",
 ) -> GTFSTrip:
     """Create a test GTFS trip."""
     return GTFSTrip(
@@ -81,30 +75,27 @@ def create_test_gtfs_trip(
         service_id=service_id,
         trip_headsign=trip_headsign,
         direction_id=direction_id,
-        feed_id=feed_id,
     )
 
 
 def create_test_gtfs_stop_time(
     trip_id: str = "trip_001",
     stop_id: str = "de:09162:6",
-    arrival_time: timedelta = timedelta(hours=8, minutes=0),
-    departure_time: timedelta = timedelta(hours=8, minutes=2),
+    arrival_seconds: int = 8 * 3600,
+    departure_seconds: int = 8 * 3600 + 2 * 60,
     stop_sequence: int = 1,
     pickup_type: int = 0,
     drop_off_type: int = 0,
-    feed_id: str = "test_feed_001",
 ) -> GTFSStopTime:
     """Create a test GTFS stop time."""
     return GTFSStopTime(
         trip_id=trip_id,
         stop_id=stop_id,
-        arrival_time=arrival_time,
-        departure_time=departure_time,
+        arrival_seconds=arrival_seconds,
+        departure_seconds=departure_seconds,
         stop_sequence=stop_sequence,
         pickup_type=pickup_type,
         drop_off_type=drop_off_type,
-        feed_id=feed_id,
     )
 
 
@@ -119,7 +110,6 @@ def create_test_gtfs_calendar(
     sunday: bool = False,
     start_date: date = None,
     end_date: date = None,
-    feed_id: str = "test_feed_001",
 ) -> GTFSCalendar:
     """Create a test GTFS calendar."""
     if start_date is None:
@@ -138,7 +128,6 @@ def create_test_gtfs_calendar(
         sunday=sunday,
         start_date=start_date,
         end_date=end_date,
-        feed_id=feed_id,
     )
 
 
@@ -146,7 +135,6 @@ def create_test_gtfs_calendar_date(
     service_id: str = "service_weekday",
     date_val: date = None,
     exception_type: int = 1,  # 1=added, 2=removed
-    feed_id: str = "test_feed_001",
 ) -> GTFSCalendarDate:
     """Create a test GTFS calendar date exception."""
     if date_val is None:
@@ -156,7 +144,6 @@ def create_test_gtfs_calendar_date(
         service_id=service_id,
         date=date_val,
         exception_type=exception_type,
-        feed_id=feed_id,
     )
 
 
@@ -288,45 +275,45 @@ def create_test_gtfs_stop_times() -> List[GTFSStopTime]:
         create_test_gtfs_stop_time(
             trip_id="trip_001",
             stop_id="de:09162:6",
-            arrival_time=timedelta(hours=8, minutes=0),
-            departure_time=timedelta(hours=8, minutes=2),
+            arrival_seconds=8 * 3600,
+            departure_seconds=8 * 3600 + 2 * 60,
             stop_sequence=1,
         ),
         create_test_gtfs_stop_time(
             trip_id="trip_001",
             stop_id="de:09162:10",
-            arrival_time=timedelta(hours=8, minutes=5),
-            departure_time=timedelta(hours=8, minutes=6),
+            arrival_seconds=8 * 3600 + 5 * 60,
+            departure_seconds=8 * 3600 + 6 * 60,
             stop_sequence=2,
         ),
         create_test_gtfs_stop_time(
             trip_id="trip_001",
             stop_id="de:09162:20",
-            arrival_time=timedelta(hours=8, minutes=12),
-            departure_time=timedelta(hours=8, minutes=12),
+            arrival_seconds=8 * 3600 + 12 * 60,
+            departure_seconds=8 * 3600 + 12 * 60,
             stop_sequence=3,
         ),
         # Trip 002: Reverse direction
         create_test_gtfs_stop_time(
             trip_id="trip_002",
             stop_id="de:09162:20",
-            arrival_time=timedelta(hours=9, minutes=0),
-            departure_time=timedelta(hours=9, minutes=2),
+            arrival_seconds=9 * 3600,
+            departure_seconds=9 * 3600 + 2 * 60,
             stop_sequence=1,
         ),
         create_test_gtfs_stop_time(
             trip_id="trip_002",
             stop_id="de:09162:6",
-            arrival_time=timedelta(hours=9, minutes=15),
-            departure_time=timedelta(hours=9, minutes=18),
+            arrival_seconds=9 * 3600 + 15 * 60,
+            departure_seconds=9 * 3600 + 18 * 60,
             stop_sequence=2,
         ),
         # Overnight trip example (> 24h time)
         create_test_gtfs_stop_time(
             trip_id="trip_003",
             stop_id="de:09162:30",
-            arrival_time=timedelta(hours=25, minutes=30),  # 1:30 AM next day
-            departure_time=timedelta(hours=25, minutes=32),
+            arrival_seconds=25 * 3600 + 30 * 60,  # 1:30 AM next day
+            departure_seconds=25 * 3600 + 32 * 60,
             stop_sequence=1,
         ),
     ]
