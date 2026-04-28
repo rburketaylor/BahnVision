@@ -28,6 +28,7 @@ async def main(feed_source: str | None = None):
     from app.core.config import get_settings
     from app.core.database import get_session
     from app.services.gtfs_feed import GTFSFeedImporter
+    from app.services.gtfs_import_progress import get_gtfs_import_progress_tracker
 
     settings = get_settings()
 
@@ -50,7 +51,11 @@ async def main(feed_source: str | None = None):
     logger.info("This may take several minutes for large feeds...")
 
     async for session in get_session():
-        importer = GTFSFeedImporter(session, settings)
+        importer = GTFSFeedImporter(
+            session,
+            settings,
+            progress_tracker=get_gtfs_import_progress_tracker(),
+        )
         if local_path:
             feed_id = await importer.import_from_path(local_path)
         else:

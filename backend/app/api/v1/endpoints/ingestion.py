@@ -15,11 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.models.gtfs import GTFSFeedInfo
 from app.models.ingestion import (
+    GTFSImportProgress,
     GTFSFeedStatus,
     GTFSRTHarvesterStatus,
     IngestionStatus,
 )
 from app.persistence.models import RealtimeStationStats
+from app.services.gtfs_import_progress import get_gtfs_import_progress_tracker
 
 router = APIRouter()
 
@@ -119,6 +121,9 @@ async def get_ingestion_status(
         route_count=route_count or 0,
         trip_count=trip_count or 0,
         is_expired=is_expired,
+        import_progress=GTFSImportProgress(
+            **(await get_gtfs_import_progress_tracker().get())
+        ),
     )
 
     # Get harvester status from request.state (lifespan yield dict) or app.state.

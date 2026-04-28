@@ -20,6 +20,10 @@ from app.models.gtfs import (
     GTFSFeedInfo,
 )
 from app.services.cache import get_cache_service
+from app.services.gtfs_import_progress import (
+    GTFSImportProgressTrackerProtocol,
+    NoOpGTFSImportProgressTracker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,28 +129,70 @@ def _parse_gtfs_time_to_seconds(time_value: Any) -> int | None:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def _gtfs_time_to_seconds_expr(column_name: str) -> pl.Expr:
+    """Parse GTFS HH:MM:SS strings into seconds using native Polars expressions."""
+    cleaned = pl.col(column_name).str.strip_chars()
+    pattern = r"^(\d+):(\d+):(\d+)$"
+    hours = cleaned.str.extract(pattern, 1).cast(pl.Int32, strict=False)
+    minutes = cleaned.str.extract(pattern, 2).cast(pl.Int32, strict=False)
+    seconds = cleaned.str.extract(pattern, 3).cast(pl.Int32, strict=False)
+
+    return (
+        pl.when(
+            hours.is_not_null() & minutes.is_between(0, 59) & seconds.is_between(0, 59)
+        )
+        .then((hours * 3600) + (minutes * 60) + seconds)
+        .otherwise(None)
+        .cast(pl.Int32)
+    )
+
+
 class GTFSFeedImporter:
     """Import GTFS feed into PostgreSQL using Polars + PostgreSQL COPY."""
 
-    def __init__(self, session: AsyncSession, settings: Settings):
+    def __init__(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        progress_tracker: GTFSImportProgressTrackerProtocol | None = None,
+    ):
         self.session = session
         self.settings = settings
+        self.progress_tracker = progress_tracker or NoOpGTFSImportProgressTracker()
         self.storage_path = Path(settings.gtfs_storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
     async def import_feed(self, feed_url: Optional[str] = None) -> str:
         """Download, parse, and persist GTFS feed."""
         feed_url = feed_url or self.settings.gtfs_feed_url
-        self._validate_feed_url(feed_url)
+        try:
+            await self.progress_tracker.start(
+                phase="download",
+                message="Downloading GTFS feed",
+                percent=0,
+            )
+            self._validate_feed_url(feed_url)
 
-        # 1. Download feed
-        feed_path = await self._download_feed(feed_url)
+            # 1. Download feed
+            feed_path = await self._download_feed(feed_url)
 
-        return await self._import_from_path(feed_path, feed_url)
+            return await self._import_from_path(feed_path, feed_url)
+        except Exception as exc:
+            await self.progress_tracker.fail(exc)
+            raise
 
     async def import_from_path(self, feed_path: Path) -> str:
         """Import GTFS feed from a local file path."""
-        return await self._import_from_path(feed_path, f"file://{feed_path}")
+        try:
+            await self.progress_tracker.start(
+                phase="read",
+                message="Reading GTFS feed",
+                percent=5,
+            )
+            return await self._import_from_path(feed_path, f"file://{feed_path}")
+        except Exception as exc:
+            await self.progress_tracker.fail(exc)
+            raise
 
     def _validate_feed_url(self, feed_url: str) -> None:
         """Basic allowlist for feed URLs to avoid arbitrary downloads."""
@@ -170,6 +216,11 @@ class GTFSFeedImporter:
 
         final_load_started = False
         try:
+            await self.progress_tracker.update(
+                phase="read",
+                message="Reading GTFS static tables",
+                percent=10,
+            )
             if is_zip:
                 with zipfile.ZipFile(feed_path) as zf:
                     stops_df = self._read_gtfs_table(zf, "stops.txt")
@@ -179,6 +230,11 @@ class GTFSFeedImporter:
                     calendar_dates_df = self._read_gtfs_table(zf, "calendar_dates.txt")
                     feed_info_df = self._read_gtfs_table(zf, "feed_info.txt")
 
+                    await self.progress_tracker.update(
+                        phase="validate",
+                        message="Validating GTFS feed",
+                        percent=20,
+                    )
                     self._validate_static_feed_content(
                         zf,
                         stops_df=stops_df,
@@ -189,6 +245,11 @@ class GTFSFeedImporter:
                     )
 
                     logger.info("Truncating existing GTFS data...")
+                    await self.progress_tracker.update(
+                        phase="truncate",
+                        message="Replacing existing GTFS tables",
+                        percent=25,
+                    )
                     await self._truncate_all_tables()
                     final_load_started = True
 
@@ -198,6 +259,11 @@ class GTFSFeedImporter:
 
                     # Phase 1: Parallel import of independent tables (stops, routes, calendar)
                     # These have no dependencies on each other
+                    await self.progress_tracker.update(
+                        phase="copy_core",
+                        message="Copying stops, routes, and calendar tables",
+                        percent=35,
+                    )
                     try:
                         async with asyncio.TaskGroup() as tg:
                             tg.create_task(self._copy_stops(stops_df))
@@ -213,12 +279,24 @@ class GTFSFeedImporter:
                         raise
 
                     # Phase 2: Import dependent tables (trips depends on routes, calendar)
+                    await self.progress_tracker.update(
+                        phase="copy_trips",
+                        message="Copying trips.txt",
+                        percent=45,
+                    )
                     await self._copy_trips(trips_df)
 
                     # Phase 3: Import stop_times (depends on trips, stops)
                     logger.info(
                         "Using GTFS stop_times batch size of %s rows",
                         stop_times_batch_size,
+                    )
+                    await self.progress_tracker.update(
+                        phase="copy_stop_times",
+                        message="Copying stop_times.txt",
+                        percent=50,
+                        rows_processed=0,
+                        rows_total=None,
                     )
                     await self._copy_stop_times_from_zip(
                         zf, batch_size=stop_times_batch_size
@@ -233,6 +311,11 @@ class GTFSFeedImporter:
                 )
                 feed_info_df = self._read_gtfs_table(feed_path, "feed_info.txt")
 
+                await self.progress_tracker.update(
+                    phase="validate",
+                    message="Validating GTFS feed",
+                    percent=20,
+                )
                 self._validate_static_feed_content(
                     feed_path,
                     stops_df=stops_df,
@@ -243,6 +326,11 @@ class GTFSFeedImporter:
                 )
 
                 logger.info("Truncating existing GTFS data...")
+                await self.progress_tracker.update(
+                    phase="truncate",
+                    message="Replacing existing GTFS tables",
+                    percent=25,
+                )
                 await self._truncate_all_tables()
                 final_load_started = True
 
@@ -251,6 +339,11 @@ class GTFSFeedImporter:
                 )
 
                 # Phase 1: Parallel import of independent tables
+                await self.progress_tracker.update(
+                    phase="copy_core",
+                    message="Copying stops, routes, and calendar tables",
+                    percent=35,
+                )
                 try:
                     async with asyncio.TaskGroup() as tg:
                         tg.create_task(self._copy_stops(stops_df))
@@ -263,12 +356,24 @@ class GTFSFeedImporter:
                     raise
 
                 # Phase 2: Import dependent tables
+                await self.progress_tracker.update(
+                    phase="copy_trips",
+                    message="Copying trips.txt",
+                    percent=45,
+                )
                 await self._copy_trips(trips_df)
 
                 # Phase 3: Import stop_times
                 logger.info(
                     "Using GTFS stop_times batch size of %s rows",
                     stop_times_batch_size,
+                )
+                await self.progress_tracker.update(
+                    phase="copy_stop_times",
+                    message="Copying stop_times.txt",
+                    percent=50,
+                    rows_processed=0,
+                    rows_total=None,
                 )
                 await self._copy_stop_times_from_path(
                     feed_path, batch_size=stop_times_batch_size
@@ -291,9 +396,19 @@ class GTFSFeedImporter:
                 trip_count=trip_count,
             )
 
+            await self.progress_tracker.update(
+                phase="analyze",
+                message="Analyzing GTFS tables",
+                percent=93,
+            )
             await self._analyze_gtfs_tables()
 
             try:
+                await self.progress_tracker.update(
+                    phase="cleanup",
+                    message="Cleaning up GTFS import artifacts",
+                    percent=97,
+                )
                 await self._cleanup_gtfs_archives(feed_path)
             except Exception:
                 logger.exception("Failed to clean up GTFS archives after import")
@@ -314,8 +429,10 @@ class GTFSFeedImporter:
                 )
 
             logger.info(f"Successfully imported GTFS feed {feed_id}")
+            await self.progress_tracker.succeed(message=f"Imported GTFS feed {feed_id}")
             return feed_id
-        except Exception:
+        except Exception as exc:
+            await self.progress_tracker.fail(exc)
             if final_load_started:
                 try:
                     await self._recreate_stop_times_indexes_and_fks()
@@ -855,12 +972,8 @@ class GTFSFeedImporter:
                 df = df.with_columns(pl.lit(0).alias(col))
 
         export_df = df.with_columns(
-            pl.col("arrival_time")
-            .map_elements(_parse_gtfs_time_to_seconds, return_dtype=pl.Int32)
-            .alias("arrival_seconds"),
-            pl.col("departure_time")
-            .map_elements(_parse_gtfs_time_to_seconds, return_dtype=pl.Int32)
-            .alias("departure_seconds"),
+            _gtfs_time_to_seconds_expr("arrival_time").alias("arrival_seconds"),
+            _gtfs_time_to_seconds_expr("departure_time").alias("departure_seconds"),
             pl.col("stop_sequence").cast(pl.Int32),
             pl.col("pickup_type").fill_null(0).cast(pl.Int8),
             pl.col("drop_off_type").fill_null(0).cast(pl.Int8),
@@ -920,6 +1033,36 @@ class GTFSFeedImporter:
                 dtypes=schema,
             )
 
+    def _count_csv_data_rows(self, path: str | Path) -> int:
+        line_count = 0
+        with open(path, "rb") as f:
+            for _line in f:
+                line_count += 1
+        return max(line_count - 1, 0)
+
+    def _stop_times_percent(self, rows_processed: int, rows_total: int | None) -> float:
+        if not rows_total:
+            return 50.0
+        return 50.0 + (min(rows_processed, rows_total) / rows_total) * 35.0
+
+    async def _wait_for_stop_times_batch_tasks(
+        self,
+        batch_tasks: set[asyncio.Task[None]],
+        *,
+        return_when: str,
+    ) -> set[asyncio.Task[None]]:
+        done, pending = await asyncio.wait(batch_tasks, return_when=return_when)
+        try:
+            for task in done:
+                task.result()
+        except BaseException:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            raise
+        return set(pending)
+
     async def _copy_stop_times_from_zip(
         self, zf: zipfile.ZipFile, *, batch_size: int = 500_000
     ):
@@ -933,6 +1076,13 @@ class GTFSFeedImporter:
             )
             if alt_member is None:
                 logger.info("No stop_times.txt found in GTFS feed")
+                await self.progress_tracker.update(
+                    phase="rebuild_indexes",
+                    message="Rebuilding stop_times indexes",
+                    percent=88,
+                    rows_processed=0,
+                    rows_total=0,
+                )
                 await self._recreate_stop_times_indexes_and_fks()
                 return
             member_name = alt_member
@@ -954,13 +1104,33 @@ class GTFSFeedImporter:
                         tmp.write(chunk)
 
             logger.info("Extracted stop_times.txt to temp file for processing")
+            rows_total = self._count_csv_data_rows(tmp_path)
+            await self.progress_tracker.update(
+                phase="copy_stop_times",
+                message="Copying stop_times.txt",
+                percent=self._stop_times_percent(0, rows_total),
+                rows_processed=0,
+                rows_total=rows_total,
+            )
 
             # Process batches in parallel with a semaphore to limit concurrency
             semaphore = asyncio.Semaphore(3)  # Max 3 concurrent COPY operations
+            rows_copied = 0
+            rows_lock = asyncio.Lock()
 
             async def process_batch(batch_df: pl.DataFrame, batch_num: int) -> None:
+                nonlocal rows_copied
                 async with semaphore:
                     await self._copy_stop_times_batch(batch_df)
+                    async with rows_lock:
+                        rows_copied += batch_df.height
+                        await self.progress_tracker.update(
+                            phase="copy_stop_times",
+                            message="Copying stop_times.txt",
+                            percent=self._stop_times_percent(rows_copied, rows_total),
+                            rows_processed=rows_copied,
+                            rows_total=rows_total,
+                        )
                     if batch_num % 10 == 0:
                         logger.info("Copied %s stop_times batches...", batch_num)
 
@@ -969,14 +1139,14 @@ class GTFSFeedImporter:
 
             # Collect batches and process them in parallel
             # Using a queue approach to avoid loading all batches into memory at once
-            batch_tasks = []
+            batch_tasks: set[asyncio.Task[None]] = set()
             batch_count = 0
             while True:
                 batches = reader.next_batches(1)
                 if not batches:
                     break
                 batch_count += 1
-                batch_tasks.append(
+                batch_tasks.add(
                     asyncio.create_task(process_batch(batches[0], batch_count))
                 )
 
@@ -984,14 +1154,15 @@ class GTFSFeedImporter:
                 # This prevents memory buildup while maintaining parallelism
                 if len(batch_tasks) >= 6:  # 2x the semaphore size
                     # Wait for at least half to complete before adding more
-                    done, pending = await asyncio.wait(
+                    batch_tasks = await self._wait_for_stop_times_batch_tasks(
                         batch_tasks, return_when=asyncio.FIRST_COMPLETED
                     )
-                    batch_tasks = list(pending)
 
             # Wait for remaining tasks
             if batch_tasks:
-                await asyncio.gather(*batch_tasks)
+                await self._wait_for_stop_times_batch_tasks(
+                    batch_tasks, return_when=asyncio.ALL_COMPLETED
+                )
 
         finally:
             if tmp_path is not None:
@@ -1000,6 +1171,11 @@ class GTFSFeedImporter:
                 except Exception:
                     logger.warning("Failed to delete temp file: %s", tmp_path)
 
+        await self.progress_tracker.update(
+            phase="rebuild_indexes",
+            message="Rebuilding stop_times indexes",
+            percent=88,
+        )
         await self._recreate_stop_times_indexes_and_fks()
 
     async def _copy_stop_times_from_path(
@@ -1008,43 +1184,75 @@ class GTFSFeedImporter:
         stop_times_path = feed_path / "stop_times.txt"
         if not stop_times_path.exists():
             logger.info("No stop_times.txt found at %s", stop_times_path)
+            await self.progress_tracker.update(
+                phase="rebuild_indexes",
+                message="Rebuilding stop_times indexes",
+                percent=88,
+                rows_processed=0,
+                rows_total=0,
+            )
             await self._recreate_stop_times_indexes_and_fks()
             return
 
+        rows_total = self._count_csv_data_rows(stop_times_path)
+        await self.progress_tracker.update(
+            phase="copy_stop_times",
+            message="Copying stop_times.txt",
+            percent=self._stop_times_percent(0, rows_total),
+            rows_processed=0,
+            rows_total=rows_total,
+        )
+
         # Process batches in parallel with a semaphore to limit concurrency
         semaphore = asyncio.Semaphore(3)  # Max 3 concurrent COPY operations
+        rows_copied = 0
+        rows_lock = asyncio.Lock()
 
         async def process_batch(batch_df: pl.DataFrame, batch_num: int) -> None:
+            nonlocal rows_copied
             async with semaphore:
                 await self._copy_stop_times_batch(batch_df)
+                async with rows_lock:
+                    rows_copied += batch_df.height
+                    await self.progress_tracker.update(
+                        phase="copy_stop_times",
+                        message="Copying stop_times.txt",
+                        percent=self._stop_times_percent(rows_copied, rows_total),
+                        rows_processed=rows_copied,
+                        rows_total=rows_total,
+                    )
                 if batch_num % 10 == 0:
                     logger.info("Copied %s stop_times batches...", batch_num)
 
         reader = self._read_csv_batched(str(stop_times_path), batch_size=batch_size)
 
         # Collect batches and process them in parallel
-        batch_tasks = []
+        batch_tasks: set[asyncio.Task[None]] = set()
         batch_count = 0
         while True:
             batches = reader.next_batches(1)
             if not batches:
                 break
             batch_count += 1
-            batch_tasks.append(
-                asyncio.create_task(process_batch(batches[0], batch_count))
-            )
+            batch_tasks.add(asyncio.create_task(process_batch(batches[0], batch_count)))
 
             # Wait for some tasks to complete if we have many pending
             if len(batch_tasks) >= 6:  # 2x the semaphore size
-                done, pending = await asyncio.wait(
+                batch_tasks = await self._wait_for_stop_times_batch_tasks(
                     batch_tasks, return_when=asyncio.FIRST_COMPLETED
                 )
-                batch_tasks = list(pending)
 
         # Wait for remaining tasks
         if batch_tasks:
-            await asyncio.gather(*batch_tasks)
+            await self._wait_for_stop_times_batch_tasks(
+                batch_tasks, return_when=asyncio.ALL_COMPLETED
+            )
 
+        await self.progress_tracker.update(
+            phase="rebuild_indexes",
+            message="Rebuilding stop_times indexes",
+            percent=88,
+        )
         await self._recreate_stop_times_indexes_and_fks()
 
     async def _recreate_stop_times_indexes_and_fks(self) -> None:

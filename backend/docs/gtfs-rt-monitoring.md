@@ -81,7 +81,20 @@ Combined status for GTFS static feed imports and GTFS-RT harvester.
     "stop_count": 42000,
     "route_count": 1500,
     "trip_count": 850000,
-    "is_expired": false
+    "is_expired": false,
+    "import_progress": {
+      "state": "running",
+      "phase": "copy_stop_times",
+      "message": "Copying stop_times.txt",
+      "percent": 72.4,
+      "rows_processed": 36200000,
+      "rows_total": 50000000,
+      "started_at": "2026-02-15T06:00:00Z",
+      "updated_at": "2026-02-15T06:12:00Z",
+      "finished_at": null,
+      "error_type": null,
+      "error_message": null
+    }
   },
   "gtfs_rt_harvester": {
     "is_running": true,
@@ -93,6 +106,25 @@ Combined status for GTFS static feed imports and GTFS-RT harvester.
 ```
 
 **Use case:** Operational monitoring dashboard to verify data ingestion health.
+
+The `gtfs_feed.import_progress` object reports the static GTFS importer state.
+Poll `/api/v1/system/ingestion-status` while `state` is `running` to watch live
+phase, percentage, and `stop_times.txt` row counts. `failed` and `succeeded`
+records remain visible for 24 hours, or until the next import starts.
+
+| Field            | Type              | Description                                                                  |
+| ---------------- | ----------------- | ---------------------------------------------------------------------------- |
+| `state`          | string            | `idle`, `running`, `succeeded`, or `failed`.                                 |
+| `phase`          | string or null    | Current phase, such as `download`, `copy_stop_times`, `analyze`, `complete`. |
+| `message`        | string or null    | Human-readable current importer activity.                                    |
+| `percent`        | number or null    | Weighted import completion percentage.                                       |
+| `rows_processed` | integer or null   | Rows copied for `stop_times.txt` when that phase is active.                  |
+| `rows_total`     | integer or null   | Total `stop_times.txt` data rows when known.                                 |
+| `started_at`     | timestamp or null | Import start time.                                                           |
+| `updated_at`     | timestamp or null | Last progress update time.                                                   |
+| `finished_at`    | timestamp or null | Completion or failure time.                                                  |
+| `error_type`     | string or null    | Exception class name for failed imports.                                     |
+| `error_message`  | string or null    | Exception message for failed imports, without traceback details.             |
 
 ## Existing Prometheus Metrics
 

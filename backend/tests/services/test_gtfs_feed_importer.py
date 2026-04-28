@@ -7,6 +7,7 @@ without requiring a live database.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import zipfile
 from importlib.util import module_from_spec, spec_from_file_location
@@ -42,6 +43,37 @@ def _make_session():
     session.execute = AsyncMock()
     session.commit = AsyncMock()
     return session
+
+
+def _make_stop_times_batch(trip_id: str) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "trip_id": [trip_id],
+            "stop_id": ["s1"],
+            "arrival_time": ["08:00:00"],
+            "departure_time": ["08:01:00"],
+            "stop_sequence": [1],
+        }
+    )
+
+
+class _RecordingProgressTracker:
+    def __init__(self):
+        self.events = []
+
+    async def start(self, **kwargs):
+        self.events.append(("start", kwargs))
+
+    async def update(self, **kwargs):
+        self.events.append(("update", kwargs))
+
+    async def succeed(self, **kwargs):
+        self.events.append(("succeed", kwargs))
+
+    async def fail(self, exc):
+        self.events.append(
+            ("fail", {"error_type": type(exc).__name__, "message": str(exc)})
+        )
 
 
 def _load_rt_fk_migration():
@@ -406,11 +438,20 @@ class TestGTFSFeedImporterCopyShaping:
         importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
         stop_times_df = pl.DataFrame(
             {
-                "trip_id": ["t1"],
-                "stop_id": ["s1"],
-                "arrival_time": [""],
-                "departure_time": [" 08:01:00 "],
-                "stop_sequence": [1],
+                "trip_id": [f"t{i}" for i in range(8)],
+                "stop_id": ["s1"] * 8,
+                "arrival_time": [
+                    "",
+                    None,
+                    "08:01:00",
+                    " 8:1:0 ",
+                    "26:30:00",
+                    "not-a-time",
+                    "12:60:00",
+                    "-1:00:00",
+                ],
+                "departure_time": [" 08:01:00 "] * 8,
+                "stop_sequence": list(range(1, 9)),
             }
         )
 
@@ -429,10 +470,19 @@ class TestGTFSFeedImporterCopyShaping:
             "pickup_type",
             "drop_off_type",
         ]
-        assert export_df["arrival_seconds"].to_list() == [None]
-        assert export_df["departure_seconds"].to_list() == [28_860]
-        assert export_df["pickup_type"].to_list() == [0]
-        assert export_df["drop_off_type"].to_list() == [0]
+        assert export_df["arrival_seconds"].to_list() == [
+            None,
+            None,
+            28_860,
+            28_860,
+            95_400,
+            None,
+            None,
+            None,
+        ]
+        assert export_df["departure_seconds"].to_list() == [28_860] * 8
+        assert export_df["pickup_type"].to_list() == [0] * 8
+        assert export_df["drop_off_type"].to_list() == [0] * 8
 
     @pytest.mark.asyncio
     async def test_copy_stop_times_batch_skips_empty(self, tmp_path: Path):
@@ -559,6 +609,228 @@ class TestGTFSFeedImporterOrchestration:
         assert record_kwargs["trip_count"] == 1
         assert record_kwargs["feed_start_date"] == date(2025, 1, 1)
         assert record_kwargs["feed_end_date"] == date(2025, 1, 31)
+
+    @pytest.mark.asyncio
+    async def test_import_progress_events_include_success_phases(self, tmp_path: Path):
+        session = _make_session()
+        tracker = _RecordingProgressTracker()
+        importer = GTFSFeedImporter(
+            session,
+            _make_settings(tmp_path),
+            progress_tracker=tracker,
+        )
+
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stops.txt").write_text(
+            "stop_id,stop_name,stop_lat,stop_lon\ns1,Alpha,1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "routes.txt").write_text(
+            "route_id,route_type\nr1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "trips.txt").write_text(
+            "trip_id,route_id,service_id\nt1,r1,svc1\n", encoding="utf-8"
+        )
+        (feed_dir / "calendar.txt").write_text(
+            "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+            "svc1,1,1,1,1,1,0,0,20250101,20250131\n",
+            encoding="utf-8",
+        )
+        (feed_dir / "calendar_dates.txt").write_text(
+            "service_id,date,exception_type\nsvc1,20250110,2\n", encoding="utf-8"
+        )
+        (feed_dir / "stop_times.txt").write_text(
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch.object(importer, "_truncate_all_tables", new_callable=AsyncMock),
+            patch.object(importer, "_copy_stops", new_callable=AsyncMock),
+            patch.object(importer, "_copy_routes", new_callable=AsyncMock),
+            patch.object(importer, "_copy_trips", new_callable=AsyncMock),
+            patch.object(
+                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+            ),
+            patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
+            patch.object(importer, "_record_feed_info", new_callable=AsyncMock),
+            patch.object(importer, "_analyze_gtfs_tables", new_callable=AsyncMock),
+            patch.object(importer, "_cleanup_gtfs_archives", new_callable=AsyncMock),
+        ):
+            await importer.import_from_path(feed_dir)
+
+        phases = [
+            event[1]["phase"]
+            for event in tracker.events
+            if event[0] in {"start", "update"} and "phase" in event[1]
+        ]
+        assert phases[:6] == [
+            "read",
+            "read",
+            "validate",
+            "truncate",
+            "copy_core",
+            "copy_trips",
+        ]
+        assert "copy_stop_times" in phases
+        assert "analyze" in phases
+        assert "cleanup" in phases
+        assert tracker.events[-1][0] == "succeed"
+
+    @pytest.mark.asyncio
+    async def test_import_progress_records_validation_failure(self, tmp_path: Path):
+        session = _make_session()
+        tracker = _RecordingProgressTracker()
+        importer = GTFSFeedImporter(
+            session,
+            _make_settings(tmp_path),
+            progress_tracker=tracker,
+        )
+
+        feed_dir = tmp_path / "bad_feed"
+        feed_dir.mkdir()
+        (feed_dir / "routes.txt").write_text("route_id,route_type\nr1,2\n")
+
+        with pytest.raises(Exception):
+            await importer.import_from_path(feed_dir)
+
+        assert tracker.events[-1][0] == "fail"
+        assert tracker.events[-1][1]["error_type"] in {
+            "GTFSFeedValidationError",
+            "FileNotFoundError",
+        }
+
+    @pytest.mark.asyncio
+    async def test_stop_times_progress_reports_rows_after_each_batch(
+        self, tmp_path: Path
+    ):
+        session = _make_session()
+        tracker = _RecordingProgressTracker()
+        settings = _make_settings(tmp_path)
+        settings.gtfs_stop_times_batch_size = 2
+        importer = GTFSFeedImporter(session, settings, progress_tracker=tracker)
+
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stop_times.txt").write_text(
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n"
+            "t1,s2,08:02:00,08:03:00,2\n"
+            "t2,s1,09:00:00,09:01:00,1\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch.object(importer, "_copy_stop_times_batch", new_callable=AsyncMock),
+            patch.object(
+                importer,
+                "_recreate_stop_times_indexes_and_fks",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await importer._copy_stop_times_from_path(feed_dir, batch_size=2)
+
+        row_updates = [
+            event[1]
+            for event in tracker.events
+            if event[0] == "update"
+            and event[1].get("phase") == "copy_stop_times"
+            and event[1].get("rows_total") == 3
+        ]
+        assert row_updates[0]["rows_processed"] == 0
+        assert row_updates[-1]["rows_processed"] == 3
+        assert row_updates[-1]["percent"] == 85.0
+
+    @pytest.mark.asyncio
+    async def test_copy_stop_times_from_path_propagates_completed_batch_error(
+        self, tmp_path: Path
+    ):
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stop_times.txt").write_text(
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            + "".join(f"t{i},s1,08:00:00,08:01:00,1\n" for i in range(1, 7)),
+            encoding="utf-8",
+        )
+
+        class FakeReader:
+            def __init__(self):
+                self._count = 0
+
+            def next_batches(self, _n):
+                if self._count >= 6:
+                    return []
+                self._count += 1
+                return [_make_stop_times_batch(f"t{self._count}")]
+
+        async def copy_batch(batch_df: pl.DataFrame):
+            if batch_df["trip_id"][0] == "t1":
+                raise RuntimeError("copy failed")
+            await asyncio.sleep(1)
+
+        with (
+            patch.object(importer, "_read_csv_batched", return_value=FakeReader()),
+            patch.object(importer, "_copy_stop_times_batch", side_effect=copy_batch),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ) as recreate,
+        ):
+            with pytest.raises(RuntimeError, match="copy failed"):
+                await importer._copy_stop_times_from_path(feed_dir, batch_size=1)
+
+        recreate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_copy_stop_times_from_zip_propagates_completed_batch_error_and_cleans_up(
+        self, tmp_path: Path
+    ):
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        zip_path = tmp_path / "feed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(
+                "stop_times.txt",
+                "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+                + "".join(f"t{i},s1,08:00:00,08:01:00,1\n" for i in range(1, 7)),
+            )
+
+        class FakeReader:
+            def __init__(self):
+                self._count = 0
+
+            def next_batches(self, _n):
+                if self._count >= 6:
+                    return []
+                self._count += 1
+                return [_make_stop_times_batch(f"t{self._count}")]
+
+        extracted_path: Path | None = None
+
+        def capture_read_csv_batched(source, *, batch_size):
+            nonlocal extracted_path
+            extracted_path = Path(source)
+            return FakeReader()
+
+        async def copy_batch(batch_df: pl.DataFrame):
+            if batch_df["trip_id"][0] == "t1":
+                raise RuntimeError("copy failed")
+            await asyncio.sleep(1)
+
+        with (
+            zipfile.ZipFile(zip_path) as zf,
+            patch.object(importer, "_read_csv_batched", capture_read_csv_batched),
+            patch.object(importer, "_copy_stop_times_batch", side_effect=copy_batch),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ) as recreate,
+        ):
+            with pytest.raises(RuntimeError, match="copy failed"):
+                await importer._copy_stop_times_from_zip(zf, batch_size=1)
+
+        assert extracted_path is not None
+        assert not extracted_path.exists()
+        recreate.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_import_from_directory_exercises_directory_branch(

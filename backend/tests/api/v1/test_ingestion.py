@@ -13,6 +13,26 @@ from app.core.database import get_session
 from app.models.gtfs import GTFSFeedInfo
 
 
+class _FakeProgressTracker:
+    def __init__(self, payload=None):
+        self.payload = payload or {
+            "state": "idle",
+            "phase": None,
+            "message": None,
+            "percent": None,
+            "rows_processed": None,
+            "rows_total": None,
+            "started_at": None,
+            "updated_at": None,
+            "finished_at": None,
+            "error_type": None,
+            "error_message": None,
+        }
+
+    async def get(self) -> dict:
+        return self.payload
+
+
 class _FakeResult:
     def __init__(self, *, one_or_none=None, scalar_value=None):
         self._one_or_none = one_or_none
@@ -71,6 +91,16 @@ async def _get_ingestion_status(
         return await client.get("/api/v1/system/ingestion-status")
 
 
+@pytest.fixture(autouse=True)
+def _mock_progress_tracker(monkeypatch):
+    tracker = _FakeProgressTracker()
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.ingestion.get_gtfs_import_progress_tracker",
+        lambda: tracker,
+    )
+    return tracker
+
+
 @pytest.mark.asyncio
 async def test_ingestion_status_success_uses_fast_row_estimate():
     feed_info = GTFSFeedInfo(
@@ -98,6 +128,7 @@ async def test_ingestion_status_success_uses_fast_row_estimate():
 
     assert payload["gtfs_feed"]["feed_id"] == "gtfs_20260120_100000"
     assert payload["gtfs_feed"]["is_expired"] is False
+    assert payload["gtfs_feed"]["import_progress"]["state"] == "idle"
 
     assert payload["gtfs_rt_harvester"]["is_running"] is True
     assert payload["gtfs_rt_harvester"]["stations_updated_last_harvest"] == 15
@@ -162,3 +193,69 @@ async def test_ingestion_status_returns_500_when_all_count_paths_fail():
     response = await _get_ingestion_status(app, raise_server_exceptions=False)
 
     assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_ingestion_status_includes_running_import_progress(
+    _mock_progress_tracker,
+):
+    _mock_progress_tracker.payload = {
+        "state": "running",
+        "phase": "copy_stop_times",
+        "message": "Copying stop_times.txt",
+        "percent": 72.4,
+        "rows_processed": 36_200_000,
+        "rows_total": 50_000_000,
+        "started_at": "2026-01-20T10:00:00+00:00",
+        "updated_at": "2026-01-20T10:05:00+00:00",
+        "finished_at": None,
+        "error_type": None,
+        "error_message": None,
+    }
+    session = _FakeSession(
+        outcomes=[
+            _FakeResult(one_or_none=None),
+            _FakeResult(one_or_none=0),
+        ]
+    )
+
+    app = _build_app(session)
+    response = await _get_ingestion_status(app)
+
+    assert response.status_code == 200
+    progress = response.json()["gtfs_feed"]["import_progress"]
+    assert progress["state"] == "running"
+    assert progress["phase"] == "copy_stop_times"
+    assert progress["percent"] == 72.4
+    assert progress["rows_processed"] == 36_200_000
+
+
+@pytest.mark.asyncio
+async def test_ingestion_status_includes_failed_import_progress(_mock_progress_tracker):
+    _mock_progress_tracker.payload = {
+        "state": "failed",
+        "phase": "validate",
+        "message": "Validating GTFS feed",
+        "percent": 20,
+        "rows_processed": None,
+        "rows_total": None,
+        "started_at": "2026-01-20T10:00:00+00:00",
+        "updated_at": "2026-01-20T10:01:00+00:00",
+        "finished_at": "2026-01-20T10:01:00+00:00",
+        "error_type": "GTFSFeedValidationError",
+        "error_message": "stops.txt is required and cannot be empty",
+    }
+    session = _FakeSession(
+        outcomes=[
+            _FakeResult(one_or_none=None),
+            _FakeResult(one_or_none=0),
+        ]
+    )
+
+    app = _build_app(session)
+    response = await _get_ingestion_status(app)
+
+    assert response.status_code == 200
+    progress = response.json()["gtfs_feed"]["import_progress"]
+    assert progress["state"] == "failed"
+    assert progress["error_type"] == "GTFSFeedValidationError"
