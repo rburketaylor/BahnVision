@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -262,7 +262,12 @@ class Settings(BaseSettings):
         default=500_000,
         alias="GTFS_STOP_TIMES_BATCH_SIZE",
         gt=0,
-        description="Batch size used when importing GTFS stop_times.txt rows.",
+        description="Batch size used when importing GTFS stop_times.txt rows in batched mode, or as the streaming sink batch size if applicable.",
+    )
+    gtfs_stop_times_import_mode: Literal["streaming", "batched"] = Field(
+        default="streaming",
+        alias="GTFS_STOP_TIMES_IMPORT_MODE",
+        description="Stop_times import strategy: 'streaming' (lazy sink_csv + single COPY) or 'batched' (eager read_csv_batched + parallel COPY).",
     )
     gtfs_feed_archive_retention_count: int = Field(
         default=2,

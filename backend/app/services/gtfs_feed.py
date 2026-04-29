@@ -287,8 +287,10 @@ class GTFSFeedImporter:
                     await self._copy_trips(trips_df)
 
                     # Phase 3: Import stop_times (depends on trips, stops)
+                    import_mode = self.settings.gtfs_stop_times_import_mode
                     logger.info(
-                        "Using GTFS stop_times batch size of %s rows",
+                        "Using GTFS stop_times import_mode=%s (batch_size=%s)",
+                        import_mode,
                         stop_times_batch_size,
                     )
                     await self.progress_tracker.update(
@@ -298,9 +300,12 @@ class GTFSFeedImporter:
                         rows_processed=0,
                         rows_total=None,
                     )
-                    await self._copy_stop_times_from_zip(
-                        zf, batch_size=stop_times_batch_size
-                    )
+                    if import_mode == "batched":
+                        await self._copy_stop_times_from_zip(
+                            zf, batch_size=stop_times_batch_size
+                        )
+                    else:
+                        await self._copy_stop_times_streaming_from_zip(zf)
             else:
                 stops_df = self._read_gtfs_table(feed_path, "stops.txt")
                 routes_df = self._read_gtfs_table(feed_path, "routes.txt")
@@ -364,8 +369,10 @@ class GTFSFeedImporter:
                 await self._copy_trips(trips_df)
 
                 # Phase 3: Import stop_times
+                import_mode = self.settings.gtfs_stop_times_import_mode
                 logger.info(
-                    "Using GTFS stop_times batch size of %s rows",
+                    "Using GTFS stop_times import_mode=%s (batch_size=%s)",
+                    import_mode,
                     stop_times_batch_size,
                 )
                 await self.progress_tracker.update(
@@ -375,9 +382,12 @@ class GTFSFeedImporter:
                     rows_processed=0,
                     rows_total=None,
                 )
-                await self._copy_stop_times_from_path(
-                    feed_path, batch_size=stop_times_batch_size
-                )
+                if import_mode == "batched":
+                    await self._copy_stop_times_from_path(
+                        feed_path, batch_size=stop_times_batch_size
+                    )
+                else:
+                    await self._copy_stop_times_streaming_from_path(feed_path)
 
             feed_start_date, feed_end_date = self._resolve_feed_dates(
                 feed_info_df, calendar_df
@@ -713,9 +723,12 @@ class GTFSFeedImporter:
                 "calendar.txt or calendar_dates.txt is required and cannot be empty"
             )
 
-        route_ids = {str(value) for value in routes_df["route_id"]}
-        unknown_route_ids = sorted(
-            {str(value) for value in trips_df["route_id"]} - route_ids
+        route_ids_series = routes_df["route_id"].cast(pl.Utf8).unique()
+        unknown_route_ids = (
+            trips_df.filter(~pl.col("route_id").cast(pl.Utf8).is_in(route_ids_series))
+            .select(pl.col("route_id").cast(pl.Utf8).unique().sort())
+            .to_series()
+            .to_list()
         )
         if unknown_route_ids:
             preview = ", ".join(unknown_route_ids[:5])
@@ -723,8 +736,14 @@ class GTFSFeedImporter:
                 f"trips.txt references missing route_id values: {preview}"
             )
 
-        unknown_service_ids = sorted(
-            {str(value) for value in trips_df["service_id"]} - service_ids
+        service_ids_series = pl.Series("service_id", sorted(service_ids), dtype=pl.Utf8)
+        unknown_service_ids = (
+            trips_df.filter(
+                ~pl.col("service_id").cast(pl.Utf8).is_in(service_ids_series)
+            )
+            .select(pl.col("service_id").cast(pl.Utf8).unique().sort())
+            .to_series()
+            .to_list()
         )
         if unknown_service_ids:
             preview = ", ".join(unknown_service_ids[:5])
@@ -1003,6 +1022,202 @@ class GTFSFeedImporter:
             ],
         )
 
+    def _stream_stop_times_to_temp_csv(
+        self, source_path: str | Path, output_path: str
+    ) -> None:
+        """Transform stop_times.txt using lazy streaming and write to a headerless CSV."""
+        lf = pl.scan_csv(source_path, null_values=[""], infer_schema_length=1000)
+        available_cols = set(lf.collect_schema().names())
+
+        pickup_expr = (
+            pl.col("pickup_type").fill_null(0).cast(pl.Int8)
+            if "pickup_type" in available_cols
+            else pl.lit(0).cast(pl.Int8)
+        )
+        drop_off_expr = (
+            pl.col("drop_off_type").fill_null(0).cast(pl.Int8)
+            if "drop_off_type" in available_cols
+            else pl.lit(0).cast(pl.Int8)
+        )
+
+        lf.select(
+            pl.col("trip_id"),
+            pl.col("stop_id"),
+            _gtfs_time_to_seconds_expr("arrival_time").alias("arrival_seconds"),
+            _gtfs_time_to_seconds_expr("departure_time").alias("departure_seconds"),
+            pl.col("stop_sequence").cast(pl.Int32),
+            pickup_expr.alias("pickup_type"),
+            drop_off_expr.alias("drop_off_type"),
+        ).sink_csv(
+            output_path,
+            include_header=False,
+            separator=",",
+            null_value="",
+        )
+
+    _STOP_TIMES_COPY_COLUMNS = [
+        "trip_id",
+        "stop_id",
+        "arrival_seconds",
+        "departure_seconds",
+        "stop_sequence",
+        "pickup_type",
+        "drop_off_type",
+    ]
+
+    async def _streaming_copy_to_db(self, csv_path: str) -> None:
+        """COPY a transformed CSV into gtfs_stop_times via asyncpg."""
+        conn_ctx = self._get_asyncpg_conn()
+        async with conn_ctx as asyncpg_conn:
+            with open(csv_path, "rb") as f:
+                await asyncpg_conn.copy_to_table(
+                    "gtfs_stop_times",
+                    source=f,
+                    columns=self._STOP_TIMES_COPY_COLUMNS,
+                    format="csv",
+                )
+
+    @staticmethod
+    def _cleanup_temp_files(*paths: str | None) -> None:
+        for p in paths:
+            if p is not None:
+                try:
+                    Path(p).unlink(missing_ok=True)
+                except Exception:
+                    logger.warning("Failed to delete temp file: %s", p)
+
+    async def _finalize_streaming_stop_times(self) -> None:
+        """Rebuild PK and indexes after a successful streaming COPY.
+
+        Intentionally not called on COPY failure: the import aborts and the
+        next import cycle re-truncates + rebuilds from scratch.
+        """
+        await self.progress_tracker.update(
+            phase="rebuild_indexes",
+            message="Rebuilding stop_times indexes",
+            percent=88,
+        )
+        await self._recreate_stop_times_indexes_and_fks()
+
+    async def _drop_stop_times_pkey(self) -> None:
+        """Drop PK on stop_times for faster COPY (recreated by _finalize_streaming_stop_times)."""
+        await self.session.execute(
+            text(
+                "ALTER TABLE gtfs_stop_times DROP CONSTRAINT IF EXISTS gtfs_stop_times_pkey"
+            )
+        )
+
+    async def _copy_stop_times_streaming_from_path(self, feed_path: Path) -> None:
+        stop_times_path = feed_path / "stop_times.txt"
+        if not stop_times_path.exists():
+            logger.info("No stop_times.txt found at %s", stop_times_path)
+            await self._finalize_streaming_stop_times()
+            return
+
+        await self._drop_stop_times_pkey()
+
+        await self.progress_tracker.update(
+            phase="copy_stop_times",
+            message="Copying stop_times.txt (streaming)",
+            percent=50.0,
+            rows_processed=None,
+            rows_total=None,
+        )
+
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".csv", delete=False
+            ) as tmp:
+                tmp_path = tmp.name
+
+            await asyncio.to_thread(
+                self._stream_stop_times_to_temp_csv,
+                str(stop_times_path),
+                tmp_path,
+            )
+
+            await self._streaming_copy_to_db(tmp_path)
+
+            await self.progress_tracker.update(
+                phase="copy_stop_times",
+                message="Copying stop_times.txt (streaming)",
+                percent=85.0,
+                rows_processed=None,
+                rows_total=None,
+            )
+        finally:
+            self._cleanup_temp_files(tmp_path)
+
+        await self._finalize_streaming_stop_times()
+
+    async def _copy_stop_times_streaming_from_zip(self, zf: zipfile.ZipFile) -> None:
+        member_name = "stop_times.txt"
+        try:
+            zf.getinfo(member_name)
+        except KeyError:
+            alt_member = next(
+                (name for name in zf.namelist() if name.endswith("/stop_times.txt")),
+                None,
+            )
+            if alt_member is None:
+                logger.info("No stop_times.txt found in GTFS feed")
+                await self._finalize_streaming_stop_times()
+                return
+            member_name = alt_member
+
+        await self._drop_stop_times_pkey()
+
+        extracted_path: str | None = None
+        transformed_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".csv", delete=False
+            ) as tmp:
+                extracted_path = tmp.name
+                with zf.open(member_name) as f:
+                    while True:
+                        chunk = f.read(8 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+
+            logger.info(
+                "Extracted stop_times.txt to temp file for streaming processing"
+            )
+            await self.progress_tracker.update(
+                phase="copy_stop_times",
+                message="Copying stop_times.txt (streaming)",
+                percent=50.0,
+                rows_processed=None,
+                rows_total=None,
+            )
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".csv", delete=False
+            ) as tmp:
+                transformed_path = tmp.name
+
+            await asyncio.to_thread(
+                self._stream_stop_times_to_temp_csv,
+                extracted_path,
+                transformed_path,
+            )
+
+            await self._streaming_copy_to_db(transformed_path)
+
+            await self.progress_tracker.update(
+                phase="copy_stop_times",
+                message="Copying stop_times.txt (streaming)",
+                percent=85.0,
+                rows_processed=None,
+                rows_total=None,
+            )
+        finally:
+            self._cleanup_temp_files(extracted_path, transformed_path)
+
+        await self._finalize_streaming_stop_times()
+
     def _read_csv_batched(self, source, *, batch_size: int):
         schema = {
             "trip_id": pl.Utf8,
@@ -1258,16 +1473,28 @@ class GTFSFeedImporter:
     async def _recreate_stop_times_indexes_and_fks(self) -> None:
         logger.info("Recreating indexes and foreign keys on stop_times...")
 
+        # Primary key covers trip lookups; redundant trip index is not recreated
+        await self.session.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    ALTER TABLE gtfs_stop_times ADD CONSTRAINT gtfs_stop_times_pkey
+                        PRIMARY KEY (trip_id, stop_sequence);
+                EXCEPTION WHEN duplicate_object THEN
+                    NULL;
+                END $$;
+                """
+            )
+        )
+
         await self.session.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop ON gtfs_stop_times(stop_id)"
             )
         )
-        await self.session.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip ON gtfs_stop_times(trip_id)"
-            )
-        )
+        # Note: idx_gtfs_stop_times_trip is intentionally NOT recreated because
+        # the (trip_id, stop_sequence) primary key already covers trip_id lookups.
         await self.session.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_seconds)"

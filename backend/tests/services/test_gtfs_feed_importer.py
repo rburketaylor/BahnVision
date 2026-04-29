@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 import zipfile
 from importlib.util import module_from_spec, spec_from_file_location
 from datetime import date, datetime
@@ -27,12 +28,15 @@ from app.services.gtfs_feed import (
 )
 
 
-def _make_settings(tmp_path: Path, *, unlogged: bool = False):
+def _make_settings(
+    tmp_path: Path, *, unlogged: bool = False, import_mode: str = "streaming"
+):
     return SimpleNamespace(
         gtfs_storage_path=str(tmp_path),
         gtfs_feed_url="https://example.com/gtfs.zip",
         gtfs_use_unlogged_tables=unlogged,
         gtfs_stop_times_batch_size=500_000,
+        gtfs_stop_times_import_mode=import_mode,
         gtfs_feed_archive_retention_count=2,
         gtfs_download_timeout_seconds=5,
     )
@@ -582,7 +586,9 @@ class TestGTFSFeedImporterOrchestration:
                 importer, "_copy_routes", new_callable=AsyncMock
             ) as copy_routes,
             patch.object(importer, "_copy_trips", new_callable=AsyncMock) as copy_trips,
-            patch.object(importer, "_copy_stop_times_from_zip", new_callable=AsyncMock),
+            patch.object(
+                importer, "_copy_stop_times_streaming_from_zip", new_callable=AsyncMock
+            ),
             patch.object(
                 importer, "_copy_calendar", new_callable=AsyncMock
             ) as copy_calendar,
@@ -651,7 +657,9 @@ class TestGTFSFeedImporterOrchestration:
             patch.object(importer, "_copy_routes", new_callable=AsyncMock),
             patch.object(importer, "_copy_trips", new_callable=AsyncMock),
             patch.object(
-                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+                importer,
+                "_copy_stop_times_streaming_from_path",
+                new_callable=AsyncMock,
             ),
             patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
             patch.object(importer, "_record_feed_info", new_callable=AsyncMock),
@@ -707,7 +715,7 @@ class TestGTFSFeedImporterOrchestration:
     ):
         session = _make_session()
         tracker = _RecordingProgressTracker()
-        settings = _make_settings(tmp_path)
+        settings = _make_settings(tmp_path, import_mode="batched")
         settings.gtfs_stop_times_batch_size = 2
         importer = GTFSFeedImporter(session, settings, progress_tracker=tracker)
 
@@ -873,7 +881,9 @@ class TestGTFSFeedImporterOrchestration:
             patch.object(importer, "_copy_routes", new_callable=AsyncMock),
             patch.object(importer, "_copy_trips", new_callable=AsyncMock),
             patch.object(
-                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+                importer,
+                "_copy_stop_times_streaming_from_path",
+                new_callable=AsyncMock,
             ),
             patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
             patch.object(
@@ -929,7 +939,9 @@ class TestGTFSFeedImporterOrchestration:
             patch.object(importer, "_copy_routes", new_callable=AsyncMock),
             patch.object(importer, "_copy_trips", new_callable=AsyncMock),
             patch.object(
-                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+                importer,
+                "_copy_stop_times_streaming_from_path",
+                new_callable=AsyncMock,
             ),
             patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
             patch.object(importer, "_record_feed_info", new_callable=AsyncMock),
@@ -949,7 +961,7 @@ class TestGTFSFeedImporterOrchestration:
         self, tmp_path: Path
     ):
         session = _make_session()
-        settings = _make_settings(tmp_path)
+        settings = _make_settings(tmp_path, import_mode="batched")
         settings.gtfs_stop_times_batch_size = 123_456
         importer = GTFSFeedImporter(session, settings)
 
@@ -1002,7 +1014,7 @@ class TestGTFSFeedImporterOrchestration:
         self, tmp_path: Path
     ):
         session = _make_session()
-        settings = _make_settings(tmp_path)
+        settings = _make_settings(tmp_path, import_mode="batched")
         settings.gtfs_stop_times_batch_size = 123_456
         importer = GTFSFeedImporter(session, settings)
 
@@ -1098,7 +1110,9 @@ class TestGTFSFeedImporterOrchestration:
                 side_effect=RuntimeError("trip copy failed"),
             ),
             patch.object(
-                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+                importer,
+                "_copy_stop_times_streaming_from_path",
+                new_callable=AsyncMock,
             ) as copy_stop_times,
             patch.object(
                 importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
@@ -1516,7 +1530,9 @@ class TestGTFSFeedImporterDatabaseCommands:
             patch.object(importer, "_copy_trips", new_callable=AsyncMock),
             patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
             patch.object(
-                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+                importer,
+                "_copy_stop_times_streaming_from_path",
+                new_callable=AsyncMock,
             ),
             patch.object(importer, "_record_feed_info", new_callable=AsyncMock),
             patch.object(importer, "_analyze_gtfs_tables", new_callable=AsyncMock),
@@ -1545,6 +1561,10 @@ class TestGTFSFeedImporterDatabaseCommands:
             for call in session.execute.call_args_list
         ]
         assert any(
+            "ALTER TABLE gtfs_stop_times ADD CONSTRAINT gtfs_stop_times_pkey" in stmt
+            for stmt in executed_sql
+        )
+        assert any(
             "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_stop" in stmt
             for stmt in executed_sql
         )
@@ -1556,6 +1576,10 @@ class TestGTFSFeedImporterDatabaseCommands:
         assert any(
             "idx_gtfs_stop_times_departure_lookup ON gtfs_stop_times(stop_id, departure_seconds)"
             in stmt
+            for stmt in executed_sql
+        )
+        assert not any(
+            "CREATE INDEX IF NOT EXISTS idx_gtfs_stop_times_trip" in stmt
             for stmt in executed_sql
         )
         session.commit.assert_awaited()
@@ -2261,3 +2285,307 @@ class TestGTFSFeedImporterZipExtraction:
         # Verify extraction worked for nested path
         assert extracted_path is not None
         assert isinstance(extracted_path, str)
+
+
+class TestGTFSFeedImporterStreaming:
+    @pytest.mark.asyncio
+    async def test_import_from_zip_uses_streaming_by_default(self, tmp_path: Path):
+        session = _make_session()
+        importer = GTFSFeedImporter(session, _make_settings(tmp_path))
+
+        zip_path = tmp_path / "feed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(
+                "stops.txt",
+                "stop_id,stop_name,stop_lat,stop_lon\ns1,Alpha,1,2\n",
+            )
+            zf.writestr("routes.txt", "route_id,route_type\nr1,2\n")
+            zf.writestr("trips.txt", "trip_id,route_id,service_id\nt1,r1,svc1\n")
+            zf.writestr(
+                "calendar.txt",
+                "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+                "svc1,1,1,1,1,1,0,0,20250101,20250131\n",
+            )
+            zf.writestr(
+                "calendar_dates.txt",
+                "service_id,date,exception_type\nsvc1,20250110,2\n",
+            )
+            zf.writestr(
+                "stop_times.txt",
+                "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+                "t1,s1,08:00:00,08:01:00,1\n",
+            )
+            zf.writestr(
+                "feed_info.txt",
+                "feed_start_date,feed_end_date\n2025-01-01,2025-01-31\n",
+            )
+
+        with (
+            patch.object(importer, "_truncate_all_tables", new_callable=AsyncMock),
+            patch.object(importer, "_copy_stops", new_callable=AsyncMock),
+            patch.object(importer, "_copy_routes", new_callable=AsyncMock),
+            patch.object(importer, "_copy_trips", new_callable=AsyncMock),
+            patch.object(
+                importer,
+                "_copy_stop_times_streaming_from_zip",
+                new_callable=AsyncMock,
+            ) as copy_streaming,
+            patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
+            patch.object(importer, "_record_feed_info", new_callable=AsyncMock),
+            patch.object(importer, "_analyze_gtfs_tables", new_callable=AsyncMock),
+            patch.object(importer, "_cleanup_gtfs_archives", new_callable=AsyncMock),
+        ):
+            await importer._import_from_path(zip_path, "https://example.com/gtfs.zip")
+
+        copy_streaming.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_import_from_path_uses_batched_when_configured(self, tmp_path: Path):
+        session = _make_session()
+        importer = GTFSFeedImporter(
+            session, _make_settings(tmp_path, import_mode="batched")
+        )
+
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stops.txt").write_text(
+            "stop_id,stop_name,stop_lat,stop_lon\ns1,Alpha,1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "routes.txt").write_text(
+            "route_id,route_type\nr1,2\n", encoding="utf-8"
+        )
+        (feed_dir / "trips.txt").write_text(
+            "trip_id,route_id,service_id\nt1,r1,svc1\n", encoding="utf-8"
+        )
+        (feed_dir / "calendar.txt").write_text(
+            "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+            "svc1,1,1,1,1,1,0,0,20250101,20250131\n",
+            encoding="utf-8",
+        )
+        (feed_dir / "calendar_dates.txt").write_text(
+            "service_id,date,exception_type\nsvc1,20250110,2\n", encoding="utf-8"
+        )
+        (feed_dir / "stop_times.txt").write_text(
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch.object(importer, "_truncate_all_tables", new_callable=AsyncMock),
+            patch.object(importer, "_copy_stops", new_callable=AsyncMock),
+            patch.object(importer, "_copy_routes", new_callable=AsyncMock),
+            patch.object(importer, "_copy_trips", new_callable=AsyncMock),
+            patch.object(
+                importer, "_copy_stop_times_from_path", new_callable=AsyncMock
+            ) as copy_batched,
+            patch.object(importer, "_copy_calendar", new_callable=AsyncMock),
+            patch.object(importer, "_record_feed_info", new_callable=AsyncMock),
+            patch.object(importer, "_analyze_gtfs_tables", new_callable=AsyncMock),
+            patch.object(importer, "_cleanup_gtfs_archives", new_callable=AsyncMock),
+        ):
+            await importer._import_from_path(feed_dir, "file://feed_dir")
+
+        copy_batched.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_streaming_import_single_copy_and_no_pre_count(self, tmp_path: Path):
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stop_times.txt").write_text(
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n"
+            "t1,s2,08:02:00,08:03:00,2\n"
+            "t2,s1,09:00:00,09:01:00,1\n",
+            encoding="utf-8",
+        )
+
+        copy_calls = []
+        tracker = _RecordingProgressTracker()
+        importer.progress_tracker = tracker
+
+        class FakeConn:
+            async def copy_to_table(self, *args, **kwargs):
+                copy_calls.append(kwargs)
+
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        with (
+            patch.object(importer, "_get_asyncpg_conn", return_value=FakeConnContext()),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ),
+        ):
+            await importer._copy_stop_times_streaming_from_path(feed_dir)
+
+        assert len(copy_calls) == 1
+        # Streaming mode does not pre-count rows; rows_total stays None
+        progress_updates = [
+            event[1]
+            for event in tracker.events
+            if event[0] == "update" and event[1].get("phase") == "copy_stop_times"
+        ]
+        assert progress_updates[0]["rows_total"] is None
+        assert progress_updates[-1]["rows_total"] is None
+
+    @pytest.mark.asyncio
+    async def test_streaming_import_cleans_up_temp_on_error(self, tmp_path: Path):
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        feed_dir = tmp_path / "feed_dir"
+        feed_dir.mkdir()
+        (feed_dir / "stop_times.txt").write_text(
+            "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+            "t1,s1,08:00:00,08:01:00,1\n",
+            encoding="utf-8",
+        )
+
+        class FakeConn:
+            async def copy_to_table(self, *args, **kwargs):
+                raise RuntimeError("copy failed")
+
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        real_ntf = tempfile.NamedTemporaryFile
+        with (
+            patch.object(importer, "_get_asyncpg_conn", return_value=FakeConnContext()),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ) as recreate,
+            patch(
+                "tempfile.NamedTemporaryFile",
+                side_effect=lambda *a, **kw: real_ntf(
+                    *a, **{**kw, "dir": str(tmp_path)}
+                ),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="copy failed"):
+                await importer._copy_stop_times_streaming_from_path(feed_dir)
+
+        recreate.assert_not_awaited()
+        # Ensure no orphaned temp CSVs remain in tmp_path
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(csv_files) == 0, f"Orphaned temp files: {csv_files}"
+
+    def test_streaming_stop_times_transform_matches_batched(self, tmp_path: Path):
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        stop_times_df = pl.DataFrame(
+            {
+                "trip_id": [f"t{i}" for i in range(8)],
+                "stop_id": ["s1"] * 8,
+                "arrival_time": [
+                    "",
+                    None,
+                    "08:01:00",
+                    " 8:1:0 ",
+                    "26:30:00",
+                    "not-a-time",
+                    "12:60:00",
+                    "-1:00:00",
+                ],
+                "departure_time": [" 08:01:00 "] * 8,
+                "stop_sequence": list(range(1, 9)),
+            }
+        )
+        source_csv = tmp_path / "source.csv"
+        stop_times_df.write_csv(source_csv)
+
+        output_csv = tmp_path / "output.csv"
+        importer._stream_stop_times_to_temp_csv(str(source_csv), str(output_csv))
+
+        result = pl.read_csv(
+            output_csv,
+            has_header=False,
+            new_columns=[
+                "trip_id",
+                "stop_id",
+                "arrival_seconds",
+                "departure_seconds",
+                "stop_sequence",
+                "pickup_type",
+                "drop_off_type",
+            ],
+            schema_overrides={
+                "stop_sequence": pl.Int32,
+                "pickup_type": pl.Int8,
+                "drop_off_type": pl.Int8,
+            },
+        )
+
+        assert result.columns == [
+            "trip_id",
+            "stop_id",
+            "arrival_seconds",
+            "departure_seconds",
+            "stop_sequence",
+            "pickup_type",
+            "drop_off_type",
+        ]
+        assert result["arrival_seconds"].to_list() == [
+            None,
+            None,
+            28_860,
+            28_860,
+            95_400,
+            None,
+            None,
+            None,
+        ]
+        assert result["departure_seconds"].to_list() == [28_860] * 8
+        assert result["pickup_type"].to_list() == [0] * 8
+        assert result["drop_off_type"].to_list() == [0] * 8
+
+    @pytest.mark.asyncio
+    async def test_streaming_from_zip_cleans_up_both_temp_files_on_error(
+        self, tmp_path: Path
+    ):
+        importer = GTFSFeedImporter(_make_session(), _make_settings(tmp_path))
+        zip_path = tmp_path / "feed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(
+                "stop_times.txt",
+                "trip_id,stop_id,arrival_time,departure_time,stop_sequence\n"
+                "t1,s1,08:00:00,08:01:00,1\n",
+            )
+
+        class FakeConn:
+            async def copy_to_table(self, *args, **kwargs):
+                raise RuntimeError("copy failed")
+
+        class FakeConnContext:
+            async def __aenter__(self):
+                return FakeConn()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        real_ntf = tempfile.NamedTemporaryFile
+        with (
+            zipfile.ZipFile(zip_path) as zf,
+            patch.object(importer, "_get_asyncpg_conn", return_value=FakeConnContext()),
+            patch.object(
+                importer, "_recreate_stop_times_indexes_and_fks", new_callable=AsyncMock
+            ) as recreate,
+            patch(
+                "tempfile.NamedTemporaryFile",
+                side_effect=lambda *a, **kw: real_ntf(
+                    *a, **{**kw, "dir": str(tmp_path)}
+                ),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="copy failed"):
+                await importer._copy_stop_times_streaming_from_zip(zf)
+
+        recreate.assert_not_awaited()
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(csv_files) == 0, f"Orphaned temp files: {csv_files}"
