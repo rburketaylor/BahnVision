@@ -57,7 +57,8 @@ See `backend/docs/gtfs-rt-monitoring.md` for comprehensive documentation of:
 
 The following environment variables were added or updated as part of the efficiency optimization work:
 
-- `GTFS_STOP_TIMES_BATCH_SIZE` (default: `500000`) — Batch size used when importing GTFS `stop_times.txt`. Tune upward on hosts with more memory.
+- `GTFS_STOP_TIMES_IMPORT_MODE` (default: `streaming`) — Stop_times import strategy. `streaming` uses Polars lazy `sink_csv` followed by a single PostgreSQL `COPY` for lowest memory usage and fastest throughput. `batched` uses the legacy eager `read_csv_batched` with parallel COPY tasks.
+- `GTFS_STOP_TIMES_BATCH_SIZE` (default: `500000`) — Batch size used when importing GTFS `stop_times.txt` in **batched** mode. In **streaming** mode this may be used as the sink batch size if the Polars streaming engine supports it. Tune upward on hosts with more memory.
 - `GTFS_FEED_ARCHIVE_RETENTION_COUNT` (default: `2`) — Number of downloaded GTFS archive ZIPs to retain after successful imports. Set to `0` to keep only the current archive.
 - `FALLBACK_CACHE_MAX_ENTRIES` (default: `1024`) — Maximum number of entries in the in-process fallback cache when Valkey is unavailable.
 - `GTFS_RT_RETENTION_ENABLED` (default: `False`) — Enable validated historical GTFS-RT hourly retention cleanup. Must remain `False` until daily rollup parity has been verified in production.
