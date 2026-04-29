@@ -43,7 +43,8 @@ Analyze the diffs and group changes into logical atomic commits. Each commit sho
 
 - Group by **feature**, not by file. If changes across multiple files implement a single feature, commit them together.
 - A "feature" typically includes: backend implementation, frontend wiring, and any related type/model changes.
-- Only split when changes are truly independent (e.g., a feature vs. its test updates vs. unrelated docs).
+- **Bundle code and tests together.** The pre-commit test hook runs pytest/vitest on every commit, so a code commit without its corresponding test updates will fail. Always include test changes in the same commit as the code they test.
+- Only split when changes are truly independent (e.g., a feature vs. unrelated docs vs. unrelated refactors).
 - Avoid over-granular commits that split a single coherent change just because it touches many files.
 
 Common commit types:
