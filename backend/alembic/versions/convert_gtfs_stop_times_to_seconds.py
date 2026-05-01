@@ -38,7 +38,7 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(f"DROP INDEX IF EXISTS {_DEPARTURE_LOOKUP_INDEX}")
+    op.execute("DROP INDEX IF EXISTS idx_gtfs_stop_times_departure_lookup")
     op.create_index(
         _DEPARTURE_LOOKUP_INDEX,
         "gtfs_stop_times",
@@ -67,7 +67,7 @@ def downgrade() -> None:
         """
     )
 
-    op.execute(f"DROP INDEX IF EXISTS {_DEPARTURE_LOOKUP_INDEX}")
+    op.execute("DROP INDEX IF EXISTS idx_gtfs_stop_times_departure_lookup")
     op.create_index(
         _DEPARTURE_LOOKUP_INDEX,
         "gtfs_stop_times",

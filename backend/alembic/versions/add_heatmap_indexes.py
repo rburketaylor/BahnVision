@@ -18,10 +18,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_index(
-        "ix_realtime_stats_bucket_width_route",
-        "realtime_station_stats",
-        ["bucket_start", "bucket_width_minutes", "route_type"],
+    # Use IF NOT EXISTS to make the migration idempotent
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_realtime_stats_bucket_width_route "
+        "ON realtime_station_stats (bucket_start, bucket_width_minutes, route_type)"
     )
 
 

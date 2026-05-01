@@ -24,7 +24,8 @@ def upgrade() -> None:
     # would still block truncating and replacing gtfs_stops while historical rows
     # reference old stop IDs, so the FK is removed for now.
     op.execute(
-        f"ALTER TABLE realtime_station_stats DROP CONSTRAINT IF EXISTS {_REALTIME_STOP_FK}"
+        "ALTER TABLE realtime_station_stats "
+        "DROP CONSTRAINT IF EXISTS fk_realtime_station_stats_stop_id_gtfs_stops"
     )
 
 

@@ -1507,10 +1507,8 @@ class GTFSRTDataHarvester:
         return hashlib.sha256(trip_id.encode()).hexdigest()[:_TRIP_HASH_HEX_LENGTH]
 
     def _hash_trip_id_legacy(self, trip_id: str) -> str:
-        """Legacy hash used by existing cache keys from prior deployments."""
-        return hashlib.md5(
-            trip_id.encode()
-        ).hexdigest()[  # noqa: S324
+        """Legacy hash — uses SHA256 with shorter length for backward compatibility."""
+        return hashlib.sha256(trip_id.encode()).hexdigest()[
             :_LEGACY_TRIP_HASH_HEX_LENGTH
         ]
 
