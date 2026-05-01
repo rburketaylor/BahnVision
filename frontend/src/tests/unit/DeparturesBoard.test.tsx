@@ -96,6 +96,32 @@ describe('DeparturesBoard', () => {
     expect(cancelledCard?.className).toContain('bg-red-')
   })
 
+  it('keeps row node stable when realtime departure changes', () => {
+    const initialDeparture = buildDeparture({
+      trip_id: 'trip_stable_key',
+      headsign: 'Stable Key Train',
+      scheduled_departure: '2024-01-01T10:00:00Z',
+      realtime_departure: '2024-01-01T10:02:00Z',
+    })
+
+    const { rerender } = render(<DeparturesBoard departures={[initialDeparture]} />)
+
+    const beforeNode = screen.getByTestId('departure-row-trip_stable_key-de:09162:6')
+    expect(beforeNode).toBeInTheDocument()
+
+    const updatedDeparture = buildDeparture({
+      trip_id: 'trip_stable_key',
+      headsign: 'Stable Key Train',
+      scheduled_departure: '2024-01-01T10:00:00Z',
+      realtime_departure: '2024-01-01T10:07:00Z',
+    })
+
+    rerender(<DeparturesBoard departures={[updatedDeparture]} />)
+
+    const afterNode = screen.getByTestId('departure-row-trip_stable_key-de:09162:6')
+    expect(afterNode).toBe(beforeNode)
+  })
+
   it('shows empty-state message when no departures are available', () => {
     render(<DeparturesBoard departures={[]} />)
     expect(screen.getByText('No departures found')).toBeInTheDocument()

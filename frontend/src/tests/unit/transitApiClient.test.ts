@@ -7,15 +7,19 @@ vi.mock('../../services/httpClient', () => ({
   httpClient: {
     baseUrl: 'https://api.example.test',
     request: vi.fn(),
+    requestText: vi.fn(),
   },
 }))
 
 const mockRequest = vi.mocked(httpClient.request)
+const mockRequestText = vi.mocked(httpClient.requestText)
 
 describe('transitApiClient', () => {
   beforeEach(() => {
     mockRequest.mockReset()
     mockRequest.mockResolvedValue({} as never)
+    mockRequestText.mockReset()
+    mockRequestText.mockResolvedValue('mock metrics')
   })
 
   it('encodes stop IDs in getStop', async () => {
@@ -58,5 +62,12 @@ describe('transitApiClient', () => {
       '/api/v1/transit/stops/stop%3A1/trends?time_range=24h&granularity=daily',
       { timeout: 10000 }
     )
+  })
+
+  it('fetches metrics via httpClient.requestText', async () => {
+    const data = await transitApiClient.getMetrics()
+
+    expect(mockRequestText).toHaveBeenCalledWith('/metrics')
+    expect(data).toBe('mock metrics')
   })
 })

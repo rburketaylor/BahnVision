@@ -5,7 +5,7 @@ Tests for the GTFS-RT data harvester service (streaming aggregation).
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -14,6 +14,8 @@ from app.services.gtfs_realtime_harvester import (
     DELAY_THRESHOLD_SECONDS,
     GTFSRTDataHarvester,
     ON_TIME_THRESHOLD_SECONDS,
+    _TRIP_MARKER_TTL_SECONDS,
+    _TRIP_MARKER_UPDATE_LUA,
 )
 from app.services.heatmap_cache import heatmap_live_snapshot_cache_key
 
@@ -25,6 +27,9 @@ class FakeCache:
         self._store: dict[str, str] = {}
 
     async def get(self, key: str):
+        return self._store.get(key)
+
+    async def get_json(self, key: str):
         return self._store.get(key)
 
     async def set(self, key: str, value: str, ttl_seconds: int | None = None):
@@ -105,7 +110,8 @@ class AtomicEvalClient:
 
             prev_rank = rank.get(prev_status, 0)
             new_rank = rank.get(new_status, 0)
-            if new_rank > prev_rank:
+            is_uncancel = prev_status == "cancelled" and new_status != "cancelled"
+            if new_rank > prev_rank or is_uncancel:
                 if prev_status == "delayed":
                     delayed_delta -= 1
                 elif prev_status == "on_time":
@@ -122,7 +128,7 @@ class AtomicEvalClient:
 
                 delay_delta = max(new_delay - prev_delay, 0)
                 self._store[key] = f"{new_status}|{new_delay}"
-            elif new_delay > prev_delay:
+            elif prev_status != "cancelled" and new_delay > prev_delay:
                 delay_delta = new_delay - prev_delay
                 self._store[key] = f"{prev_status}|{new_delay}"
 
@@ -239,6 +245,83 @@ class TestGTFSRTDataHarvester:
             assert count == 0
 
     @pytest.mark.asyncio
+    async def test_route_type_map_is_cached_by_active_feed(
+        self,
+    ):
+        """Route type maps should be fetched once per active feed and reused."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        feed_result = MagicMock()
+        feed_result.scalar_one_or_none = MagicMock(return_value="feed_1")
+
+        route_result = MagicMock()
+        route_result.all = MagicMock(return_value=[("route_1", 1)])
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[feed_result, route_result, feed_result]
+        )
+
+        first = await harvester._get_route_type_map(session)
+        second = await harvester._get_route_type_map(session)
+
+        assert first == {"route_1": 1}
+        assert second == {"route_1": 1}
+        assert session.execute.call_count == 3
+        assert cache._store["gtfs_rt:route_type_map:v1:feed_1"] == {"route_1": 1}
+
+    @pytest.mark.asyncio
+    async def test_route_type_map_cache_failures_fall_back_to_db(self):
+        """Cache failures should not block route type map lookup."""
+        cache = AsyncMock()
+        cache.get_json = AsyncMock(side_effect=RuntimeError("cache down"))
+        cache.set_json = AsyncMock(side_effect=RuntimeError("cache down"))
+
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        feed_result = MagicMock()
+        feed_result.scalar_one_or_none = MagicMock(return_value="feed_2")
+
+        route_result = MagicMock()
+        route_result.all = MagicMock(return_value=[("route_2", 2)])
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[feed_result, route_result])
+
+        result = await harvester._get_route_type_map(session)
+
+        assert result == {"route_2": 2}
+        assert session.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_harvest_once_checks_import_lock_once_per_cycle(self):
+        """Import lock should be checked once per harvest cycle."""
+        harvester = GTFSRTDataHarvester(cache_service=None)
+        harvester._fetch_trip_updates = AsyncMock(return_value=[])
+        harvester._check_import_lock = AsyncMock(return_value=False)
+        harvester._cache_live_snapshot = AsyncMock()
+
+        class DummySessionContext:
+            async def __aenter__(self):
+                return AsyncMock()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        with (
+            patch("app.services.gtfs_realtime_harvester.GTFS_RT_AVAILABLE", True),
+            patch(
+                "app.services.gtfs_realtime_harvester.AsyncSessionFactory",
+                return_value=DummySessionContext(),
+            ),
+        ):
+            count = await harvester.harvest_once()
+
+        assert count == 0
+        assert harvester._check_import_lock.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_aggregate_by_stop(self):
         """Test aggregation of trip updates by stop."""
         cache = FakeCache()
@@ -339,7 +422,7 @@ class TestGTFSRTDataHarvester:
         assert stop_a["cancelled"] == 0
 
     def test_hash_trip_id(self):
-        """Test trip ID hashing produces consistent 12-char result."""
+        """Test trip ID hashing produces consistent 24-char result."""
         harvester = GTFSRTDataHarvester(cache_service=None)
 
         hash1 = harvester._hash_trip_id("test_trip_123")
@@ -347,8 +430,63 @@ class TestGTFSRTDataHarvester:
         hash3 = harvester._hash_trip_id("different_trip")
 
         assert hash1 == hash2  # Consistent
-        assert len(hash1) == 12  # 12 chars
+        assert len(hash1) == 24  # 96-bit hex prefix
         assert hash1 != hash3  # Different trips have different hashes
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_reads_legacy_trip_marker_key(self):
+        """Legacy marker keys should still prevent double-counting in-bucket."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        legacy_key = f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id_legacy('trip_1')}"
+        cache._store[legacy_key] = "delayed|400"
+
+        result = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+
+        assert result["trip_count"] == 0
+        assert result["total_delay_seconds"] == 0
+        assert result["delayed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_writes_primary_and_legacy_marker_keys(self):
+        """New writes should keep both marker-key formats in sync."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        primary_key = (
+            f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id('trip_1')}"
+        )
+        legacy_key = f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id_legacy('trip_1')}"
+
+        await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+
+        assert cache._store[primary_key] == "delayed|400"
+        assert cache._store[legacy_key] == "delayed|400"
+
+    def test_lua_script_ttl_fallback_matches_python_constant(self):
+        """Lua fallback TTL should stay aligned with Python source-of-truth."""
+        assert f"or {_TRIP_MARKER_TTL_SECONDS}" in _TRIP_MARKER_UPDATE_LUA
 
     @pytest.mark.asyncio
     async def test_cache_live_snapshot_writes_impacted_only(self):
@@ -428,6 +566,121 @@ class TestGTFSRTDataHarvester:
         assert upgraded["total_delay_seconds"] == 300
         assert upgraded["delayed"] == -1
         assert upgraded["cancelled"] == 1
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_allows_uncancel_transition(self):
+        """Cancelled status should be reversible when feed indicates uncancelled."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+        first = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 0, "status": "cancelled"}},
+        )
+        assert first["trip_count"] == 1
+        assert first["cancelled"] == 1
+
+        uncancelled = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+        assert uncancelled["trip_count"] == 0
+        assert uncancelled["cancelled"] == -1
+        assert uncancelled["delayed"] == 1
+        assert uncancelled["total_delay_seconds"] == 400
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_atomic_path_allows_uncancel_transition(self):
+        """Atomic script path should match uncancel behavior of fallback path."""
+        cache = AtomicCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+        await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 0, "status": "cancelled"}},
+        )
+        uncancelled = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+
+        assert uncancelled["trip_count"] == 0
+        assert uncancelled["cancelled"] == -1
+        assert uncancelled["delayed"] == 1
+        assert uncancelled["total_delay_seconds"] == 400
+
+    @pytest.mark.asyncio
+    async def test_apply_trip_statuses_atomic_path_reads_legacy_trip_marker_key(self):
+        """Atomic path should use legacy markers when they already exist."""
+        cache = AtomicCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        bucket_key = bucket_start.strftime("%Y%m%d%H")
+        legacy_key = f"gtfs_rt_trip:{bucket_key}:stop_A:{harvester._hash_trip_id_legacy('trip_1')}"
+        cache._store[legacy_key] = "delayed|400"
+
+        result = await harvester._apply_trip_statuses(
+            bucket_start=bucket_start,
+            stop_id="stop_A",
+            trip_statuses={"trip_1": {"delay": 400, "status": "delayed"}},
+        )
+
+        assert result["trip_count"] == 0
+        assert result["total_delay_seconds"] == 0
+        assert result["delayed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_aggregate_by_stop_allows_uncancelled_latest_status(self):
+        """Latest non-cancelled update should clear prior cancelled state."""
+        cache = FakeCache()
+        harvester = GTFSRTDataHarvester(cache_service=cache)
+
+        from datetime import datetime, timezone
+
+        bucket_start = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+        trip_updates = [
+            {
+                "trip_id": "trip_1",
+                "stop_id": "stop_A",
+                "departure_delay_seconds": 0,
+                "schedule_relationship": ScheduleRelationship.CANCELED,
+            },
+            {
+                "trip_id": "trip_1",
+                "stop_id": "stop_A",
+                "departure_delay_seconds": 450,
+                "schedule_relationship": ScheduleRelationship.SCHEDULED,
+            },
+        ]
+
+        result = await harvester._aggregate_by_stop(trip_updates, bucket_start)
+
+        assert result["stop_A"]["cancelled"] == 0
+        assert result["stop_A"]["delayed"] == 1
+        assert result["stop_A"]["trip_count"] == 1
 
     @pytest.mark.asyncio
     async def test_apply_trip_statuses_batch_failure_uses_single_key_fallback(self):
@@ -543,3 +796,8 @@ class TestDelayThresholds:
         """Test that delay thresholds match expected values."""
         assert DELAY_THRESHOLD_SECONDS == 300  # 5 minutes
         assert ON_TIME_THRESHOLD_SECONDS == 60  # 1 minute
+
+    def test_negative_delay_classified_as_on_time(self):
+        """Early trips should be treated as on-time, not unknown."""
+        harvester = GTFSRTDataHarvester(cache_service=None)
+        assert harvester._classify_status(-90, cancelled=False) == "on_time"

@@ -1,6 +1,6 @@
 /// <reference types="@testing-library/jest-dom/vitest" />
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -19,10 +19,16 @@ vi.mock('../../../hooks/useStationStats', () => ({
   useStationStats: vi.fn(),
 }))
 
-let lastMapProps: { overlay?: ReactNode; focusRequest?: unknown } | null = null
+type MockHeatmapProps = {
+  overlay?: ReactNode
+  focusRequest?: unknown
+  onStationDetailRequested?: (stationId: string) => void
+}
+
+let lastMapProps: MockHeatmapProps | null = null
 
 vi.mock('../../../components/features/heatmap/MapLibreHeatmap', () => ({
-  MapLibreHeatmap: (props: { overlay?: ReactNode; focusRequest?: unknown }) => {
+  MapLibreHeatmap: (props: MockHeatmapProps) => {
     lastMapProps = props
     return <div data-testid="mock-heatmap">{props.overlay}</div>
   },
@@ -146,6 +152,26 @@ describe('HeatmapPage', () => {
 
     const params = mockUseHeatmapOverview.mock.calls[0]?.[0]
     expect(params?.time_range).toBe('live')
+  })
+
+  it('uses live station stats for live heatmap popups', async () => {
+    renderPage()
+    await screen.findByTestId('mock-heatmap')
+
+    await act(async () => {
+      lastMapProps?.onStationDetailRequested?.('station-live')
+    })
+
+    await waitFor(() => {
+      expect(mockUseStationStats).toHaveBeenLastCalledWith(
+        'station-live',
+        'live',
+        expect.objectContaining({
+          enabled: true,
+          includeNetworkAverages: false,
+        })
+      )
+    })
   })
 
   it('toggles controls with keyboard shortcuts', async () => {

@@ -14,12 +14,14 @@ interface TimeFormatToggleProps {
 }
 
 function getDepartureKey(departure: TransitDeparture): string {
-  const effectiveDeparture = departure.realtime_departure ?? departure.scheduled_departure
   return [
     departure.stop_id,
     departure.trip_id,
     departure.route_id,
-    effectiveDeparture,
+    departure.scheduled_departure,
+    departure.scheduled_arrival ?? '',
+    departure.headsign,
+    departure.route_short_name ?? '',
     departure.schedule_relationship,
   ].join(':')
 }
@@ -112,6 +114,7 @@ export function DeparturesBoard({
           return (
             <div
               key={getDepartureKey(departure)}
+              data-testid={`departure-row-${departure.trip_id}-${departure.stop_id}`}
               className={`rounded-md border px-4 py-3 transition-colors ${
                 isCancelled
                   ? 'border-red-500/35 bg-red-500/8'

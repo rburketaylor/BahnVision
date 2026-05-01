@@ -67,8 +67,10 @@ class FakeAsyncSession:
         self._raise_on_execute = raise_on_execute
         self.executed_statements: list[object] = []
         self.committed = False
+        self.rolled_back = False
         self._delete_count = 0
         self._inserted_objects: list[RealtimeStationStatsDaily] = []
+        self._in_transaction = False
 
     async def execute(self, stmt) -> FakeResult:
         self.executed_statements.append(stmt)
@@ -98,6 +100,32 @@ class FakeAsyncSession:
 
     def add(self, obj: RealtimeStationStatsDaily) -> None:
         self._inserted_objects.append(obj)
+
+    def in_transaction(self) -> bool:
+        return self._in_transaction
+
+    def begin(self):
+        return _FakeTransaction(self)
+
+    def begin_nested(self):
+        return _FakeTransaction(self)
+
+
+class _FakeTransaction:
+    def __init__(self, session: FakeAsyncSession):
+        self._session = session
+
+    async def __aenter__(self):
+        self._session._in_transaction = True
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self._session._in_transaction = False
+        if exc_type is None:
+            self._session.committed = True
+        else:
+            self._session.rolled_back = True
+        return False
 
 
 class TestShouldUseDailySummary:
@@ -314,6 +342,19 @@ class TestDailyAggregationService:
         assert "SBAHN" in daily.by_route_type
         assert daily.by_route_type["UBAHN"]["trips"] == 100
         assert daily.by_route_type["SBAHN"]["trips"] == 200
+        assert sum(stats["trips"] for stats in daily.by_route_type.values()) == 300
+        assert (
+            sum(stats["cancelled"] for stats in daily.by_route_type.values())
+            == daily.cancelled_count
+        )
+        assert (
+            sum(stats["delayed"] for stats in daily.by_route_type.values())
+            == daily.delayed_count
+        )
+        assert (
+            sum(stats["on_time"] for stats in daily.by_route_type.values())
+            == daily.on_time_count
+        )
 
     @pytest.mark.asyncio
     async def test_aggregate_day_unknown_route_type_defaults_to_bus(self):
@@ -424,6 +465,86 @@ class TestDailyAggregationService:
 
         # Should have executed a delete statement
         assert session._delete_count == 1
+
+    @pytest.mark.asyncio
+    async def test_aggregate_day_uses_configured_source_bucket_width(self):
+        """Test source bucket width is configurable (no hardcoded 60-minute assumption)."""
+        hourly_rows = [
+            FakeRow(
+                stop_id="de:09162:6",
+                trip_count=100,
+                delayed_count=10,
+                cancelled_count=5,
+                on_time_count=85,
+                total_delay_seconds=600,
+                observation_count=24,
+            )
+        ]
+        breakdown_rows = [
+            FakeRow(
+                stop_id="de:09162:6",
+                route_type=400,
+                trip_count=100,
+                delayed_count=10,
+                cancelled_count=5,
+                on_time_count=85,
+            )
+        ]
+
+        session = FakeAsyncSession(
+            hourly_rows=hourly_rows, breakdown_rows=breakdown_rows
+        )
+        service = DailyAggregationService(
+            session=session, source_bucket_width_minutes=15
+        )
+
+        await service.aggregate_day(date(2025, 1, 15))
+
+        query_params = [
+            stmt.compile().params
+            for stmt in session.executed_statements
+            if hasattr(stmt, "compile")
+        ]
+        assert any(15 in params.values() for params in query_params)
+
+    @pytest.mark.asyncio
+    async def test_aggregate_day_rolls_back_on_insert_failure(self):
+        """Test per-day transaction is rolled back when insert fails."""
+
+        class FailingInsertSession(FakeAsyncSession):
+            def add(self, obj: RealtimeStationStatsDaily) -> None:
+                raise RuntimeError("insert failed")
+
+        session = FailingInsertSession(
+            hourly_rows=[
+                FakeRow(
+                    stop_id="de:09162:6",
+                    trip_count=100,
+                    delayed_count=10,
+                    cancelled_count=5,
+                    on_time_count=85,
+                    total_delay_seconds=600,
+                    observation_count=24,
+                )
+            ],
+            breakdown_rows=[
+                FakeRow(
+                    stop_id="de:09162:6",
+                    route_type=400,
+                    trip_count=100,
+                    delayed_count=10,
+                    cancelled_count=5,
+                    on_time_count=85,
+                )
+            ],
+        )
+        service = DailyAggregationService(session=session)
+
+        with pytest.raises(RuntimeError, match="insert failed"):
+            await service.aggregate_day(date(2025, 1, 15))
+
+        assert session.rolled_back is True
+        assert session.committed is False
 
     @pytest.mark.asyncio
     async def test_is_day_aggregated_true(self):

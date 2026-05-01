@@ -122,6 +122,26 @@ describe('useStationStats hook', () => {
     })
   })
 
+  it('supports live station stats', async () => {
+    mockTransitApiClient.getStationStats.mockResolvedValueOnce({
+      data: { ...mockStationStats, time_range: 'live' },
+    })
+
+    const { result } = renderHook(() => useStationStats('de:09162:1', 'live'), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(mockTransitApiClient.getStationStats).toHaveBeenCalledWith({
+      stop_id: 'de:09162:1',
+      time_range: 'live',
+      include_network_averages: true,
+    })
+  })
+
   it('handles missing stop_id by not fetching', async () => {
     const { result } = renderHook(() => useStationStats(undefined, '24h'), {
       wrapper: createWrapper(),

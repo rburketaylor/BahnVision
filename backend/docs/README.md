@@ -42,3 +42,23 @@ The heatmap uses **spatially stratified sampling** to ensure consistent network 
 
 - Index `idx_gtfs_stops_location` on `(stop_lat, stop_lon)` supports efficient grid-based queries
 - Uses PostgreSQL's `DISTINCT ON (grid_x, grid_y)` for tier-1 selection
+
+## GTFS-RT Monitoring
+
+See `backend/docs/gtfs-rt-monitoring.md` for comprehensive documentation of:
+
+- Status endpoints (`/api/v1/system/ingestion-status`, `/api/v1/health`, `/api/v1/ready`)
+- Prometheus metrics for GTFS-RT harvesting
+- Grafana dashboard configuration
+- Harvester status field interpretation
+- Recommended metrics, dashboard panels, and alerting rules for realtime data monitoring
+
+## Configuration Changes
+
+The following environment variables were added or updated as part of the efficiency optimization work:
+
+- `GTFS_STOP_TIMES_IMPORT_MODE` (default: `streaming`) — Stop_times import strategy. `streaming` uses Polars lazy `sink_csv` followed by a single PostgreSQL `COPY` for lowest memory usage and fastest throughput. `batched` uses the legacy eager `read_csv_batched` with parallel COPY tasks.
+- `GTFS_STOP_TIMES_BATCH_SIZE` (default: `500000`) — Batch size used when importing GTFS `stop_times.txt` in **batched** mode. In **streaming** mode this may be used as the sink batch size if the Polars streaming engine supports it. Tune upward on hosts with more memory.
+- `GTFS_FEED_ARCHIVE_RETENTION_COUNT` (default: `2`) — Number of downloaded GTFS archive ZIPs to retain after successful imports. Set to `0` to keep only the current archive.
+- `FALLBACK_CACHE_MAX_ENTRIES` (default: `1024`) — Maximum number of entries in the in-process fallback cache when Valkey is unavailable.
+- `GTFS_RT_RETENTION_ENABLED` (default: `False`) — Enable validated historical GTFS-RT hourly retention cleanup. Must remain `False` until daily rollup parity has been verified in production.

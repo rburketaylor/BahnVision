@@ -345,10 +345,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3.10.0
 
       - name: Build backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v6.15.0
         with:
           context: .
           file: backend/Dockerfile
@@ -359,7 +359,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend-image
 
       - name: Build frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v6.15.0
         with:
           context: ./frontend
           file: frontend/Dockerfile
@@ -372,14 +372,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-image
 
       - name: Run Trivy vulnerability scanner on backend
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "bahnvision-backend:test"
           format: "sarif"
           output: "trivy-backend-results.sarif"
 
       - name: Run Trivy vulnerability scanner on frontend
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "bahnvision-frontend:test"
           format: "sarif"
@@ -412,20 +412,38 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3.10.0
 
       - name: Create CI environment file
         run: cp .env.example .env
 
       - name: Start services
-        run: docker compose -f docker-compose.yml up -d
+        id: start-services
+        run: |
+          docker compose -f docker-compose.yml up -d 2>&1 || true
+          # Give containers a moment to settle before checking
+          sleep 3
+          # Check container status
+          echo "=== Container Status ==="
+          docker compose ps --all
+
+      - name: Inspect failed containers
+        if: failure() || steps.start-services.outcome != 'success'
+        run: |
+          echo "=== Container Status ==="
+          docker compose ps --all
+          echo "=== Postgres Logs ==="
+          docker compose logs postgres --tail 50 || echo "No postgres logs available"
+          echo "=== Valkey Logs ==="
+          docker compose logs valkey --tail 10 || echo "No valkey logs available"
+          exit 1
 
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for backend API..."
-          timeout 90 bash -c 'until curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; do echo "Waiting..."; sleep 3; done' || (docker compose logs && exit 1)
+          timeout 90 bash -c 'until curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; do echo "Waiting..."; sleep 3; done' || (echo "=== Docker Compose Logs ===" && docker compose logs --tail 50 && exit 1)
           echo "Waiting for frontend..."
-          timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do echo "Waiting..."; sleep 2; done' || (docker compose logs && exit 1)
+          timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do echo "Waiting..."; sleep 2; done' || (echo "=== Docker Compose Logs ===" && docker compose logs --tail 50 && exit 1)
           echo "All services are healthy!"
 
       - name: Set up Node.js for E2E tests
@@ -493,7 +511,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3.10.0
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -513,7 +531,7 @@ jobs:
             type=sha,prefix={{branch}}-
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v6.15.0
         with:
           context: .
           file: backend/Dockerfile
@@ -534,7 +552,7 @@ jobs:
             type=sha,prefix={{branch}}-
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v6.15.0
         with:
           context: ./frontend
           file: frontend/Dockerfile

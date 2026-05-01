@@ -43,6 +43,9 @@ async def reset_database():
                 "gtfs_routes",
                 "gtfs_stops",
                 "gtfs_feed_info",
+                # Realtime station stats
+                "realtime_station_stats_daily",
+                "realtime_station_stats",
             ]
 
             for table in tables:

@@ -380,61 +380,66 @@ class TestCircuitBreaker:
         assert gtfs_service._circuit_breaker_state["state"] == "CLOSED"
         assert gtfs_service._circuit_breaker_state["failures"] == 0
 
-    def test_circuit_breaker_opens_after_threshold(self, gtfs_service):
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_opens_after_threshold(self, gtfs_service):
         """Test that circuit breaker opens after failure threshold."""
         # Record failures up to threshold
         for _ in range(3):
-            gtfs_service._record_failure()
+            await gtfs_service._record_failure()
 
         assert gtfs_service._circuit_breaker_state["state"] == "OPEN"
 
-    def test_circuit_breaker_closes_on_success(self, gtfs_service):
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_closes_on_success(self, gtfs_service):
         """Test that circuit breaker closes on success."""
         # Open the circuit breaker first
-        gtfs_service._record_failure()
-        gtfs_service._record_failure()
-        gtfs_service._record_failure()
+        await gtfs_service._record_failure()
+        await gtfs_service._record_failure()
+        await gtfs_service._record_failure()
         assert gtfs_service._circuit_breaker_state["state"] == "OPEN"
 
         # Record success
-        gtfs_service._record_success()
+        await gtfs_service._record_success()
 
         assert gtfs_service._circuit_breaker_state["state"] == "CLOSED"
         assert gtfs_service._circuit_breaker_state["failures"] == 0
 
-    def test_circuit_breaker_prevents_requests_when_open(self, gtfs_service):
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_prevents_requests_when_open(self, gtfs_service):
         """Test that circuit breaker prevents requests when OPEN."""
         # Open the circuit breaker
-        gtfs_service._record_failure()
-        gtfs_service._record_failure()
-        gtfs_service._record_failure()
+        await gtfs_service._record_failure()
+        await gtfs_service._record_failure()
+        await gtfs_service._record_failure()
 
-        assert not gtfs_service._check_circuit_breaker()
+        assert not await gtfs_service._check_circuit_breaker()
 
-    def test_circuit_breaker_allows_requests_when_closed(self, gtfs_service):
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_allows_requests_when_closed(self, gtfs_service):
         """Test that circuit breaker allows requests when CLOSED."""
-        assert gtfs_service._check_circuit_breaker()
+        assert await gtfs_service._check_circuit_breaker()
 
-    def test_circuit_breaker_state_paths_use_lock(self, gtfs_service):
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_state_paths_use_lock(self, gtfs_service):
         """Circuit breaker state checks/updates should be lock-guarded."""
 
         class CountingLock:
             def __init__(self):
                 self.enter_count = 0
 
-            def __enter__(self):
+            async def __aenter__(self):
                 self.enter_count += 1
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
         counting_lock = CountingLock()
         gtfs_service._circuit_breaker_lock = counting_lock
 
-        gtfs_service._check_circuit_breaker()
-        gtfs_service._record_failure()
-        gtfs_service._record_success()
+        await gtfs_service._check_circuit_breaker()
+        await gtfs_service._record_failure()
+        await gtfs_service._record_success()
 
         assert counting_lock.enter_count == 3
 

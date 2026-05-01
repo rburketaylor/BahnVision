@@ -4,8 +4,9 @@ Unit tests for GTFS SQLAlchemy models.
 Tests model creation, field validation, and relationships.
 """
 
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import date, datetime, timezone
+
+import pytest
 
 from app.models.gtfs import (
     GTFSStop,
@@ -26,34 +27,68 @@ class TestGTFSStopModel:
         stop = GTFSStop(
             stop_id="de:09162:6",
             stop_name="München Hbf",
-            stop_lat=Decimal("48.140300"),
-            stop_lon=Decimal("11.558300"),
+            stop_lat=48.140300,
+            stop_lon=11.558300,
             location_type=1,
-            feed_id="test_feed",
         )
 
         assert stop.stop_id == "de:09162:6"
         assert stop.stop_name == "München Hbf"
-        assert stop.stop_lat == Decimal("48.140300")
-        assert stop.stop_lon == Decimal("11.558300")
+        assert stop.stop_lat == pytest.approx(48.140300)
+        assert stop.stop_lon == pytest.approx(11.558300)
         assert stop.location_type == 1
-        assert stop.feed_id == "test_feed"
+
+    def test_gtfs_stop_coordinates_are_float_columns(self):
+        """Stop coordinates preserve double precision values."""
+        stop = GTFSStop(
+            stop_id="de:09162:6",
+            stop_name="München Hbf",
+            stop_lat=48.140300123,
+            stop_lon=11.558300987,
+        )
+
+        assert stop.stop_lat == pytest.approx(48.140300123)
+        assert stop.stop_lon == pytest.approx(11.558300987)
+        assert GTFSStop.__table__.c.stop_lat.type.python_type is float
+        assert GTFSStop.__table__.c.stop_lon.type.python_type is float
+
+    def test_gtfs_stop_static_metadata_columns_removed(self):
+        """Row-level feed/timestamp metadata is not stored on static stops."""
+        assert "feed_id" not in GTFSStop.__table__.c
+        assert "created_at" not in GTFSStop.__table__.c
+        assert "updated_at" not in GTFSStop.__table__.c
 
     def test_gtfs_stop_optional_fields(self):
         """Test creating a stop with optional fields."""
         stop = GTFSStop(
             stop_id="de:09162:6:1",
             stop_name="München Hbf Gleis 1",
-            stop_lat=Decimal("48.140300"),
-            stop_lon=Decimal("11.558300"),
+            stop_lat=48.140300,
+            stop_lon=11.558300,
             location_type=0,
             parent_station="de:09162:6",
             platform_code="1",
-            feed_id="test_feed",
         )
 
         assert stop.parent_station == "de:09162:6"
         assert stop.platform_code == "1"
+
+    def test_gtfs_stop_parent_station_has_self_referential_fk(self):
+        parent_station_col = GTFSStop.__table__.c.parent_station
+        assert len(parent_station_col.foreign_keys) == 1
+
+        fk = next(iter(parent_station_col.foreign_keys))
+        assert fk.target_fullname == "gtfs_stops.stop_id"
+        assert fk.ondelete == "SET NULL"
+
+    def test_gtfs_stop_parent_station_has_index(self):
+        assert GTFSStop.__table__.c.parent_station.index is True
+
+    def test_gtfs_stop_name_has_trigram_index(self):
+        indexes = {idx.name: idx for idx in GTFSStop.__table__.indexes}
+        assert "idx_gtfs_stops_name_trgm" in indexes
+        trgm_idx = indexes["idx_gtfs_stops_name_trgm"]
+        assert trgm_idx.dialect_kwargs["postgresql_using"] == "gin"
 
     def test_gtfs_stop_location_type_default(self):
         """Test that location_type defaults correctly.
@@ -64,7 +99,6 @@ class TestGTFSStopModel:
         stop = GTFSStop(
             stop_id="de:09162:6",
             stop_name="München Hbf",
-            feed_id="test_feed",
         )
 
         # Before commit, the default may be None or 0 depending on how
@@ -84,7 +118,6 @@ class TestGTFSRouteModel:
             route_long_name="Freising - München Hbf - Ostbahnhof",
             route_type=2,
             route_color="00BFFF",
-            feed_id="test_feed",
         )
 
         assert route.route_id == "1-S1-1"
@@ -97,28 +130,24 @@ class TestGTFSRouteModel:
     def test_gtfs_route_types(self):
         """Test various route types match GTFS spec."""
         # Tram
-        tram = GTFSRoute(
-            route_id="tram", route_type=0, route_short_name="19", feed_id="test"
-        )
+        tram = GTFSRoute(route_id="tram", route_type=0, route_short_name="19")
         assert tram.route_type == 0
 
         # Metro
-        metro = GTFSRoute(
-            route_id="metro", route_type=1, route_short_name="U3", feed_id="test"
-        )
+        metro = GTFSRoute(route_id="metro", route_type=1, route_short_name="U3")
         assert metro.route_type == 1
 
         # Rail
-        rail = GTFSRoute(
-            route_id="rail", route_type=2, route_short_name="S1", feed_id="test"
-        )
+        rail = GTFSRoute(route_id="rail", route_type=2, route_short_name="S1")
         assert rail.route_type == 2
 
         # Bus
-        bus = GTFSRoute(
-            route_id="bus", route_type=3, route_short_name="100", feed_id="test"
-        )
+        bus = GTFSRoute(route_id="bus", route_type=3, route_short_name="100")
         assert bus.route_type == 3
+
+    def test_gtfs_route_static_metadata_columns_removed(self):
+        assert "feed_id" not in GTFSRoute.__table__.c
+        assert "created_at" not in GTFSRoute.__table__.c
 
 
 class TestGTFSTripModel:
@@ -132,7 +161,6 @@ class TestGTFSTripModel:
             service_id="service_weekday",
             trip_headsign="Ostbahnhof",
             direction_id=0,
-            feed_id="test_feed",
         )
 
         assert trip.trip_id == "trip_001"
@@ -149,7 +177,6 @@ class TestGTFSTripModel:
             route_id="r1",
             service_id="s1",
             direction_id=0,
-            feed_id="test",
         )
         assert trip_out.direction_id == 0
 
@@ -159,9 +186,12 @@ class TestGTFSTripModel:
             route_id="r1",
             service_id="s1",
             direction_id=1,
-            feed_id="test",
         )
         assert trip_in.direction_id == 1
+
+    def test_gtfs_trip_static_metadata_columns_removed(self):
+        assert "feed_id" not in GTFSTrip.__table__.c
+        assert "created_at" not in GTFSTrip.__table__.c
 
 
 class TestGTFSStopTimeModel:
@@ -172,19 +202,26 @@ class TestGTFSStopTimeModel:
         stop_time = GTFSStopTime(
             trip_id="trip_001",
             stop_id="de:09162:6",
-            arrival_time=timedelta(hours=8, minutes=0),
-            departure_time=timedelta(hours=8, minutes=2),
+            arrival_seconds=8 * 3600,
+            departure_seconds=8 * 3600 + 2 * 60,
             stop_sequence=1,
             pickup_type=0,
             drop_off_type=0,
-            feed_id="test_feed",
         )
 
         assert stop_time.trip_id == "trip_001"
         assert stop_time.stop_id == "de:09162:6"
-        assert stop_time.arrival_time == timedelta(hours=8, minutes=0)
-        assert stop_time.departure_time == timedelta(hours=8, minutes=2)
+        assert stop_time.arrival_seconds == 8 * 3600
+        assert stop_time.departure_seconds == 8 * 3600 + 2 * 60
         assert stop_time.stop_sequence == 1
+
+    def test_gtfs_stop_time_uses_trip_sequence_primary_key(self):
+        primary_key_columns = [
+            column.name for column in GTFSStopTime.__table__.primary_key
+        ]
+        assert primary_key_columns == ["trip_id", "stop_sequence"]
+        assert "id" not in GTFSStopTime.__table__.c
+        assert "feed_id" not in GTFSStopTime.__table__.c
 
     def test_gtfs_stop_time_over_24h(self):
         """Test stop time with times exceeding 24 hours (next-day service)."""
@@ -192,14 +229,13 @@ class TestGTFSStopTimeModel:
         stop_time = GTFSStopTime(
             trip_id="night_trip",
             stop_id="stop1",
-            arrival_time=timedelta(hours=25, minutes=30),
-            departure_time=timedelta(hours=25, minutes=32),
+            arrival_seconds=25 * 3600 + 30 * 60,
+            departure_seconds=25 * 3600 + 32 * 60,
             stop_sequence=1,
-            feed_id="test",
         )
 
-        assert stop_time.arrival_time.total_seconds() == 25 * 3600 + 30 * 60
-        assert stop_time.departure_time.total_seconds() == 25 * 3600 + 32 * 60
+        assert stop_time.arrival_seconds == 25 * 3600 + 30 * 60
+        assert stop_time.departure_seconds == 25 * 3600 + 32 * 60
 
     def test_gtfs_stop_time_pickup_drop_off_types(self):
         """Test pickup and drop-off types."""
@@ -210,7 +246,6 @@ class TestGTFSStopTimeModel:
             stop_sequence=1,
             pickup_type=0,
             drop_off_type=0,
-            feed_id="test",
         )
         assert regular.pickup_type == 0
         assert regular.drop_off_type == 0
@@ -222,7 +257,6 @@ class TestGTFSStopTimeModel:
             stop_sequence=2,
             pickup_type=1,
             drop_off_type=0,
-            feed_id="test",
         )
         assert no_pickup.pickup_type == 1
 
@@ -233,7 +267,6 @@ class TestGTFSStopTimeModel:
             stop_sequence=3,
             pickup_type=3,
             drop_off_type=3,
-            feed_id="test",
         )
         assert request.pickup_type == 3
         assert request.drop_off_type == 3
@@ -255,7 +288,6 @@ class TestGTFSCalendarModel:
             sunday=False,
             start_date=date(2025, 1, 1),
             end_date=date(2025, 12, 31),
-            feed_id="test_feed",
         )
 
         assert calendar.service_id == "service_weekday"
@@ -279,12 +311,14 @@ class TestGTFSCalendarModel:
             sunday=True,
             start_date=date(2025, 1, 1),
             end_date=date(2025, 12, 31),
-            feed_id="test",
         )
 
         assert calendar.monday is False
         assert calendar.saturday is True
         assert calendar.sunday is True
+
+    def test_gtfs_calendar_feed_metadata_column_removed(self):
+        assert "feed_id" not in GTFSCalendar.__table__.c
 
 
 class TestGTFSCalendarDateModel:
@@ -296,7 +330,6 @@ class TestGTFSCalendarDateModel:
             service_id="service_weekday",
             date=date(2025, 12, 25),
             exception_type=2,  # 2 = removed
-            feed_id="test_feed",
         )
 
         assert calendar_date.service_id == "service_weekday"
@@ -310,7 +343,6 @@ class TestGTFSCalendarDateModel:
             service_id="s1",
             date=date(2025, 5, 1),
             exception_type=1,
-            feed_id="test",
         )
         assert added.exception_type == 1
 
@@ -319,9 +351,11 @@ class TestGTFSCalendarDateModel:
             service_id="s1",
             date=date(2025, 12, 25),
             exception_type=2,
-            feed_id="test",
         )
         assert removed.exception_type == 2
+
+    def test_gtfs_calendar_date_feed_metadata_column_removed(self):
+        assert "feed_id" not in GTFSCalendarDate.__table__.c
 
 
 class TestGTFSFeedInfoModel:

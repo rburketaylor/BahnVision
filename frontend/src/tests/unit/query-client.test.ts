@@ -89,6 +89,21 @@ describe('queryClient configuration', () => {
       expect(retryFn(2, networkError)).toBe(true)
       expect(retryFn(3, networkError)).toBe(false)
     })
+
+    it('retries for statusCode 0 transport errors', () => {
+      const defaultOptions = queryClient.getDefaultOptions()
+      const retryFn = defaultOptions.queries?.retry as (
+        failureCount: number,
+        error: Error
+      ) => boolean
+
+      const transportError = Object.assign(new Error('Network request failed'), { statusCode: 0 })
+
+      expect(retryFn(0, transportError)).toBe(true)
+      expect(retryFn(1, transportError)).toBe(true)
+      expect(retryFn(2, transportError)).toBe(true)
+      expect(retryFn(3, transportError)).toBe(false)
+    })
   })
 
   describe('retry delay', () => {

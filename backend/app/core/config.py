@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -165,6 +165,9 @@ class Settings(BaseSettings):
     cache_mset_batch_size: int = Field(
         default=10000, alias="CACHE_MSET_BATCH_SIZE", gt=0
     )
+    fallback_cache_max_entries: int = Field(
+        default=1024, alias="FALLBACK_CACHE_MAX_ENTRIES", gt=0
+    )
 
     # ==========================================================================
     # Cache Warmup
@@ -255,6 +258,23 @@ class Settings(BaseSettings):
         alias="GTFS_DOWNLOAD_TIMEOUT",  # 5 min for large feed
     )
     gtfs_storage_path: str = Field(default="/data/gtfs", alias="GTFS_STORAGE_PATH")
+    gtfs_stop_times_batch_size: int = Field(
+        default=500_000,
+        alias="GTFS_STOP_TIMES_BATCH_SIZE",
+        gt=0,
+        description="Batch size used when importing GTFS stop_times.txt rows in batched mode, or as the streaming sink batch size if applicable.",
+    )
+    gtfs_stop_times_import_mode: Literal["streaming", "batched"] = Field(
+        default="streaming",
+        alias="GTFS_STOP_TIMES_IMPORT_MODE",
+        description="Stop_times import strategy: 'streaming' (lazy sink_csv + single COPY) or 'batched' (eager read_csv_batched + parallel COPY).",
+    )
+    gtfs_feed_archive_retention_count: int = Field(
+        default=2,
+        alias="GTFS_FEED_ARCHIVE_RETENTION_COUNT",
+        ge=0,
+        description="Number of downloaded GTFS archive ZIPs to retain after successful imports.",
+    )
 
     # GTFS-RT Configuration
     gtfs_rt_enabled: bool = Field(default=False, alias="GTFS_RT_ENABLED")
@@ -297,7 +317,12 @@ class Settings(BaseSettings):
     gtfs_rt_stats_retention_days: int = Field(
         default=90,  # Extended retention for aggregated stats (low storage footprint)
         alias="GTFS_RT_STATS_RETENTION_DAYS",
-        description="Days to retain station statistics.",
+        description="Days to retain hourly realtime station statistics.",
+    )
+    gtfs_rt_retention_enabled: bool = Field(
+        default=False,
+        alias="GTFS_RT_RETENTION_ENABLED",
+        description="Enable validated historical GTFS-RT hourly retention cleanup.",
     )
 
     # ==========================================================================

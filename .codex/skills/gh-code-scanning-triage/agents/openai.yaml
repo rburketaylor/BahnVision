@@ -1,0 +1,4 @@
+interface:
+  display_name: "GH Code Scanning Triage"
+  short_description: "Quickly triage GitHub code scanning alerts"
+  default_prompt: "Check open code scanning alerts and classify actionable vs no-fix findings"

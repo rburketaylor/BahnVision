@@ -175,6 +175,48 @@ class TestStationStatsEndpoint:
         # Malformed cache payload should not 500; fallback path returns not found.
         assert resp.status_code == 404
 
+    def test_station_stats_live_cache_miss_uses_1h_fallback(self, test_app: FastAPI):
+        now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+        class _EmptySnapshotCache:
+            async def get_json(self, _key: str):
+                return None
+
+            async def get_stale_json(self, _key: str):
+                return None
+
+        fake_service = FakeStationStatsService(
+            stats=StationStats(
+                station_id="s1",
+                station_name="A",
+                time_range="1h",
+                total_departures=10,
+                cancelled_count=1,
+                cancellation_rate=0.1,
+                delayed_count=2,
+                delay_rate=0.2,
+                network_avg_cancellation_rate=None,
+                network_avg_delay_rate=None,
+                performance_score=80,
+                by_transport=[],
+                data_from=now,
+                data_to=now,
+            ),
+            trends=None,
+        )
+        test_app.dependency_overrides[stops_module.get_station_stats_service] = (
+            _override_async_dependency(fake_service)
+        )
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: (
+            _EmptySnapshotCache()
+        )
+
+        with TestClient(test_app) as client:
+            resp = client.get("/api/v1/transit/stops/s1/stats?time_range=live")
+
+        assert resp.status_code == 200
+        assert fake_service.calls[0] == ("stats", "s1", "1h", True)
+
 
 class TestStationTrendsEndpoint:
     def test_station_trends_returns_200_and_cache_header(self, test_app: FastAPI):
@@ -364,6 +406,98 @@ class TestNearbyStopsEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data[0]["id"] == "s1"
+
+    def test_nearby_stops_small_radius_uses_finer_bucket_precision(
+        self, test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+    ):
+        class FakeSettings:
+            gtfs_stop_cache_ttl_seconds = 123
+
+        class RecordingCache:
+            def __init__(self):
+                self.keys: list[str] = []
+
+            async def get_json(self, key: str):
+                self.keys.append(key)
+                return None
+
+            async def get_stale_json(self, key: str):
+                self.keys.append(key)
+                return None
+
+            async def set_json(self, *_args, **_kwargs):
+                return None
+
+        cache = RecordingCache()
+
+        test_app.dependency_overrides[stops_module.get_session] = (
+            _override_async_session(object())
+        )
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: cache
+
+        monkeypatch.setattr(
+            stops_module, "GTFSScheduleService", FakeGTFSScheduleService
+        )
+        monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
+        monkeypatch.setattr(
+            cache_headers_module, "get_settings", lambda: FakeSettings()
+        )
+
+        with TestClient(test_app) as client:
+            resp = client.get(
+                "/api/v1/transit/stops/nearby?"
+                "latitude=1.12344&longitude=2.98766&radius_meters=100&limit=5"
+            )
+
+        assert resp.status_code == 200
+        expected_key = f"nearby_stops:4:{round(1.12344, 4)}:{round(2.98766, 4)}:100:5"
+        assert cache.keys[0] == expected_key
+
+    def test_nearby_stops_large_radius_uses_default_bucket_precision(
+        self, test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+    ):
+        class FakeSettings:
+            gtfs_stop_cache_ttl_seconds = 123
+
+        class RecordingCache:
+            def __init__(self):
+                self.keys: list[str] = []
+
+            async def get_json(self, key: str):
+                self.keys.append(key)
+                return None
+
+            async def get_stale_json(self, key: str):
+                self.keys.append(key)
+                return None
+
+            async def set_json(self, *_args, **_kwargs):
+                return None
+
+        cache = RecordingCache()
+
+        test_app.dependency_overrides[stops_module.get_session] = (
+            _override_async_session(object())
+        )
+        test_app.dependency_overrides[stops_module.get_cache_service] = lambda: cache
+
+        monkeypatch.setattr(
+            stops_module, "GTFSScheduleService", FakeGTFSScheduleService
+        )
+        monkeypatch.setattr(stops_module, "get_settings", lambda: FakeSettings())
+        monkeypatch.setattr(
+            cache_headers_module, "get_settings", lambda: FakeSettings()
+        )
+
+        with TestClient(test_app) as client:
+            resp = client.get(
+                "/api/v1/transit/stops/nearby?"
+                "latitude=1.12344&longitude=2.98766&radius_meters=500&limit=5"
+            )
+
+        assert resp.status_code == 200
+        expected_key = f"nearby_stops:3:{round(1.12344, 3)}:{round(2.98766, 3)}:500:5"
+        assert cache.keys[0] == expected_key
 
 
 class TestStopsDependencyFactories:

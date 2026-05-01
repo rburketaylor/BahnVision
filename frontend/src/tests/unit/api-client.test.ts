@@ -52,14 +52,17 @@ describe('ApiClient low-level behaviors', () => {
 
     await expect(client.getHealth()).rejects.toMatchObject({
       statusCode: 408,
+      detail: expect.stringContaining('GET /api/v1/health'),
     })
   })
 
-  it('returns status 0 ApiError for generic network failures', async () => {
+  it('returns status 0 ApiError for generic network failures with diagnostics', async () => {
     fetchMock.mockRejectedValue(new Error('boom'))
 
     await expect(client.getHealth()).rejects.toMatchObject({
       statusCode: 0,
+      message: expect.stringContaining('GET /api/v1/health'),
+      detail: expect.stringContaining('GET /api/v1/health'),
     })
   })
 
@@ -87,12 +90,19 @@ describe('ApiClient low-level behaviors', () => {
     fetchMock.mockResolvedValueOnce(okResponse)
 
     await expect(client.getMetrics()).resolves.toBe('metrics data')
-    expect(fetchMock).toHaveBeenCalledWith(`${config.apiBaseUrl}/metrics`)
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${config.apiBaseUrl}/metrics`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+        }),
+      })
+    )
 
     const badResponse = new Response('nope', { status: 503, statusText: 'Service Unavailable' })
     fetchMock.mockResolvedValueOnce(badResponse)
 
-    await expect(client.getMetrics()).rejects.toMatchObject({ statusCode: 503 })
+    await expect(client.getMetrics()).rejects.toMatchObject({ statusCode: 503, detail: 'nope' })
   })
 
   it('builds heatmap query params and joins transport_modes', async () => {

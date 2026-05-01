@@ -7,6 +7,7 @@ trigger behavior, and warmup execution.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -159,6 +160,36 @@ class TestHeatmapCacheWarmer:
 
             # Task should not be replaced
             assert warmer._task is running_task
+
+    def test_trigger_is_thread_safe(self, mock_cache, mock_settings_enabled):
+        """Test trigger only creates one task under concurrent callers."""
+        with patch(
+            "app.jobs.heatmap_cache_warmup.get_settings",
+            return_value=mock_settings_enabled,
+        ):
+            warmer = HeatmapCacheWarmer(mock_cache)
+
+        created_tasks: list[MagicMock] = []
+
+        def fake_create_task(coro):
+            coro.close()
+            task = MagicMock()
+            task.done.return_value = False
+            created_tasks.append(task)
+            return task
+
+        with patch(
+            "app.jobs.heatmap_cache_warmup.asyncio.create_task",
+            side_effect=fake_create_task,
+        ):
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(
+                    executor.map(
+                        lambda _: warmer.trigger(reason="concurrent"), range(32)
+                    )
+                )
+
+        assert len(created_tasks) == 1
 
     @pytest.mark.asyncio
     async def test_trigger_creates_task_when_enabled(

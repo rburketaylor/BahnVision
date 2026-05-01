@@ -27,6 +27,21 @@ export const BVV_COLORS = {
   strokeLight: 'rgba(255, 255, 255, 0.90)',
 } as const
 
+export const BVV_POINT_COLOR_STOPS = [
+  { intensity: 0, color: 'rgba(0, 171, 78, 0.75)' },
+  { intensity: 0.2, color: 'rgba(245, 158, 11, 0.75)' },
+  { intensity: 0.4, color: 'rgba(245, 158, 11, 0.90)' },
+  { intensity: 0.6, color: 'rgba(214, 15, 38, 0.92)' },
+  { intensity: 1, color: 'rgba(214, 15, 38, 1.0)' },
+] as const
+
+export const BVV_CLUSTER_COLOR_STOPS = [
+  { intensity: 0, color: 'rgba(0, 171, 78, 0.65)' },
+  { intensity: 0.3, color: 'rgba(245, 158, 11, 0.75)' },
+  { intensity: 0.6, color: 'rgba(214, 15, 38, 0.82)' },
+  { intensity: 1, color: 'rgba(214, 15, 38, 1.0)' },
+] as const
+
 /**
  * Get marker color based on intensity (0-1) using BVV status gradient
  * @param intensity - Normalized intensity value (0 = healthy, 1 = critical)
@@ -61,15 +76,15 @@ export const BVV_POINT_COLOR: ExpressionSpecification = [
   ['linear'],
   ['coalesce', ['get', 'intensity'], 0],
   0,
-  'rgba(0, 171, 78, 0.75)', // healthy - S-Bahn green
+  BVV_POINT_COLOR_STOPS[0].color, // healthy - S-Bahn green
   0.2,
-  'rgba(245, 158, 11, 0.75)', // low warning - amber
+  BVV_POINT_COLOR_STOPS[1].color, // low warning - amber
   0.4,
-  'rgba(245, 158, 11, 0.90)', // warning - amber
+  BVV_POINT_COLOR_STOPS[2].color, // warning - amber
   0.6,
-  'rgba(214, 15, 38, 0.92)', // high critical - tram red
+  BVV_POINT_COLOR_STOPS[3].color, // high critical - tram red
   1,
-  'rgba(214, 15, 38, 1.0)', // critical - tram red
+  BVV_POINT_COLOR_STOPS[4].color, // critical - tram red
 ]
 
 /**
@@ -84,13 +99,13 @@ export const BVV_CLUSTER_COLOR: ExpressionSpecification = [
     ['max', 1, ['coalesce', ['get', 'point_count'], 1]],
   ],
   0,
-  'rgba(0, 171, 78, 0.65)', // healthy
+  BVV_CLUSTER_COLOR_STOPS[0].color, // healthy
   0.3,
-  'rgba(245, 158, 11, 0.75)', // warning
+  BVV_CLUSTER_COLOR_STOPS[1].color, // warning
   0.6,
-  'rgba(214, 15, 38, 0.82)', // critical
+  BVV_CLUSTER_COLOR_STOPS[2].color, // critical
   1,
-  'rgba(214, 15, 38, 1.0)', // severe
+  BVV_CLUSTER_COLOR_STOPS[3].color, // severe
 ]
 
 /**

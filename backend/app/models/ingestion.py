@@ -4,7 +4,23 @@ Pydantic models for ingestion status API responses.
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class GTFSImportProgress(BaseModel):
+    """Live progress of the GTFS static feed import."""
+
+    state: str = "idle"
+    phase: str | None = None
+    message: str | None = None
+    percent: float | None = None
+    rows_processed: int | None = None
+    rows_total: int | None = None
+    started_at: datetime | None = None
+    updated_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 class GTFSFeedStatus(BaseModel):
@@ -19,6 +35,7 @@ class GTFSFeedStatus(BaseModel):
     route_count: int = 0
     trip_count: int = 0
     is_expired: bool = False
+    import_progress: GTFSImportProgress = Field(default_factory=GTFSImportProgress)
 
 
 class GTFSRTHarvesterStatus(BaseModel):

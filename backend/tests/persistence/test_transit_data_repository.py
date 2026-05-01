@@ -184,9 +184,29 @@ async def test_link_departure_weather_is_idempotent(db_session):
     second_insert = await repo.link_departure_weather(link_payload)
 
     assert first_insert == 1
-    assert second_insert == 1
+    assert second_insert == 0
 
     total_links = await db_session.execute(
         select(func.count(models.DepartureWeatherLink.departure_id))
     )
     assert total_links.scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_transit_line_updates_existing_values(db_session):
+    repo = TransitDataRepository(db_session)
+    await repo.upsert_transit_line(_transit_line_payload())
+
+    updated = TransitLinePayload(
+        line_id="U3",
+        transport_mode=models.TransportMode.UBAHN,
+        operator="MVV",
+        description="Updated description",
+        color_hex="#0055FF",
+    )
+    line = await repo.upsert_transit_line(updated)
+
+    assert line is not None
+    assert line.operator == "MVV"
+    assert line.description == "Updated description"
+    assert line.color_hex == "#0055FF"

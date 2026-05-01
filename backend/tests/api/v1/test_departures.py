@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 import pytest
+import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -204,6 +205,23 @@ class TestDeparturesEndpoint:
 
         assert response.status_code == 404
 
+    def test_get_departures_invalid_stop_id_pattern(self, departures_client):
+        """Query validation should reject malformed stop IDs."""
+        client, _ = departures_client
+
+        response = client.get("/api/v1/transit/departures?stop_id=bad stop id")
+
+        assert response.status_code == 422
+
+    def test_get_departures_stop_id_too_long(self, departures_client):
+        """Query validation should reject overly long stop IDs."""
+        client, _ = departures_client
+        long_stop_id = "s" * 129
+
+        response = client.get(f"/api/v1/transit/departures?stop_id={long_stop_id}")
+
+        assert response.status_code == 422
+
     def test_get_departures_with_limit(self, departures_client):
         """Test departures with limit parameter."""
         client, _ = departures_client
@@ -255,3 +273,57 @@ class TestDeparturesEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["realtime_available"] is False
+
+
+class TestDeparturesValidation:
+    @pytest.mark.asyncio
+    async def test_get_departures_invalid_stop_id_pattern(self):
+        """Query validation should reject malformed stop IDs."""
+        from app.api.v1.shared.rate_limit import limiter
+
+        fake_service = FakeTransitDataService()
+        app = FastAPI()
+        app.include_router(router, prefix="/api/v1/transit")
+        app.dependency_overrides[get_transit_data_service] = lambda: fake_service
+        original_enabled = limiter.enabled
+        limiter.enabled = False
+
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            ) as client:
+                response = await client.get(
+                    "/api/v1/transit/departures", params={"stop_id": "bad stop id"}
+                )
+        finally:
+            limiter.enabled = original_enabled
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_get_departures_stop_id_too_long(self):
+        """Query validation should reject overly long stop IDs."""
+        from app.api.v1.shared.rate_limit import limiter
+
+        fake_service = FakeTransitDataService()
+        app = FastAPI()
+        app.include_router(router, prefix="/api/v1/transit")
+        app.dependency_overrides[get_transit_data_service] = lambda: fake_service
+        original_enabled = limiter.enabled
+        limiter.enabled = False
+
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            ) as client:
+                response = await client.get(
+                    "/api/v1/transit/departures", params={"stop_id": "s" * 129}
+                )
+        finally:
+            limiter.enabled = original_enabled
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 422

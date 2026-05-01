@@ -113,6 +113,62 @@ class TestGtfsRealtimeProcessor:
         mock_gtfs_service.fetch_and_process_feed.assert_called()
 
     @pytest.mark.asyncio
+    async def test_processing_loop_applies_error_backoff(self, rt_processor):
+        """Test that unexpected errors increase wait timeout with backoff."""
+        mock_gtfs_service = AsyncMock()
+        mock_gtfs_service.fetch_and_process_feed.side_effect = Exception(
+            "Network error"
+        )
+        rt_processor.gtfs_service = mock_gtfs_service
+
+        observed_timeouts: list[float] = []
+
+        async def fake_wait_for(_awaitable, timeout):
+            if hasattr(_awaitable, "close"):
+                _awaitable.close()
+            observed_timeouts.append(timeout)
+            if len(observed_timeouts) >= 3:
+                rt_processor._shutdown_event.set()
+            raise asyncio.TimeoutError
+
+        with patch("app.jobs.rt_processor.asyncio.wait_for", side_effect=fake_wait_for):
+            await rt_processor._processing_loop()
+
+        assert observed_timeouts == [10.0, 20.0, 30.0]
+
+    @pytest.mark.asyncio
+    async def test_processing_loop_clamps_non_positive_timeout(
+        self, mock_cache_service
+    ):
+        """Test that non-positive timeout is clamped to avoid tight loops."""
+        with patch("app.jobs.rt_processor.get_settings") as mock_settings:
+            mock_settings.return_value.gtfs_rt_enabled = True
+            mock_settings.return_value.gtfs_rt_timeout_seconds = 0
+            processor = GtfsRealtimeProcessor(mock_cache_service)
+
+        mock_gtfs_service = AsyncMock()
+        mock_gtfs_service.fetch_and_process_feed.return_value = {
+            "trip_updates": 0,
+            "vehicle_positions": 0,
+            "alerts": 0,
+        }
+        processor.gtfs_service = mock_gtfs_service
+
+        observed_timeouts: list[float] = []
+
+        async def fake_wait_for(_awaitable, timeout):
+            if hasattr(_awaitable, "close"):
+                _awaitable.close()
+            observed_timeouts.append(timeout)
+            processor._shutdown_event.set()
+            raise asyncio.TimeoutError
+
+        with patch("app.jobs.rt_processor.asyncio.wait_for", side_effect=fake_wait_for):
+            await processor._processing_loop()
+
+        assert observed_timeouts == [0.1]
+
+    @pytest.mark.asyncio
     async def test_processing_loop_handles_cancelled_error(self, rt_processor):
         """Test that processing loop handles CancelledError gracefully."""
         # Mock GTFS service

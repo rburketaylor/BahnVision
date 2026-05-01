@@ -31,12 +31,11 @@ describe('HeatmapControls', () => {
   it('renders transport mode buttons', () => {
     render(<HeatmapControls {...defaultProps} />)
 
-    // Transport badges now use aria-label instead of text content
-    expect(screen.getByLabelText('Toggle U-Bahn')).toBeInTheDocument()
-    expect(screen.getByLabelText('Toggle S-Bahn')).toBeInTheDocument()
-    expect(screen.getByLabelText('Toggle Tram')).toBeInTheDocument()
-    expect(screen.getByLabelText('Toggle Bus')).toBeInTheDocument()
-    expect(screen.getByLabelText('Toggle Regional')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /U-Bahn/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /S-Bahn/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Tram/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Bus/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Regional/ })).toBeInTheDocument()
   })
 
   it('calls onTimeRangeChange when time range button is clicked', () => {
@@ -54,7 +53,7 @@ describe('HeatmapControls', () => {
     const onTransportModesChange = vi.fn()
     render(<HeatmapControls {...defaultProps} onTransportModesChange={onTransportModesChange} />)
 
-    fireEvent.click(screen.getByLabelText('Toggle U-Bahn'))
+    fireEvent.click(screen.getByRole('button', { name: /U-Bahn/ }))
     expect(onTransportModesChange).toHaveBeenCalledWith(['UBAHN'])
   })
 
@@ -68,7 +67,7 @@ describe('HeatmapControls', () => {
       />
     )
 
-    fireEvent.click(screen.getByLabelText('Toggle U-Bahn'))
+    fireEvent.click(screen.getByRole('button', { name: /U-Bahn/ }))
     expect(onTransportModesChange).toHaveBeenCalledWith(['SBAHN'])
   })
 
@@ -92,8 +91,8 @@ describe('HeatmapControls', () => {
     expect(screen.getByText('Last 24 hours')).toBeDisabled()
 
     // Transport mode buttons should be disabled
-    expect(screen.getByLabelText('Toggle U-Bahn')).toBeDisabled()
-    expect(screen.getByLabelText('Toggle S-Bahn')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /U-Bahn/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /S-Bahn/ })).toBeDisabled()
   })
 
   it('shows message when no transport modes selected', () => {
@@ -154,13 +153,11 @@ describe('HeatmapControls', () => {
   })
 
   describe('Live Mode', () => {
-    it('renders auto-refresh toggle showing "Auto-refresh" when enabled', () => {
+    it('renders auto-refresh toggle showing "Auto" when enabled', () => {
       render(<HeatmapControls {...defaultProps} autoRefresh={true} />)
 
-      expect(screen.getByText('Auto-refresh')).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: /auto-refresh/i, pressed: true })
-      ).toBeInTheDocument()
+      expect(screen.getByText('Auto')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /auto/i, pressed: true })).toBeInTheDocument()
     })
 
     it('renders auto-refresh toggle showing "Paused" when disabled', () => {
@@ -180,7 +177,7 @@ describe('HeatmapControls', () => {
         />
       )
 
-      fireEvent.click(screen.getByText('Auto-refresh'))
+      fireEvent.click(screen.getByText('Auto'))
       expect(onAutoRefreshChange).toHaveBeenCalledWith(false)
     })
 
@@ -259,7 +256,7 @@ describe('HeatmapControls', () => {
     it('disables auto-refresh toggle when loading', () => {
       render(<HeatmapControls {...defaultProps} isLoading={true} />)
 
-      expect(screen.getByText('Auto-refresh')).toBeDisabled()
+      expect(screen.getByRole('button', { name: /auto/i })).toBeDisabled()
     })
   })
 })

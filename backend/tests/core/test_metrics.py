@@ -61,6 +61,16 @@ def metric_registry(monkeypatch):
             registry=registry,
         ),
     )
+    monkeypatch.setattr(
+        metrics,
+        "API_REQUEST_LATENCY",
+        Histogram(
+            "bahnvision_api_request_duration_seconds",
+            "API request latency",
+            ["method", "route", "status_code"],
+            registry=registry,
+        ),
+    )
 
     return registry
 
@@ -136,3 +146,25 @@ def test_record_transit_transport_request(metric_registry):
 
     assert success_value == 2.0
     assert bus_error_value == 1.0
+
+
+def test_observe_api_request_records_latency(metric_registry):
+    metrics.observe_api_request("get", "/api/v1/health", 200, 0.125)
+    metrics.observe_api_request("GET", "", "404", 0.375)
+
+    success_count = metric_registry.get_sample_value(
+        "bahnvision_api_request_duration_seconds_count",
+        {"method": "GET", "route": "/api/v1/health", "status_code": "200"},
+    )
+    success_sum = metric_registry.get_sample_value(
+        "bahnvision_api_request_duration_seconds_sum",
+        {"method": "GET", "route": "/api/v1/health", "status_code": "200"},
+    )
+    fallback_count = metric_registry.get_sample_value(
+        "bahnvision_api_request_duration_seconds_count",
+        {"method": "GET", "route": "unmatched", "status_code": "404"},
+    )
+
+    assert success_count == 1.0
+    assert success_sum == pytest.approx(0.125)
+    assert fallback_count == 1.0

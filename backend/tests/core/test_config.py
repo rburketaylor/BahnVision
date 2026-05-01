@@ -65,6 +65,23 @@ def test_cache_bounds_enforced():
         Settings(CACHE_CIRCUIT_BREAKER_TIMEOUT_SECONDS=-0.1)
 
 
+def test_fallback_cache_max_entries_defaults():
+    settings = Settings()
+
+    assert settings.fallback_cache_max_entries == 1024
+
+
+def test_fallback_cache_max_entries_from_env():
+    settings = Settings(FALLBACK_CACHE_MAX_ENTRIES="2048")
+
+    assert settings.fallback_cache_max_entries == 2048
+
+
+def test_fallback_cache_max_entries_must_be_positive():
+    with pytest.raises(ValidationError):
+        Settings(FALLBACK_CACHE_MAX_ENTRIES=0)
+
+
 def test_database_pool_settings_defaults():
     settings = Settings()
 
@@ -88,3 +105,37 @@ def test_database_pool_settings_from_env():
 def test_database_pool_timeout_must_be_positive():
     with pytest.raises(ValidationError):
         Settings(DATABASE_POOL_TIMEOUT_SECONDS=0)
+
+
+def test_gtfs_stop_times_batch_size_defaults():
+    settings = Settings()
+
+    assert settings.gtfs_stop_times_batch_size == 500_000
+
+
+def test_gtfs_stop_times_batch_size_must_be_positive():
+    with pytest.raises(ValidationError):
+        Settings(GTFS_STOP_TIMES_BATCH_SIZE=0)
+
+
+def test_gtfs_feed_archive_retention_count_defaults():
+    settings = Settings()
+
+    assert settings.gtfs_feed_archive_retention_count == 2
+
+
+def test_gtfs_feed_archive_retention_count_rejects_negative_values():
+    with pytest.raises(ValidationError):
+        Settings(GTFS_FEED_ARCHIVE_RETENTION_COUNT=-1)
+
+
+def test_gtfs_rt_retention_enabled_defaults_disabled():
+    settings = Settings()
+
+    assert settings.gtfs_rt_retention_enabled is False
+
+
+def test_gtfs_rt_retention_enabled_from_env():
+    settings = Settings(GTFS_RT_RETENTION_ENABLED="true")
+
+    assert settings.gtfs_rt_retention_enabled is True

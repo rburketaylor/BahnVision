@@ -79,4 +79,5 @@ async def readiness_check(
     return {
         "status": "ready",
         "checks": checks,
+        "errors": {},
     }
