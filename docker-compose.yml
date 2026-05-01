@@ -79,7 +79,7 @@ services:
       timeout: 5s
       retries: 5
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     cpus: "1.00"
     mem_limit: 512m
 
