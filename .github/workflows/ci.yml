@@ -128,7 +128,7 @@ jobs:
           pytest --cov=app --cov-report=xml --cov-report=html
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           files: backend/coverage.xml
@@ -190,7 +190,7 @@ jobs:
         run: npm test --prefix frontend -- --coverage --run
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           files: frontend/coverage/lcov.info
