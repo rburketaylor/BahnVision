@@ -84,7 +84,7 @@ services:
     mem_limit: 512m
 
   valkey:
-    image: valkey/valkey:8.1.6
+    image: valkey/valkey:9.1.0
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -121,7 +121,7 @@ services:
     mem_limit: 64m
 
   daily-aggregation:
-    image: alpine:3.23.3
+    image: alpine:3.23.4
     env_file:
       - .env
     command: >
