@@ -84,7 +84,7 @@ services:
     mem_limit: 512m
 
   valkey:
-    image: valkey/valkey:8.1.6@sha256:1f84517eca8e0dd9585ed57c572796f32839e1b0e7ce07ad28e6bce098468371
+    image: valkey/valkey:9.1.1@sha256:3acc0687f2a2e1091fae6450d7842dd658c941338cf0a873ddd9e14b9e4ea4dd
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -95,7 +95,7 @@ services:
     mem_limit: 256m
 
   postgres-host-access:
-    image: alpine/socat:1.8.0.3
+    image: alpine/socat:1.8.1.3
     command: ["TCP-LISTEN:5432,fork,reuseaddr", "TCP:postgres:5432"]
     profiles: ["host-access"]
     depends_on:
@@ -108,7 +108,7 @@ services:
     mem_limit: 64m
 
   valkey-host-access:
-    image: alpine/socat:1.8.0.3
+    image: alpine/socat:1.8.1.3
     command: ["TCP-LISTEN:6379,fork,reuseaddr", "TCP:valkey:6379"]
     profiles: ["host-access"]
     depends_on:
@@ -121,7 +121,7 @@ services:
     mem_limit: 64m
 
   daily-aggregation:
-    image: alpine:3.23.3
+    image: alpine:3.24.1
     env_file:
       - .env
     command: >
