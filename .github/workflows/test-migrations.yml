@@ -31,7 +31,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
         env:
           POSTGRES_USER: bahnvision
           POSTGRES_PASSWORD: bahnvision
@@ -45,7 +45,7 @@ jobs:
           --health-retries 5
 
       valkey:
-        image: valkey/valkey:latest
+        image: valkey/valkey:8.1.6@sha256:1f84517eca8e0dd9585ed57c572796f32839e1b0e7ce07ad28e6bce098468371
         ports:
           - 6379:6379
         options: >-
@@ -60,17 +60,17 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: "pip"
           cache-dependency-path: "backend/requirements.txt"
 
       - name: Cache pip packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pip
           key: pip-migrations-${{ runner.os }}-${{ hashFiles('backend/requirements.txt') }}
