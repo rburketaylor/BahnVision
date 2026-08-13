@@ -21,4 +21,4 @@ gtfs-kit==12.0.2
 protobuf>=6.33.5
 gtfs-realtime-bindings==2.0.0
 apscheduler==3.11.2
-polars>=1.36.1
+polars>=1.43.2
