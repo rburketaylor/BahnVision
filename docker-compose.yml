@@ -10,7 +10,7 @@ services:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
         VITE_ENABLE_DEBUG_LOGS: ${VITE_ENABLE_DEBUG_LOGS:-false}
     ports:
-      - "3000:80"
+      - "${FRONTEND_HOST_BIND:-127.0.0.1}:${FRONTEND_HOST_PORT:-3000}:80"
     depends_on:
       - backend
     healthcheck:
@@ -37,7 +37,7 @@ services:
       dockerfile: backend/Dockerfile
     image: bahnvision-backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_BIND:-127.0.0.1}:${BACKEND_HOST_PORT:-8000}:8000"
     env_file:
       - .env
     environment:
@@ -68,7 +68,7 @@ services:
     mem_limit: 768m
 
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bahnvision}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bahnvision}
@@ -84,7 +84,7 @@ services:
     mem_limit: 512m
 
   valkey:
-    image: valkey/valkey:8.1.6
+    image: valkey/valkey:8.1.6@sha256:1f84517eca8e0dd9585ed57c572796f32839e1b0e7ce07ad28e6bce098468371
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -126,12 +126,14 @@ services:
       - .env
     command: >
       sh -c "
-      echo \"0 2 * * * wget -q -O- --header='X-API-Key: $${ADMIN_API_KEY:-}' http://backend:8000/api/v1/heatmap/aggregate-daily --post-data='' >/dev/null 2>&1\" | crontab -
+      echo '0 2 * * * /bin/sh /scripts/run-daily-aggregation.sh' | crontab -
       && crond -f -l 2"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - ./scripts/run-daily-aggregation.sh:/scripts/run-daily-aggregation.sh:ro
     cpus: "0.25"
     mem_limit: 64m
 

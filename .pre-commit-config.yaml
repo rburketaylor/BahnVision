@@ -11,10 +11,9 @@ repos:
     hooks:
       - id: pip-audit
         name: pip-audit (Python dependency vulnerabilities)
-        # TODO: remove ignore once protobuf fix is available.
         entry: >-
           bash -c 'source backend/.venv/bin/activate && pip-audit
-          --ignore-vuln CVE-2026-0994'
+          -r backend/requirements.txt'
         language: system
         files: ^backend/(requirements.*\.txt|pyproject\.toml)$
         pass_filenames: false
@@ -58,7 +57,7 @@ repos:
           - opentelemetry-sdk==1.39.1
           - polars>=1.36.1
           - prometheus-client==0.24.1
-          - pydantic-settings==2.12.0
+          - pydantic-settings>=2.14.2
           - SQLAlchemy==2.0.46
           - slowapi==0.1.9
           - uvicorn==0.40.0

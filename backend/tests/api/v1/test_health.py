@@ -55,7 +55,7 @@ def test_ready_endpoint_returns_503_when_db_unavailable(api_client):
     assert data["status"] == "not_ready"
     assert data["checks"]["database"] == "error"
     assert data["checks"]["cache"] == "ok"
-    assert "database" in data["errors"]
+    assert data["errors"]["database"] == "database unavailable"
 
 
 def test_ready_endpoint_returns_503_when_cache_unavailable(api_client):
@@ -74,4 +74,30 @@ def test_ready_endpoint_returns_503_when_cache_unavailable(api_client):
     assert data["status"] == "not_ready"
     assert data["checks"]["database"] == "ok"
     assert data["checks"]["cache"] == "error"
-    assert "cache" in data["errors"]
+    assert data["errors"]["cache"] == "cache unavailable"
+
+
+def test_ready_endpoint_never_exposes_exception_text(api_client):
+    """Readiness errors must stay generic and never leak exception details."""
+
+    class _FailingSession:
+        async def execute(self, _stmt):
+            raise RuntimeError("sensitive-dsn-credential-leak")
+
+    class _FailingCache:
+        async def get_json(self, _key: str):
+            raise RuntimeError("cache-connection-string-leak")
+
+    api_client.app.dependency_overrides[get_session] = lambda: _FailingSession()
+    api_client.app.dependency_overrides[get_cache_service] = lambda: _FailingCache()
+
+    response = api_client.get("/api/v1/ready")
+    assert response.status_code == 503
+
+    data = response.json()
+    assert data["errors"] == {
+        "database": "database unavailable",
+        "cache": "cache unavailable",
+    }
+    assert "sensitive-dsn-credential-leak" not in response.text
+    assert "cache-connection-string-leak" not in response.text
