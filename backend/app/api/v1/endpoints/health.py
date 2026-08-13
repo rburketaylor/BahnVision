@@ -1,3 +1,4 @@
+import logging
 import time
 
 from fastapi import APIRouter, Depends
@@ -10,6 +11,7 @@ from app.core.database import get_session
 from app.services.cache import CacheService, get_cache_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Track app startup time module-level
 _APP_START_TIME = time.time()
@@ -56,15 +58,17 @@ async def readiness_check(
 
     try:
         await db.execute(text("SELECT 1"))
-    except Exception as exc:
+    except Exception:
+        logger.exception("Readiness check failed for database")
         checks["database"] = "error"
-        errors["database"] = str(exc)
+        errors["database"] = "database unavailable"
 
     try:
         await _check_cache_ready(cache)
-    except Exception as exc:
+    except Exception:
+        logger.exception("Readiness check failed for cache")
         checks["cache"] = "error"
-        errors["cache"] = str(exc)
+        errors["cache"] = "cache unavailable"
 
     if errors:
         return JSONResponse(

@@ -75,7 +75,7 @@ jobs:
       RATE_LIMIT_ENABLED: false
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
         env:
           POSTGRES_USER: bahnvision
           POSTGRES_PASSWORD: bahnvision
@@ -88,7 +88,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
       valkey:
-        image: valkey/valkey:latest
+        image: valkey/valkey:8.1.6@sha256:1f84517eca8e0dd9585ed57c572796f32839e1b0e7ce07ad28e6bce098468371
         ports:
           - 6379:6379
         options: >-
@@ -244,15 +244,15 @@ jobs:
   # =============================================================================
 
   # Security scans - Combined into matrix for efficiency
-  # Only run when dependencies or security-relevant files change
+  # Run on dependency changes, main, explicit dispatch, or Dependabot PRs
   security-scan:
     runs-on: ubuntu-latest
-    # Skip for trivial changes - run on dependency updates, main branch, or explicit dispatch
     if: |
       github.ref == 'refs/heads/main' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.head_commit.message, '[security]') ||
-      github.actor == 'dependabot[bot]'
+      github.actor == 'dependabot[bot]' ||
+      github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -266,9 +266,27 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Detect changed dependency files
+        id: changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3.0.0
+        with:
+          filters: |
+            backend:
+              - 'backend/requirements*.txt'
+            frontend:
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+
       # Python setup for backend
       - name: Set up Python
-        if: matrix.setup == 'python'
+        if: >
+          matrix.setup == 'python' &&
+          (steps.changes.outputs.backend == 'true' ||
+           github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           github.actor == 'dependabot[bot]' ||
+           contains(github.event.head_commit.message, '[security]'))
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -276,15 +294,27 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Run Python security scan
-        if: matrix.setup == 'python'
+        if: >
+          matrix.setup == 'python' &&
+          (steps.changes.outputs.backend == 'true' ||
+           github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           github.actor == 'dependabot[bot]' ||
+           contains(github.event.head_commit.message, '[security]'))
         run: |
-          pip install bandit==1.9.2 safety==3.7.0
-          bandit -r backend/app -f json -o bandit-report.json || true
-          safety check --output json 2>&1 | tee safety-report.json || true
+          pip install bandit==1.9.2 pip-audit>=2.10.0
+          bandit -r backend/app -f sarif -o bandit-report.sarif || true
+          pip-audit -r backend/requirements.txt --format json --output pip-audit-report.json
 
       # Node setup for frontend
       - name: Set up Node.js
-        if: matrix.setup == 'node'
+        if: >
+          matrix.setup == 'node' &&
+          (steps.changes.outputs.frontend == 'true' ||
+           github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           github.actor == 'dependabot[bot]' ||
+           contains(github.event.head_commit.message, '[security]'))
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -292,18 +322,32 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Run npm audit
-        if: matrix.setup == 'node'
+        if: >
+          matrix.setup == 'node' &&
+          (steps.changes.outputs.frontend == 'true' ||
+           github.ref == 'refs/heads/main' ||
+           github.event_name == 'workflow_dispatch' ||
+           github.actor == 'dependabot[bot]' ||
+           contains(github.event.head_commit.message, '[security]'))
         run: |
           cd frontend
-          npm audit --json > npm-audit.json || true
+          npm audit --audit-level=high --json > npm-audit.json
+
+      - name: Upload Bandit results to GitHub Security tab
+        if: matrix.setup == 'python' && hashFiles('bandit-report.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: bandit-report.sarif
 
       - name: Upload security reports
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: security-reports-${{ matrix.component }}
+          if-no-files-found: ignore
           path: |
-            bandit-report.json
-            safety-report.json
+            bandit-report.sarif
+            pip-audit-report.json
             frontend/npm-audit.json
 
   # SAST scan - Skip for Dependabot (no code changes)
@@ -345,10 +389,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.10.0
+        uses: docker/setup-buildx-action@v4.1.0
 
       - name: Build backend image
-        uses: docker/build-push-action@v6.15.0
+        uses: docker/build-push-action@v7.2.0
         with:
           context: .
           file: backend/Dockerfile
@@ -359,7 +403,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend-image
 
       - name: Build frontend image
-        uses: docker/build-push-action@v6.15.0
+        uses: docker/build-push-action@v7.2.0
         with:
           context: ./frontend
           file: frontend/Dockerfile
@@ -377,6 +421,16 @@ jobs:
           image-ref: "bahnvision-backend:test"
           format: "sarif"
           output: "trivy-backend-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Fail on fixable criticals in backend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "bahnvision-backend:test"
+          severity: "CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: "true"
+          skip-setup-trivy: "true"
 
       - name: Run Trivy vulnerability scanner on frontend
         uses: aquasecurity/trivy-action@v0.36.0
@@ -384,6 +438,16 @@ jobs:
           image-ref: "bahnvision-frontend:test"
           format: "sarif"
           output: "trivy-frontend-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Fail on fixable criticals in frontend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "bahnvision-frontend:test"
+          severity: "CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: "true"
+          skip-setup-trivy: "true"
 
       - name: Upload Trivy backend scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -412,7 +476,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.10.0
+        uses: docker/setup-buildx-action@v4.1.0
 
       - name: Create CI environment file
         run: cp .env.example .env
@@ -511,10 +575,10 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.10.0
+        uses: docker/setup-buildx-action@v4.1.0
 
       - name: Log in to Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -522,7 +586,7 @@ jobs:
 
       - name: Extract backend metadata
         id: meta-backend
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
           tags: |
@@ -531,7 +595,7 @@ jobs:
             type=sha,prefix={{branch}}-
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v6.15.0
+        uses: docker/build-push-action@v7.2.0
         with:
           context: .
           file: backend/Dockerfile
@@ -543,7 +607,7 @@ jobs:
 
       - name: Extract frontend metadata
         id: meta-frontend
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
           tags: |
@@ -552,7 +616,7 @@ jobs:
             type=sha,prefix={{branch}}-
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v6.15.0
+        uses: docker/build-push-action@v7.2.0
         with:
           context: ./frontend
           file: frontend/Dockerfile

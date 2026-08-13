@@ -5,6 +5,8 @@ updates:
   - package-ecosystem: "pip"
     directory: "/backend"
     target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -37,6 +39,8 @@ updates:
   - package-ecosystem: "npm"
     directory: "/frontend"
     target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -73,6 +77,8 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     schedule:
       interval: "daily"
       time: "10:00"
@@ -91,6 +97,8 @@ updates:
   - package-ecosystem: "docker-compose"
     directory: "/"
     target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     schedule:
       interval: "monthly"
       day: "monday"
@@ -104,6 +112,8 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/.github"
     target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     schedule:
       interval: "daily"
       time: "10:00"
@@ -112,3 +122,25 @@ updates:
         patterns:
           - "actions/*"
           - "github/*"
+
+  # Backend container base images - WEEKLY (security focus)
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+
+  # Frontend container base images - WEEKLY (security focus)
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    target-branch: "develop"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
