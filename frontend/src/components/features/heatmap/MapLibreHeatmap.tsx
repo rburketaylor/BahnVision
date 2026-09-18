@@ -13,7 +13,12 @@
 import { useEffect, useRef, useCallback, useMemo, useState, type ReactNode } from 'react'
 import { StationPopup } from './StationPopup'
 import DOMPurify from 'dompurify'
-import maplibregl from 'maplibre-gl'
+// maplibre-gl v6 is ESM-only: no default export, and bundlers must explicitly
+// point the library at its web worker file (see the v5→v6 migration guide).
+import * as maplibregl from 'maplibre-gl'
+import { setWorkerUrl } from 'maplibre-gl'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
+import type * as GeoJSON from 'geojson'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec'
@@ -40,6 +45,8 @@ import {
   BVV_GLOW_RADIUS,
   BVV_CLUSTER_GLOW_RADIUS,
 } from './markerStyles'
+
+setWorkerUrl(maplibreWorkerUrl)
 
 // Error Boundary for Heatmap component
 interface HeatmapErrorBoundaryProps {
