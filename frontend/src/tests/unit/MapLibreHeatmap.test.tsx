@@ -137,19 +137,26 @@ vi.mock('maplibre-gl', () => {
   }
 
   return {
+    setWorkerUrl: vi.fn(),
+    Map: MockMap,
+    NavigationControl: MockNavigationControl,
+    Popup: MockPopup,
+    Marker: MockMarker,
+    LngLatBounds: MockLngLatBounds,
     default: {
       Map: MockMap,
       NavigationControl: MockNavigationControl,
       Popup: MockPopup,
       Marker: MockMarker,
       LngLatBounds: MockLngLatBounds,
+      setWorkerUrl: vi.fn(),
     },
   }
 })
 
 // Import after mocking
 import { MapLibreHeatmap } from '../../components/heatmap/MapLibreHeatmap'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import { createRoot } from 'react-dom/client'
 import type { HeatmapDataPoint, HeatmapEnabledMetrics } from '../../types/heatmap'
 

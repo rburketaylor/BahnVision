@@ -20,11 +20,11 @@
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
-    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-avatar": "^1.2.6",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-progress": "^1.1.8",
-    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-switch": "^1.2.6",
@@ -36,7 +36,7 @@
     "clsx": "^2.1.1",
     "dompurify": "^3.4.13",
     "lucide-react": "^0.563.0",
-    "maplibre-gl": "^5.16.0",
+    "maplibre-gl": "^6.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "^7.18.2",
@@ -53,12 +53,13 @@
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.1",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^25.0.10",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
-    "@vitest/coverage-v8": "^4.1.10",
-    "@vitest/ui": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/ui": "^4.1.11",
     "autoprefixer": "10.4.24",
     "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -72,11 +73,16 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.53.1",
     "vite": "^7.3.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "minimatch": "^10.2.5",
-    "qs": ">=6.15.2",
-    "tmp": ">=0.2.4"
+    "qs": ">=6.16.0",
+    "tmp": ">=0.2.4",
+    "js-yaml": "^4.3.2",
+    "browserslist": "^4.28.9",
+    "fast-uri": "^3.1.7",
+    "baseline-browser-mapping": "^2.11.21",
+    "@humanfs/node": "^0.16.8"
   }
 }

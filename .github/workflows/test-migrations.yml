@@ -9,9 +9,6 @@ on:
       - ".github/workflows/test-migrations.yml"
   pull_request:
     branches: [main, develop]
-    paths:
-      - "backend/alembic/**"
-      - "backend/app/persistence/models.py"
 
 # Cancel redundant runs when new commits are pushed
 concurrency:
@@ -23,10 +20,32 @@ permissions:
   contents: read
 
 jobs:
+  # Detect whether the PR touches migration-related files so the required
+  # "Test Migration Lifecycle" check reports (as SKIPPED) on every PR.
+  changes:
+    name: Detect Migration Changes
+    runs-on: ubuntu-latest
+    outputs:
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Detect changed migration files
+        id: filter
+        uses: dorny/paths-filter@v3.0.0
+        with:
+          filters: |
+            migrations:
+              - 'backend/alembic/**'
+              - 'backend/app/persistence/models.py'
+              - '.github/workflows/test-migrations.yml'
+
   # Consolidated migration testing - runs smoke tests, data tests, and app tests sequentially
   # This avoids spinning up multiple Postgres containers
   test-migrations:
     name: Test Migration Lifecycle
+    needs: [changes]
+    if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
 
     services:
